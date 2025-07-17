@@ -1,1 +1,0 @@
-# kuran-projesi

@@ -1,4 +1,4 @@
-let enData, trData, meals = {};
+let enData, trData, translitData, meals = {};
 let currentPage = 1;
 let sureNames = {};
 let sureToPageMap = {};
@@ -23,13 +23,15 @@ const mealFiles = [
 
 async function loadData() {
     try {
-        const [enRes, trRes] = await Promise.all([
+        const [enRes, trRes, translitRes] = await Promise.all([
             fetch('./data/qurantft.json'),
-            fetch('./data/quran_tr.json')
+            fetch('./data/quran_tr.json'),
+            fetch('./data/Turkce_Transkript.json')
         ]);
 
         enData = await enRes.json();
         trData = await trRes.json();
+        translitData = await translitRes.json();
 
         await loadMeals();
 
@@ -204,6 +206,33 @@ function attachWordTranslation() {
     });
 }
 
+function saveNote(suraNum, verseNum) {
+    const noteId = `note-input-${suraNum}-${verseNum}`;
+    const textarea = document.getElementById(noteId);
+    const noteText = textarea.value.trim();
+    const key = `note_${suraNum}:${verseNum}`;
+    
+    if (noteText) {
+        localStorage.setItem(key, noteText);
+    } else {
+        localStorage.removeItem(key);
+    }
+    
+    toggleNoteInput(noteId.replace('note-input-', 'note-input-box-'));
+}
+
+function loadNote(suraNum, verseNum) {
+    const key = `note_${suraNum}:${verseNum}`;
+    return localStorage.getItem(key) || '';
+}
+
+function toggleNoteInput(id) {
+    const element = document.getElementById(id);
+    if (element) {
+        element.classList.toggle('hidden');
+    }
+}
+
 function displayPage(pageNum) {
     const enPage = enData[pageNum];
     const trPage = trData[pageNum];
@@ -271,18 +300,21 @@ function displayPage(pageNum) {
             html += `
             <div class="verse">
                 <div class="verse-number">${suraNum}:${verseNum}</div>
+                <div class="verse-arabic">${enSura.encrypted[verseNum]}</div>
+                <div class="verse-transliteration">${translitData[suraNum]?.verses[verseNum] || ''}</div>
                 <div class="verse-text">${enSura.verses[verseNum]}</div>
-                <div class="verse-text-tr"><strong>${trSura.verses[verseNum]}</strong></div>
-                <div class="verse-arabic">${enSura.encrypted[verseNum]}</div>`;
+                <div class="verse-text-tr"><strong>${trSura.verses[verseNum]}</strong></div>`;
 
             const noteId = `note-${suraNum}-${verseNum}`;
             const mealId = `meal-${suraNum}-${verseNum}`;
+            const noteInputId = `note-input-box-${suraNum}-${verseNum}`;
 
             html += `<div class="buttons">`;
             if (hasNotes) {
                 html += `<button class="toggle-btn dipnot-btn" onclick="toggleNote('${noteId}')">📌 Dipnot</button>`;
             }
             html += `<button class="toggle-btn" onclick="toggleMeal('${mealId}', ${suraNum}, ${verseNum})">📚 Diğer Mealler</button>`;
+            html += `<button class="toggle-btn note-btn" onclick="toggleNoteInput('${noteInputId}')">✍️ Not Al</button>`;
             html += `</div>`;
 
             if (hasNotes) {
@@ -301,6 +333,10 @@ function displayPage(pageNum) {
             }
 
             html += `<div id="${mealId}" class="note-box hidden"></div>`;
+            html += `<div id="${noteInputId}" class="note-input-box hidden">
+                        <textarea id="note-input-${suraNum}-${verseNum}" placeholder="Notunuzu buraya yazın...">${loadNote(suraNum, verseNum)}</textarea>
+                        <button onclick="saveNote(${suraNum}, ${verseNum})">Kaydet</button>
+                     </div>`;
 
             html += `</div>`; // verse end
         }
@@ -310,6 +346,39 @@ function displayPage(pageNum) {
 
     document.getElementById('content').innerHTML = html;
     attachWordTranslation();
+}
+
+function displayNotesPage() {
+    let html = `
+    <div class="page-header">
+        <h1>📝 Kayıtlı Notlar</h1>
+    </div>
+    <div class="sura">
+        <div class="verse">
+    `;
+
+    let hasNotes = false;
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key.startsWith('note_')) {
+            hasNotes = true;
+            const [suraNum, verseNum] = key.replace('note_', '').split(':');
+            const noteText = localStorage.getItem(key);
+            html += `
+            <div class="verse-number">${suraNum}:${verseNum}</div>
+            <div class="note-box">${noteText}</div>
+            <button class="toggle-btn" onclick="localStorage.removeItem('note_${suraNum}:${verseNum}'); displayNotesPage();">Notu Sil</button>
+            <hr>
+            `;
+        }
+    }
+
+    if (!hasNotes) {
+        html += `<div class="note-box">Henüz not alınmamış.</div>`;
+    }
+
+    html += `</div></div>`;
+    document.getElementById('content').innerHTML = html;
 }
 
 function toggleNote(id) {
@@ -341,6 +410,10 @@ document.getElementById('nextPage').addEventListener('click', () => {
     }
 });
 
+document.getElementById('notesPage').addEventListener('click', () => {
+    displayNotesPage();
+});
+
 document.getElementById('searchInput').addEventListener('input', (e) => {
     const val = e.target.value.toLowerCase().trim();
     const box = document.getElementById('autocomplete');
@@ -354,7 +427,6 @@ document.getElementById('searchInput').addEventListener('input', (e) => {
     let found = false;
     const suggestions = [];
 
-    // Sure isimlerine göre Türkçe arama
     for (const suraNum in sureNames) {
         const suraName = sureNames[suraNum].toLowerCase();
         if (suraName.includes(val)) {
@@ -363,17 +435,15 @@ document.getElementById('searchInput').addEventListener('input', (e) => {
         }
     }
 
-    // Ayet numaralarına göre Türkçe arama
     const verseMatch = val.match(/^(\d+):(\d+)$/);
     if (verseMatch) {
         const [_, suraNum, verseNum] = verseMatch;
         if (enData && trData) {
             for (let page in enData) {
                 const enPage = enData[page];
-                const trPage = trData[page];
                 if (enPage.sura[suraNum] && enPage.sura[suraNum].verses[verseNum]) {
                     found = true;
-                    const trVerseText = trPage.sura[suraNum]?.verses[verseNum] || enPage.sura[suraNum].verses[verseNum];
+                    const trVerseText = trData[page].sura[suraNum]?.verses[verseNum] || enPage.sura[suraNum].verses[verseNum];
                     suggestions.push({
                         suraNum,
                         verseNum,
@@ -391,16 +461,16 @@ document.getElementById('searchInput').addEventListener('input', (e) => {
             const div = document.createElement('div');
             div.textContent = suggestion.type === 'verse' 
                 ? `${suggestion.text}` 
-                : `${suggestion.suraNum}: ${suggestion.suraName}`;
+                : `${suraNum}: ${suggestion.suraName}`;
             div.onclick = () => {
                 if (suggestion.type === 'verse') {
                     currentPage = suggestion.page;
                     displayPage(currentPage);
-                    window.scrollTo({ top: 0, behavior: 'smooth' }); // Sayfanın üstüne kaydır
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
                 } else {
                     currentPage = sureToPageMap[suggestion.suraNum];
                     displayPage(currentPage);
-                    window.scrollTo({ top: 0, behavior: 'smooth' }); // Sayfanın üstüne kaydır
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
                 }
                 box.innerHTML = '';
                 box.style.display = 'none';

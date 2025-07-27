@@ -5,6 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kuran Çalışması</title>
     <link rel="stylesheet" href="css/style.css">
+    
+    <!-- Firebase SDK v9.6.0 (Compat sürüm) -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-firestore-compat.js"></script>
+
+    <!-- Kendi script dosyan -->
     <script src="js/script.js" defer></script>
 </head>
 <body>
@@ -14,6 +21,11 @@
             <span id="currentPageDisplay">Yükleniyor...</span>
             <button id="nextPage" class="nav-btn">İleri ⟶</button>
             <button id="notesPage" class="nav-btn">📝 Notlarım</button>
+        </div>
+        <div id="authContainer" class="auth-container">
+            <button id="loginBtn" class="auth-btn hidden">Google ile Giriş Yap</button>
+            <span id="userEmail" class="login-info hidden"></span>
+            <button id="logoutBtn" class="auth-btn hidden">Çıkış Yap</button>
         </div>
         <div class="search-container">
             <input type="text" id="searchInput" placeholder="Sure, ayet veya meal ara (örn: Bakara, 2:255, Rahman)">

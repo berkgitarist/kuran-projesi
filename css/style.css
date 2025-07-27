@@ -340,6 +340,21 @@ body {
     transform: translateY(-2px);
 }
 
+.ai-translation {
+    background: #e0f7fa;
+    padding: 12px;
+    margin-top: 10px;
+    margin-bottom: 8px;
+    border-radius: 8px;
+    font-size: 15px;
+    color: #1a202c;
+}
+
+.ai-translation strong {
+    font-weight: 600;
+    color: #2b6cb0;
+}
+
 .hidden {
     display: none;
 }
@@ -357,6 +372,34 @@ body {
     max-width: 280px;
     color: #333;
     animation: fadeIn 0.2s ease;
+}
+
+.auth-container {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.auth-btn {
+    background: #4285f4;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background 0.3s;
+}
+
+.auth-btn:hover {
+    background: #3367d6;
+}
+
+.login-info {
+    font-size: 14px;
+    color: #555;
+    margin-right: 10px;
 }
 
 @media (max-width: 768px) {
@@ -377,5 +420,12 @@ body {
 
     .search-container {
         max-width: 100%;
+    }
+
+    .auth-container {
+        margin-left: 0;
+        margin-top: 10px;
+        width: 100%;
+        justify-content: center;
     }
 }

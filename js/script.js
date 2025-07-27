@@ -1,4 +1,4 @@
-let enData, trData, translitData, meals = {};
+let enData, trData, translitData, meals = {}, aiTranslations = {};
 let currentPage = 1;
 let sureNames = {};
 let sureToPageMap = {};
@@ -34,6 +34,7 @@ async function loadData() {
         translitData = await translitRes.json();
 
         await loadMeals();
+        await loadAITranslations();
 
         for (let page in trData) {
             for (let suraNum in trData[page].sura) {
@@ -81,6 +82,15 @@ async function loadManualDictionary() {
         manualDictionary = await res.json();
     } catch (e) {
         console.error("Sözlük yüklenirken hata:", e);
+    }
+}
+
+async function loadAITranslations() {
+    try {
+        const res = await fetch('./data/yapayzekaceviri.json');
+        aiTranslations = await res.json();
+    } catch (e) {
+        console.error("Yapay zeka çevirileri yüklenirken hata:", e);
     }
 }
 
@@ -308,6 +318,7 @@ function displayPage(pageNum) {
             const noteId = `note-${suraNum}-${verseNum}`;
             const mealId = `meal-${suraNum}-${verseNum}`;
             const noteInputId = `note-input-box-${suraNum}-${verseNum}`;
+            const aiTranslationId = `ai-translation-${suraNum}-${verseNum}`;
 
             html += `<div class="buttons">`;
             if (hasNotes) {
@@ -315,6 +326,14 @@ function displayPage(pageNum) {
             }
             html += `<button class="toggle-btn" onclick="toggleMeal('${mealId}', ${suraNum}, ${verseNum})">📚 Diğer Mealler</button>`;
             html += `<button class="toggle-btn note-btn" onclick="toggleNoteInput('${noteInputId}')">✍️ Not Al</button>`;
+            html += `</div>`;
+
+            html += `<div id="${aiTranslationId}" class="ai-translation">`;
+            if (aiTranslations[suraNum] && aiTranslations[suraNum].verses && aiTranslations[suraNum].verses[verseNum]) {
+                html += `<strong>AI ÇEVİRİ</strong> ${aiTranslations[suraNum].verses[verseNum]}`;
+            } else {
+                html += `<strong>AI ÇEVİRİ:</strong> Çeviri bulunamadı.`;
+            }
             html += `</div>`;
 
             if (hasNotes) {

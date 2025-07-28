@@ -95,11 +95,12 @@ function saveSettings() {
     localStorage.setItem('quranAppSettings', JSON.stringify(STATE.settings));
     applySettings();
     displayPage(STATE.currentPage);
+    updateThemePreview();
 }
 
 function applySettings() {
     DOM.body.className = `${STATE.settings.theme}-theme`;
-    const sizes = { small: '14px', medium: '16px', large: '18px' };
+    const sizes = { small: '14px', medium: '15px', large: '16px' };
     DOM.body.style.fontSize = sizes[STATE.settings.fontSize];
 }
 
@@ -183,7 +184,7 @@ async function loadInitialData() {
         ]);
         
         processMetadata();
-        loadMeals();
+        await loadMeals();
         
         hideLoading();
     } catch (error) {
@@ -235,24 +236,28 @@ function processMetadata() {
 async function loadMeals() {
     showLoading('Mealler yükleniyor...');
     
-    for (let i = 0; i < CONFIG.mealFiles.length; i += CONFIG.batchSize) {
-        const batch = CONFIG.mealFiles.slice(i, i + CONFIG.batchSize);
-        await Promise.all(batch.map(async file => {
-            try {
-                const response = await fetch(`./data/mealler/${file}`);
-                const json = await response.json();
-                const mealName = file.replace('.json', '');
-                STATE.data.meals[mealName] = json;
-            } catch (err) {
-                console.error(`${file} yüklenirken hata:`, err);
-            }
-        }));
-        
-        const progress = Math.min(100, ((i + CONFIG.batchSize) / CONFIG.mealFiles.length) * 100);
-        updateLoadingProgress(progress);
+    try {
+        for (let i = 0; i < CONFIG.mealFiles.length; i += CONFIG.batchSize) {
+            const batch = CONFIG.mealFiles.slice(i, i + CONFIG.batchSize);
+            await Promise.all(batch.map(async file => {
+                try {
+                    const response = await fetch(`./data/mealler/${file}`);
+                    const json = await response.json();
+                    const mealName = file.replace('.json', '');
+                    STATE.data.meals[mealName] = json;
+                } catch (err) {
+                    console.error(`${file} yüklenirken hata:`, err);
+                }
+            }));
+            
+            const progress = Math.min(100, ((i + CONFIG.batchSize) / CONFIG.mealFiles.length) * 100);
+            updateLoadingProgress(progress);
+        }
+    } catch (error) {
+        console.error("Meal yükleme hatası:", error);
+    } finally {
+        hideLoading();
     }
-    
-    hideLoading();
 }
 
 function loadPagesAround(pageNum) {
@@ -393,7 +398,7 @@ function displayPage(pageNum) {
             if (hasNotes) {
                 html += `<button class="toggle-btn dipnot-btn" onclick="toggleNote('${noteId}')">📌 Dipnot</button>`;
             }
-            html += `<button class="toggle-btn" onclick="toggleMeal('${mealId}', ${suraNum}, ${verseNum})">📚 Diğer Mealler</button>`;
+            html += `<button class="toggle-btn" onclick="toggleMeal('${mealId}', ${suraNum}, ${verseNum})">📚 Mealler</button>`;
             html += `<button class="toggle-btn note-btn" onclick="toggleNoteInput('${noteInputId}')">✍️ Not Al</button>`;
             html += `</div>`;
 
@@ -435,7 +440,8 @@ function displayPage(pageNum) {
     DOM.content.innerHTML = html;
     
     document.querySelectorAll('.verse-arabic').forEach(el => {
-        el.classList.add('arabic-right-align');
+        el.style.textAlign = 'right';
+        el.style.direction = 'rtl';
     });
     
     attachWordTranslation();
@@ -770,6 +776,15 @@ async function displayNotesPage() {
 }
 
 function displaySettingsPage() {
+    const themes = [
+        { name: 'light', label: 'Açık' },
+        { name: 'dark', label: 'Koyu' },
+        { name: 'green', label: 'Yeşil' },
+        { name: 'indigo', label: 'Çivit' },
+        { name: 'brown', label: 'Kahverengi' },
+        { name: 'sky', label: 'Mavi' }
+    ];
+
     const html = `
     <div class="page-header">
         <h1>⚙️ Ayarlar</h1>
@@ -779,12 +794,17 @@ function displaySettingsPage() {
         <div class="settings-section">
             <h2>Tema Ayarları</h2>
             
-            <div class="setting-item">
-                <label for="themeSelect">Tema:</label>
-                <select id="themeSelect">
-                    <option value="light" ${STATE.settings.theme === 'light' ? 'selected' : ''}>Açık</option>
-                    <option value="dark" ${STATE.settings.theme === 'dark' ? 'selected' : ''}>Koyu</option>
-                </select>
+            <div class="theme-picker">
+                ${themes.map(theme => `
+                    <label class="theme-option">
+                        <input type="radio" name="theme" value="${theme.name}" 
+                               ${STATE.settings.theme === theme.name ? 'checked' : ''}>
+                        <div class="theme-preview ${theme.name}-theme">
+                            ${theme.label}
+                            ${STATE.settings.theme === theme.name ? '✓' : ''}
+                        </div>
+                    </label>
+                `).join('')}
             </div>
             
             <div class="setting-item">
@@ -806,23 +826,57 @@ function displaySettingsPage() {
             
             <button class="toggle-btn" id="saveSettingsBtn">Ayarları Kaydet</button>
         </div>
+    </div>
+    
+    <div class="sura">
+        <div class="page-header">
+            <h1>🎨 Tema Önizleme</h1>
+        </div>
+        <div class="verse-preview">
+            <div class="verse-number">1:1</div>
+            <div class="verse-arabic">بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ</div>
+            <div class="verse-text">In the name of Allah, the Most Gracious, the Most Merciful.</div>
+            <div class="verse-text-tr"><strong>Rahman ve Rahim olan Allah’ın adıyla.</strong></div>
+            <div class="note-box">Örnek dipnot: Bu ayet Fatiha suresinin başlangıcıdır.</div>
+        </div>
     </div>`;
     
     DOM.content.innerHTML = html;
     
-    document.getElementById('themeSelect').addEventListener('change', (e) => {
-        STATE.settings.theme = e.target.value;
+    document.querySelectorAll('.theme-option input').forEach(input => {
+        input.addEventListener('change', (e) => {
+            STATE.settings.theme = e.target.value;
+            applySettings();
+            updateThemePreview();
+        });
     });
     
     document.getElementById('fontSizeSelect').addEventListener('change', (e) => {
         STATE.settings.fontSize = e.target.value;
+        applySettings();
     });
     
     document.getElementById('showTransliteration').addEventListener('change', (e) => {
         STATE.settings.showTransliteration = e.target.checked;
+        saveSettings();
     });
     
     document.getElementById('saveSettingsBtn').addEventListener('click', saveSettings);
+    updateThemePreview();
+}
+
+function updateThemePreview() {
+    const preview = document.querySelector('.verse-preview');
+    if (preview) {
+        preview.style.background = `var(--verse-bg)`;
+        preview.style.borderLeftColor = `var(--verse-border)`;
+        preview.querySelector('.verse-number').style.color = `var(--title-color)`;
+        preview.querySelector('.verse-arabic').style.color = `var(--arabic-text)`;
+        preview.querySelector('.verse-text').style.color = `var(--text-color)`;
+        preview.querySelector('.verse-text-tr').style.color = `var(--text-color)`;
+        preview.querySelector('.note-box').style.background = `var(--note-bg)`;
+        preview.querySelector('.note-box').style.color = `var(--note-text)`;
+    }
 }
 
 async function deleteNoteAndRefresh(suraNum, verseNum, fileId) {
@@ -1036,12 +1090,22 @@ function navigateToSuggestion(suggestion, inputElement) {
 }
 
 function showLoading(text = 'Yükleniyor...') {
-    DOM.loadingOverlay.style.display = 'flex';
+    const loadingOverlay = DOM.loadingOverlay;
+    loadingOverlay.style.display = 'flex';
     document.querySelector('.loading-text').textContent = text;
+    
+    loadingOverlay.autoHideTimeout = setTimeout(() => {
+        hideLoading();
+    }, 2000);
 }
 
 function hideLoading() {
-    DOM.loadingOverlay.style.display = 'none';
+    const loadingOverlay = DOM.loadingOverlay;
+    loadingOverlay.style.display = 'none';
+    
+    if (loadingOverlay.autoHideTimeout) {
+        clearTimeout(loadingOverlay.autoHideTimeout);
+    }
 }
 
 function updateLoadingProgress(percent) {

@@ -1,47 +1,55 @@
 <!DOCTYPE html>
-<html lang="tr">
+<html lang="tr" class="light-theme">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kuran Çalışması</title>
     <link rel="stylesheet" href="css/style.css">
-    
-    <!-- Firebase SDK v9.6.0 (Compat sürüm) -->
-    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-firestore-compat.js"></script>
-
-    <!-- Kendi script dosyan -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Scheherazade+New:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://apis.google.com/js/api.js"></script>
     <script src="js/script.js" defer></script>
 </head>
 <body>
     <div class="header-bar">
         <div class="nav-controls">
-            <button id="prevPage" class="nav-btn">⟵ Geri</button>
+            <button id="menuToggle" class="nav-btn">☰</button>
+            <button id="prevPage" class="nav-btn">⟵</button>
+            <div class="search-container">
+                <input type="text" id="searchInput" placeholder="Sure, ayet ara">
+                <div id="autocomplete" class="autocomplete-suggestions"></div>
+            </div>
+            <button id="nextPage" class="nav-btn">⟶</button>
             <span id="currentPageDisplay">Yükleniyor...</span>
-            <button id="nextPage" class="nav-btn">İleri ⟶</button>
-            <button id="notesPage" class="nav-btn">📝 Notlarım</button>
         </div>
         <div id="authContainer" class="auth-container">
-            <button id="loginBtn" class="auth-btn hidden">Google ile Giriş Yap</button>
+            <button id="loginBtn" class="auth-btn hidden">Google ile Giriş</button>
             <span id="userEmail" class="login-info hidden"></span>
-            <button id="logoutBtn" class="auth-btn hidden">Çıkış Yap</button>
+            <button id="logoutBtn" class="auth-btn hidden">Çıkış</button>
         </div>
-        <div class="search-container">
-            <input type="text" id="searchInput" placeholder="Sure, ayet veya meal ara (örn: Bakara, 2:255, Rahman)">
-            <div id="autocomplete" class="autocomplete-suggestions"></div>
+    </div>
+
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Yükleniyor...</div>
+        <div class="progress-container">
+            <div class="progress-bar"></div>
         </div>
     </div>
 
     <div class="main-container">
-        <div class="sidebar">
+        <div class="sidebar" id="sidebar">
+            <div class="menu-section">
+                <button id="notesPage" class="menu-item-btn">📝 Notlarım</button>
+                <button id="settingsPage" class="menu-item-btn">⚙️ Ayarlar</button>
+            </div>
             <div class="menu">
                 <h2>Sureler</h2>
                 <ul id="suraMenu"></ul>
             </div>
         </div>
-        <div class="content-area">
-            <div id="content">İçerik buraya gelecek</div>
+        <div class="content-area" id="contentArea">
+            <div id="content"></div>
         </div>
     </div>
     <div id="wordTooltip" class="word-tooltip"></div>

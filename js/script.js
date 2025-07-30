@@ -74,13 +74,21 @@ const DOM = {
 
 // Initialize app
 document.addEventListener('DOMContentLoaded', async () => {
-    loadSettings();
-    initGoogleAuth();
-    await loadInitialData();
-    buildSuraMenu();
-    setupEventListeners();
-    STATE.currentPage = 23;
-    loadPagesAround(STATE.currentPage);
+  loadSettings();
+  initGoogleAuth();
+  await loadInitialData();
+  buildSuraMenu();
+  setupEventListeners();
+  STATE.currentPage = 23;
+  loadPagesAround(STATE.currentPage);
+  const activeTheme = document.body.className;
+  console.log(`Aktif tema: ${activeTheme}`);
+  const box = document.querySelector('.verse-box');
+  if (box) {
+    box.addEventListener('mouseenter', () => {
+      console.log('Ayet kutusu üzerine gelindi.');
+    });
+  }
 });
 
 function loadSettings() {
@@ -95,13 +103,35 @@ function saveSettings() {
     localStorage.setItem('quranAppSettings', JSON.stringify(STATE.settings));
     applySettings();
     displayPage(STATE.currentPage);
-    updateThemePreview();
 }
 
 function applySettings() {
     DOM.body.className = `${STATE.settings.theme}-theme`;
-    const sizes = { small: '14px', medium: '15px', large: '16px' };
-    DOM.body.style.fontSize = sizes[STATE.settings.fontSize];
+    const sizes = { small: '10px', medium: '14px', large: '24px' };
+    const fontSize = sizes[STATE.settings.fontSize];
+    
+    // Apply font size to all text elements except Arabic
+    const elementsToStyle = [
+        '.verse-transliteration',
+        '.verse-text',
+        '.verse-text-tr',
+        '.note-box',
+        '.ai-translation',
+        '.meal-container',
+        '.passage-title',
+        '.passage-title-tr',
+        '.note-input-box textarea',
+        '.word-tooltip',
+        '.autocomplete-suggestions div',
+        '.settings-section',
+        '.about-section p'
+    ];
+    
+    elementsToStyle.forEach(selector => {
+        document.querySelectorAll(selector).forEach(el => {
+            el.style.fontSize = fontSize;
+        });
+    });
 }
 
 function initGoogleAuth() {
@@ -446,6 +476,7 @@ function displayPage(pageNum) {
     
     attachWordTranslation();
     loadNotesForPage(pageNum, suraNums, enPage);
+    applySettings(); // Re-apply settings to ensure font sizes are updated
 }
 
 function mapNotesToVerses(notesData) {
@@ -773,6 +804,7 @@ async function displayNotesPage() {
     </div>`;
     
     DOM.content.innerHTML = html;
+    applySettings(); // Re-apply settings to ensure font sizes are updated
 }
 
 function displaySettingsPage() {
@@ -826,19 +858,6 @@ function displaySettingsPage() {
             
             <button class="toggle-btn" id="saveSettingsBtn">Ayarları Kaydet</button>
         </div>
-    </div>
-    
-    <div class="sura">
-        <div class="page-header">
-            <h1>🎨 Tema Önizleme</h1>
-        </div>
-        <div class="verse-preview">
-            <div class="verse-number">1:1</div>
-            <div class="verse-arabic">بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ</div>
-            <div class="verse-text">In the name of Allah, the Most Gracious, the Most Merciful.</div>
-            <div class="verse-text-tr"><strong>Rahman ve Rahim olan Allah’ın adıyla.</strong></div>
-            <div class="note-box">Örnek dipnot: Bu ayet Fatiha suresinin başlangıcıdır.</div>
-        </div>
     </div>`;
     
     DOM.content.innerHTML = html;
@@ -847,7 +866,6 @@ function displaySettingsPage() {
         input.addEventListener('change', (e) => {
             STATE.settings.theme = e.target.value;
             applySettings();
-            updateThemePreview();
         });
     });
     
@@ -862,21 +880,6 @@ function displaySettingsPage() {
     });
     
     document.getElementById('saveSettingsBtn').addEventListener('click', saveSettings);
-    updateThemePreview();
-}
-
-function updateThemePreview() {
-    const preview = document.querySelector('.verse-preview');
-    if (preview) {
-        preview.style.background = `var(--verse-bg)`;
-        preview.style.borderLeftColor = `var(--verse-border)`;
-        preview.querySelector('.verse-number').style.color = `var(--title-color)`;
-        preview.querySelector('.verse-arabic').style.color = `var(--arabic-text)`;
-        preview.querySelector('.verse-text').style.color = `var(--text-color)`;
-        preview.querySelector('.verse-text-tr').style.color = `var(--text-color)`;
-        preview.querySelector('.note-box').style.background = `var(--note-bg)`;
-        preview.querySelector('.note-box').style.color = `var(--note-text)`;
-    }
 }
 
 async function deleteNoteAndRefresh(suraNum, verseNum, fileId) {

@@ -1,6 +1,6 @@
 // Google Drive API configuration
 const API_KEY = 'AIzaSyCI5NXHujKYUlTtRo7LoXz84VQF4CQRxa0';
-const CLIENT_ID = '703541094102-xxxxxxxxxxxx.apps.googleusercontent.com';
+const CLIENT_ID = '703541094102-xxxxxxxxxxxx.apps.googleusercontent.com'; // TODO: Replace 'xxxxxxxxxxxx' with your actual Google Client ID
 
 // App configuration
 const CONFIG = {
@@ -69,26 +69,27 @@ const DOM = {
     suraMenu: document.getElementById('suraMenu'),
     wordTooltip: document.getElementById('wordTooltip'),
     sidebar: document.getElementById('sidebar'),
+    sidebarOverlay: document.getElementById('sidebarOverlay'),
     body: document.body
 };
 
 // Initialize app
 document.addEventListener('DOMContentLoaded', async () => {
-  loadSettings();
-  initGoogleAuth();
-  await loadInitialData();
-  buildSuraMenu();
-  setupEventListeners();
-  STATE.currentPage = 23;
-  loadPagesAround(STATE.currentPage);
-  const activeTheme = document.body.className;
-  console.log(`Aktif tema: ${activeTheme}`);
-  const box = document.querySelector('.verse-box');
-  if (box) {
-    box.addEventListener('mouseenter', () => {
-      console.log('Ayet kutusu üzerine gelindi.');
-    });
-  }
+    loadSettings();
+    initGoogleAuth();
+    await loadInitialData();
+    buildSuraMenu();
+    setupEventListeners();
+    STATE.currentPage = 23;
+    loadPagesAround(STATE.currentPage);
+    const activeTheme = document.body.className;
+    console.log(`Aktif tema: ${activeTheme}`);
+    const box = document.querySelector('.verse-box');
+    if (box) {
+        box.addEventListener('mouseenter', () => {
+            console.log('Ayet kutusu üzerine gelindi.');
+        });
+    }
 });
 
 function loadSettings() {
@@ -109,8 +110,7 @@ function applySettings() {
     DOM.body.className = `${STATE.settings.theme}-theme`;
     const sizes = { small: '10px', medium: '14px', large: '24px' };
     const fontSize = sizes[STATE.settings.fontSize];
-    
-    // Apply font size to all text elements except Arabic
+
     const elementsToStyle = [
         '.verse-transliteration',
         '.verse-text',
@@ -126,7 +126,7 @@ function applySettings() {
         '.settings-section',
         '.about-section p'
     ];
-    
+
     elementsToStyle.forEach(selector => {
         document.querySelectorAll(selector).forEach(el => {
             el.style.fontSize = fontSize;
@@ -144,13 +144,13 @@ function initGoogleAuth() {
         }).then(() => {
             STATE.googleAuth = gapi.auth2.getAuthInstance();
             updateAuthUI();
-            
+
             STATE.googleAuth.isSignedIn.listen(updateAuthUI);
-            
+
             document.getElementById('loginBtn').addEventListener('click', () => {
                 STATE.googleAuth.signIn();
             });
-            
+
             document.getElementById('logoutBtn').addEventListener('click', () => {
                 STATE.googleAuth.signOut();
             });
@@ -178,6 +178,7 @@ function updateAuthUI() {
     }
 }
 
+
 function setupEventListeners() {
     document.getElementById('prevPage').addEventListener('click', () => {
         if (STATE.currentPage > 1) {
@@ -192,18 +193,56 @@ function setupEventListeners() {
     });
 
     document.getElementById('menuToggle').addEventListener('click', () => {
+        const isSidebarOpen = !DOM.sidebar.classList.contains('hidden');
         DOM.sidebar.classList.toggle('hidden');
+        DOM.sidebarOverlay.classList.toggle('hidden');
+        document.body.style.overflow = isSidebarOpen ? '' : 'hidden';
+        
+        // Menü açıldığında menu-section ve tüm butonların görünürlüğünü garantile
+        const menuSection = DOM.sidebar.querySelector('.menu-section');
+        const notesPage = document.getElementById('notesPage');
+        const settingsPage = document.getElementById('settingsPage');
+        const closeMenu = document.getElementById('closeMenu');
+        if (menuSection && !isSidebarOpen) {
+            menuSection.style.display = 'flex'; // Flex düzeni ile butonları hizala
+            [notesPage, settingsPage, closeMenu].forEach(btn => {
+                if (btn) btn.style.display = 'block'; // Her butonun görünürlüğünü garantile
+            });
+        }
     });
 
-    document.getElementById('notesPage').addEventListener('click', displayNotesPage);
-    document.getElementById('settingsPage').addEventListener('click', displaySettingsPage);
+    document.getElementById('closeMenu').addEventListener('click', () => {
+        DOM.sidebar.classList.add('hidden');
+        DOM.sidebarOverlay.classList.add('hidden');
+        document.body.style.overflow = '';
+    });
+
+    document.getElementById('sidebarOverlay').addEventListener('click', () => {
+        DOM.sidebar.classList.add('hidden');
+        DOM.sidebarOverlay.classList.add('hidden');
+        document.body.style.overflow = '';
+    });
+
+    document.getElementById('notesPage').addEventListener('click', () => {
+        displayNotesPage();
+        DOM.sidebar.classList.add('hidden');
+        DOM.sidebarOverlay.classList.add('hidden');
+        document.body.style.overflow = '';
+    });
+
+    document.getElementById('settingsPage').addEventListener('click', () => {
+        displaySettingsPage();
+        DOM.sidebar.classList.add('hidden');
+        DOM.sidebarOverlay.classList.add('hidden');
+        document.body.style.overflow = '';
+    });
 
     setupSearch();
 }
 
 async function loadInitialData() {
     showLoading();
-    
+
     try {
         await Promise.all([
             loadDataFile(CONFIG.dataPaths.en, 'en'),
@@ -212,10 +251,10 @@ async function loadInitialData() {
             loadDataFile(CONFIG.dataPaths.dictionary, 'dictionary'),
             loadDataFile(CONFIG.dataPaths.ai, 'ai')
         ]);
-        
+
         processMetadata();
         await loadMeals();
-        
+
         hideLoading();
     } catch (error) {
         console.error("Initial data loading error:", error);
@@ -265,7 +304,7 @@ function processMetadata() {
 
 async function loadMeals() {
     showLoading('Mealler yükleniyor...');
-    
+
     try {
         for (let i = 0; i < CONFIG.mealFiles.length; i += CONFIG.batchSize) {
             const batch = CONFIG.mealFiles.slice(i, i + CONFIG.batchSize);
@@ -279,7 +318,7 @@ async function loadMeals() {
                     console.error(`${file} yüklenirken hata:`, err);
                 }
             }));
-            
+
             const progress = Math.min(100, ((i + CONFIG.batchSize) / CONFIG.mealFiles.length) * 100);
             updateLoadingProgress(progress);
         }
@@ -293,27 +332,27 @@ async function loadMeals() {
 function loadPagesAround(pageNum) {
     const startPage = Math.max(1, pageNum - STATE.settings.initialLoad);
     const endPage = Math.min(STATE.totalPages, pageNum + STATE.settings.initialLoad);
-    
+
     const pagesToLoad = [];
     for (let i = startPage; i <= endPage; i++) {
         if (!STATE.loadedPages.has(i)) {
             pagesToLoad.push(i);
         }
     }
-    
+
     if (pagesToLoad.length > 0) {
         loadPagesBatch(pagesToLoad);
     }
-    
+
     displayPage(pageNum);
 }
 
 async function loadPagesBatch(pageNumbers) {
     if (STATE.isLoading) return;
-    
+
     STATE.isLoading = true;
     showLoading(`Sayfalar yükleniyor (${pageNumbers[0]}-${pageNumbers[pageNumbers.length - 1]})...`);
-    
+
     try {
         for (const pageNum of pageNumbers) {
             if (!STATE.loadedPages.has(pageNum)) {
@@ -323,7 +362,7 @@ async function loadPagesBatch(pageNumbers) {
                 await new Promise(resolve => setTimeout(resolve, 100));
             }
         }
-        
+
         if (pageNumbers.includes(STATE.currentPage)) {
             displayPage(STATE.currentPage);
         }
@@ -337,29 +376,48 @@ async function loadPagesBatch(pageNumbers) {
 
 function goToPage(pageNum) {
     if (pageNum < 1 || pageNum > STATE.totalPages) return;
-    
+
     STATE.currentPage = pageNum;
-    
+
     if (STATE.loadedPages.has(pageNum)) {
         displayPage(pageNum);
     } else {
         loadPagesAround(pageNum);
     }
-    
+
+    window.scrollTo({
+        top: 0,
+        behavior: 'smooth'
+    });
+
     if (!STATE.isLoading) {
         const startPage = Math.max(1, pageNum - STATE.settings.initialLoad);
         const endPage = Math.min(STATE.totalPages, pageNum + STATE.settings.initialLoad);
-        
+
         const pagesToLoad = [];
         for (let i = startPage; i <= endPage; i++) {
             if (!STATE.loadedPages.has(i)) {
                 pagesToLoad.push(i);
             }
         }
-        
+
         if (pagesToLoad.length > 0) {
             loadPagesBatch(pagesToLoad);
         }
+    }
+}
+
+function goToSura(suraNum) {
+    if (STATE.metadata.sureToPageMap[suraNum]) {
+        goToPage(STATE.metadata.sureToPageMap[suraNum]);
+
+        DOM.sidebar.classList.add('hidden');
+        DOM.sidebarOverlay.classList.add('hidden');
+        document.body.style.overflow = '';
+
+        setTimeout(() => {
+            scrollToVerse(suraNum, 1);
+        }, 300);
     }
 }
 
@@ -410,29 +468,25 @@ function displayPage(pageNum) {
             <div class="verse">
                 <div class="verse-number">${suraNum}:${verseNum}</div>
                 <div class="verse-arabic">${enSura.encrypted[verseNum]}</div>`;
-                
+
             if (STATE.settings.showTransliteration) {
                 html += `<div class="verse-transliteration">${STATE.data.translit[suraNum]?.verses[verseNum] || ''}</div>`;
             }
-                
+
             html += `
                 <div class="verse-text">${enSura.verses[verseNum]}</div>
                 <div class="verse-text-tr"><strong>${trSura.verses[verseNum]}</strong></div>`;
 
-            const noteId = `note-${suraNum}-${verseNum}`;
-            const mealId = `meal-${suraNum}-${verseNum}`;
-            const noteInputId = `note-input-box-${suraNum}-${verseNum}`;
-            const aiTranslationId = `ai-translation-${suraNum}-${verseNum}`;
-
             html += `<div class="buttons">`;
             if (hasNotes) {
-                html += `<button class="toggle-btn dipnot-btn" onclick="toggleNote('${noteId}')">📌 Dipnot</button>`;
+                html += `<button class="toggle-btn dipnot-btn" onclick="toggleNote('note-${suraNum}-${verseNum}')">📌 Dipnot</button>`;
             }
-            html += `<button class="toggle-btn" onclick="toggleMeal('${mealId}', ${suraNum}, ${verseNum})">📚 Mealler</button>`;
-            html += `<button class="toggle-btn note-btn" onclick="toggleNoteInput('${noteInputId}')">✍️ Not Al</button>`;
-            html += `</div>`;
+            html += `
+                <button class="toggle-btn" onclick="toggleMeal('meal-${suraNum}-${verseNum}', ${suraNum}, ${verseNum})">📚 Mealler</button>
+                <button class="toggle-btn note-btn" onclick="toggleNoteInput('note-input-box-${suraNum}-${verseNum}')">✍️ Not Al</button>
+            </div>`;
 
-            html += `<div id="${aiTranslationId}" class="ai-translation">`;
+            html += `<div id="ai-translation-${suraNum}-${verseNum}" class="ai-translation">`;
             if (STATE.data.ai[suraNum] && STATE.data.ai[suraNum].verses && STATE.data.ai[suraNum].verses[verseNum]) {
                 html += `<strong>AI ÇEVİRİ</strong> ${STATE.data.ai[suraNum].verses[verseNum]}`;
             } else {
@@ -441,7 +495,7 @@ function displayPage(pageNum) {
             html += `</div>`;
 
             if (hasNotes) {
-                html += `<div id="${noteId}" class="note-box hidden">`;
+                html += `<div id="note-${suraNum}-${verseNum}" class="note-box hidden">`;
                 if (enNotesMap[verseKey]) {
                     enNotesMap[verseKey].forEach(note => {
                         html += `<div class="note-en"><strong>EN:</strong> ${note}</div>`;
@@ -455,8 +509,8 @@ function displayPage(pageNum) {
                 html += `</div>`;
             }
 
-            html += `<div id="${mealId}" class="note-box hidden"></div>`;
-            html += `<div id="${noteInputId}" class="note-input-box hidden">
+            html += `<div id="meal-${suraNum}-${verseNum}" class="note-box hidden"></div>`;
+            html += `<div id="note-input-box-${suraNum}-${verseNum}" class="note-input-box hidden">
                         <textarea id="note-input-${suraNum}-${verseNum}" placeholder="Notunuzu buraya yazın..."></textarea>
                         <button onclick="saveNote(${suraNum}, ${verseNum})">Kaydet</button>
                      </div>`;
@@ -467,16 +521,25 @@ function displayPage(pageNum) {
         html += `</div>`;
     }
 
+    html += `<div class="page-footer">`;
+    if (STATE.currentPage > 1) {
+        html += `<button class="header-btn" onclick="goToPage(${STATE.currentPage - 1})">⟵ Geri</button>`;
+    }
+    if (STATE.currentPage < STATE.totalPages) {
+        html += `<button class="header-btn" onclick="goToPage(${STATE.currentPage + 1})">İleri ⟶</button>`;
+    }
+    html += `</div>`;
+
     DOM.content.innerHTML = html;
-    
+
     document.querySelectorAll('.verse-arabic').forEach(el => {
         el.style.textAlign = 'right';
         el.style.direction = 'rtl';
     });
-    
+
     attachWordTranslation();
     loadNotesForPage(pageNum, suraNums, enPage);
-    applySettings(); // Re-apply settings to ensure font sizes are updated
+    applySettings();
 }
 
 function mapNotesToVerses(notesData) {
@@ -515,15 +578,9 @@ function buildSuraMenu() {
     DOM.suraMenu.innerHTML = html;
 }
 
-function goToSura(suraNum) {
-    if (STATE.metadata.sureToPageMap[suraNum]) {
-        goToPage(STATE.metadata.sureToPageMap[suraNum]);
-    }
-}
-
 async function loadNotesForPage(pageNum, suraNums, enPage) {
     if (!STATE.googleUser) return;
-    
+
     for (const suraNum of suraNums) {
         const verseKeys = Object.keys(enPage.sura[suraNum].verses).sort((a, b) => Number(a) - Number(b));
         for (const verseNum of verseKeys) {
@@ -768,7 +825,7 @@ async function displayNotesPage() {
                             method: 'GET',
                             params: { alt: 'media' }
                         });
-                        
+
                         html += `
                         <div class="verse-number">${note.suraNum}:${note.verseNum}</div>
                         <div class="note-box">${fileResponse.body}</div>
@@ -789,7 +846,7 @@ async function displayNotesPage() {
     html += `
         </div>
     </div>
-    
+
     <div class="sura">
         <div class="page-header">
             <h1>📝 Yazılım Hakkında</h1>
@@ -802,9 +859,9 @@ async function displayNotesPage() {
             </div>
         </div>
     </div>`;
-    
+
     DOM.content.innerHTML = html;
-    applySettings(); // Re-apply settings to ensure font sizes are updated
+    applySettings();
 }
 
 function displaySettingsPage() {
@@ -821,11 +878,11 @@ function displaySettingsPage() {
     <div class="page-header">
         <h1>⚙️ Ayarlar</h1>
     </div>
-    
+
     <div class="sura">
         <div class="settings-section">
             <h2>Tema Ayarları</h2>
-            
+
             <div class="theme-picker">
                 ${themes.map(theme => `
                     <label class="theme-option">
@@ -838,7 +895,7 @@ function displaySettingsPage() {
                     </label>
                 `).join('')}
             </div>
-            
+
             <div class="setting-item">
                 <label for="fontSizeSelect">Yazı Boyutu:</label>
                 <select id="fontSizeSelect">
@@ -847,7 +904,7 @@ function displaySettingsPage() {
                     <option value="large" ${STATE.settings.fontSize === 'large' ? 'selected' : ''}>Büyük</option>
                 </select>
             </div>
-            
+
             <div class="setting-item">
                 <label>
                     <input type="checkbox" id="showTransliteration" 
@@ -855,36 +912,36 @@ function displaySettingsPage() {
                     Transkripsiyon Göster
                 </label>
             </div>
-            
+
             <button class="toggle-btn" id="saveSettingsBtn">Ayarları Kaydet</button>
         </div>
     </div>`;
-    
+
     DOM.content.innerHTML = html;
-    
+
     document.querySelectorAll('.theme-option input').forEach(input => {
         input.addEventListener('change', (e) => {
             STATE.settings.theme = e.target.value;
             applySettings();
         });
     });
-    
+
     document.getElementById('fontSizeSelect').addEventListener('change', (e) => {
         STATE.settings.fontSize = e.target.value;
         applySettings();
     });
-    
+
     document.getElementById('showTransliteration').addEventListener('change', (e) => {
         STATE.settings.showTransliteration = e.target.checked;
         saveSettings();
     });
-    
+
     document.getElementById('saveSettingsBtn').addEventListener('click', saveSettings);
 }
 
 async function deleteNoteAndRefresh(suraNum, verseNum, fileId) {
     if (!confirm('Bu notu silmek istediğinize emin misiniz?')) return;
-    
+
     try {
         await gapi.client.drive.files.delete({ fileId: fileId });
         displayNotesPage();
@@ -897,9 +954,11 @@ async function deleteNoteAndRefresh(suraNum, verseNum, fileId) {
 function goToVerse(suraNum, verseNum) {
     if (STATE.metadata.sureToPageMap[suraNum]) {
         goToPage(STATE.metadata.sureToPageMap[suraNum]);
-        
+
         setTimeout(() => {
-            const verseElement = document.querySelector(`.verse-number:contains("${suraNum}:${verseNum}")`);
+            const verseElement = Array.from(document.querySelectorAll('.verse-number')).find(
+                el => el.textContent.trim() === `${suraNum}:${verseNum}`
+            );
             if (verseElement) {
                 verseElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 const verseContainer = verseElement.closest('.verse');
@@ -917,23 +976,23 @@ function goToVerse(suraNum, verseNum) {
 function scrollToVerse(suraNum, verseNum) {
     const verseElements = document.querySelectorAll('.verse-number');
     let targetElement = null;
-    
+
     verseElements.forEach(el => {
         if (el.textContent.trim() === `${suraNum}:${verseNum}`) {
             targetElement = el.closest('.verse');
         }
     });
-    
+
     if (targetElement) {
         const headerHeight = document.querySelector('.header-bar').offsetHeight;
         const elementTop = targetElement.offsetTop;
         const offsetPosition = elementTop - headerHeight - 50;
-        
+
         window.scrollTo({
             top: offsetPosition,
             behavior: 'smooth'
         });
-        
+
         targetElement.style.boxShadow = '0 0 20px rgba(10, 104, 71, 0.5)';
         setTimeout(() => {
             targetElement.style.boxShadow = '';
@@ -944,7 +1003,7 @@ function scrollToVerse(suraNum, verseNum) {
 function setupSearch() {
     const searchInput = DOM.searchInput;
     const autocomplete = DOM.autocomplete;
-    
+
     searchInput.addEventListener('input', (e) => {
         const val = e.target.value.toLowerCase().trim();
         autocomplete.innerHTML = '';
@@ -961,9 +1020,9 @@ function setupSearch() {
             const suraName = STATE.metadata.sureNames[suraNum].toLowerCase();
             if (suraName.includes(val)) {
                 found = true;
-                suggestions.push({ 
-                    suraNum, 
-                    suraName: STATE.metadata.sureNames[suraNum], 
+                suggestions.push({
+                    suraNum,
+                    suraName: STATE.metadata.sureNames[suraNum],
                     type: 'sura',
                     priority: suraName.startsWith(val) ? 1 : 2
                 });
@@ -995,15 +1054,15 @@ function setupSearch() {
 
         if (found) {
             suggestions.sort((a, b) => a.priority - b.priority);
-            
+
             suggestions.slice(0, 8).forEach(suggestion => {
                 const div = document.createElement('div');
                 if (suggestion.type === 'verse') {
                     div.innerHTML = `<strong>${suggestion.suraNum}:${suggestion.verseNum}</strong> - ${suggestion.text.replace(suggestion.text.split(' - ')[0] + ' - ', '')}`;
                 } else {
-                    div.innerHTML = `<strong>${suggestion.suraNum}:</strong> ${suggestion.suraName}`;
+                    div.innerHTML = `<strong>${suraNum}:</strong> ${suggestion.suraName}`;
                 }
-                
+
                 div.onclick = () => {
                     navigateToSuggestion(suggestion, searchInput);
                 };
@@ -1019,11 +1078,11 @@ function setupSearch() {
         if (e.key === 'Enter') {
             e.preventDefault();
             const val = e.target.value.trim();
-            
+
             const verseMatch = val.match(/^(\d+):(\d+)$/);
             if (verseMatch) {
                 const [_, suraNum, verseNum] = verseMatch;
-                
+
                 if (STATE.data.en && STATE.data.tr) {
                     for (let page in STATE.data.en) {
                         const enPage = STATE.data.en[page];
@@ -1031,20 +1090,20 @@ function setupSearch() {
                             goToPage(parseInt(page));
                             searchInput.value = '';
                             autocomplete.style.display = 'none';
-                            
+
                             setTimeout(() => {
                                 scrollToVerse(suraNum, verseNum);
                             }, 300);
-                            
+
                             return;
                         }
                     }
-                    
+
                     alert(`${suraNum}:${verseNum} ayeti bulunamadı!`);
                     return;
                 }
             }
-            
+
             for (const suraNum in STATE.metadata.sureNames) {
                 const suraName = STATE.metadata.sureNames[suraNum].toLowerCase();
                 if (suraName.includes(val.toLowerCase())) {
@@ -1055,7 +1114,7 @@ function setupSearch() {
                     return;
                 }
             }
-            
+
             if (val) {
                 alert('Aradığınız sure veya ayet bulunamadı! Format: "2:209" veya sure ismi');
             }
@@ -1086,7 +1145,7 @@ function navigateToSuggestion(suggestion, inputElement) {
         goToPage(STATE.metadata.sureToPageMap[suggestion.suraNum]);
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
-    
+
     DOM.autocomplete.innerHTML = '';
     DOM.autocomplete.style.display = 'none';
     inputElement.value = '';
@@ -1096,7 +1155,7 @@ function showLoading(text = 'Yükleniyor...') {
     const loadingOverlay = DOM.loadingOverlay;
     loadingOverlay.style.display = 'flex';
     document.querySelector('.loading-text').textContent = text;
-    
+
     loadingOverlay.autoHideTimeout = setTimeout(() => {
         hideLoading();
     }, 2000);
@@ -1105,7 +1164,7 @@ function showLoading(text = 'Yükleniyor...') {
 function hideLoading() {
     const loadingOverlay = DOM.loadingOverlay;
     loadingOverlay.style.display = 'none';
-    
+
     if (loadingOverlay.autoHideTimeout) {
         clearTimeout(loadingOverlay.autoHideTimeout);
     }
@@ -1118,3 +1177,4 @@ function updateLoadingProgress(percent) {
     }
     document.querySelector('.loading-text').textContent = `Yükleniyor... %${Math.round(percent)}`;
 }
+

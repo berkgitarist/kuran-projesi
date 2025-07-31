@@ -13,19 +13,19 @@
 <body>
     <div class="header-bar">
         <div class="nav-controls">
-            <button id="menuToggle" class="nav-btn">☰</button>
-            <button id="prevPage" class="nav-btn">⟵</button>
+            <button id="menuToggle" class="nav-btn" aria-label="Menüyü Aç">☰</button>
+            <button id="prevPage" class="nav-btn" aria-label="Önceki Sayfa">⟵</button>
             <div class="search-container">
                 <input type="text" id="searchInput" placeholder="Sure, ayet ara">
                 <div id="autocomplete" class="autocomplete-suggestions"></div>
             </div>
-            <button id="nextPage" class="nav-btn">⟶</button>
+            <button id="nextPage" class="nav-btn" aria-label="Sonraki Sayfa">⟶</button>
             <span id="currentPageDisplay">Kuran Teyit</span>
         </div>
         <div id="authContainer" class="auth-container">
-            <button id="loginBtn" class="auth-btn hidden">Google ile Giriş</button>
+            <button id="loginBtn" class="auth-btn hidden" aria-label="Google ile Giriş Yap">Google ile Giriş</button>
             <span id="userEmail" class="login-info hidden"></span>
-            <button id="logoutBtn" class="auth-btn hidden">Çıkış</button>
+            <button id="logoutBtn" class="auth-btn hidden" aria-label="Çıkış Yap">Çıkış</button>
         </div>
     </div>
 
@@ -38,16 +38,18 @@
     </div>
 
     <div class="main-container">
-        <div class="sidebar" id="sidebar">
+        <div class="sidebar hidden" id="sidebar">
             <div class="menu-section">
-                <button id="notesPage" class="menu-item-btn">📝 Notlarım</button>
-                <button id="settingsPage" class="menu-item-btn">⚙️ Ayarlar</button>
+                <button id="notesPage" class="menu-item-btn" aria-label="Notlarım Sayfası">📝 Notlarım</button>
+                <button id="settingsPage" class="menu-item-btn" aria-label="Ayarlar Sayfası">⚙️ Ayarlar</button>
+                <button id="closeMenu" class="menu-item-btn" aria-label="Menüyü Kapat">✖ Kapat</button>
             </div>
             <div class="menu">
                 <h2>Sureler</h2>
                 <ul id="suraMenu"></ul>
             </div>
         </div>
+        <div id="sidebarOverlay" class="sidebar-overlay hidden"></div>
         <div class="content-area" id="contentArea">
             <div id="content"></div>
         </div>

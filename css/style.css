@@ -342,11 +342,12 @@ body {
     top: 0;
     left: 0;
     right: 0;
-    z-index: 1000;
+    z-index: 1100;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 16px;
+    height: 60px; /* Sabit yükseklik */
 }
 
 .nav-controls {
@@ -539,28 +540,34 @@ body {
     max-width: 1400px;
     margin: 0 auto;
     padding: 20px;
-    padding-top: 80px; /* Add padding to prevent content from being hidden under fixed header */
+    padding-top: 80px; /* Header ve sidebar için yeterli boşluk */
 }
 
 /* SIDEBAR */
 .sidebar {
+    position: fixed;
+    top: 60px; /* Header'ın altında başlar */
+    left: 0;
     width: 280px;
+    height: calc(100% - 60px); /* Header hariç kalan alan */
     background: var(--sidebar-bg);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-    height: fit-content;
-    position: sticky;
-    top: 100px;
-    overflow: hidden;
+    box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
+    z-index: 1001; /* Header'ın üstünde */
+    transform: translateX(-100%);
+    transition: transform 0.3s ease;
+    overflow-y: auto; /* İçerik taşarsa kaydırılabilir */
 }
 
-.sidebar.hidden {
-    display: none;
+.sidebar:not(.hidden) {
+    transform: translateX(0);
 }
 
 .menu-section {
     padding: 20px;
     border-bottom: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    gap: 12px; /* Butonlar arasında boşluk */
 }
 
 .menu-item-btn {
@@ -568,15 +575,31 @@ body {
     background: var(--button-primary);
     color: var(--header-text);
     border: none;
-    padding: 12px 16px;
+    padding: 12px 20px;
     border-radius: var(--radius);
     cursor: pointer;
     font-weight: 500;
-    margin-bottom: 8px;
+    font-size: 16px;
     transition: var(--transition);
+    display: block !important;
+    text-align: left;
 }
 
 .menu-item-btn:hover {
+    background: var(--button-primary-hover);
+    transform: translateY(-1px);
+}
+
+/* Notlarım butonuna stil düzenlemesi */
+#notesPage {
+    background: var(--button-primary); /* Diğer butonlarla aynı renk */
+    font-weight: 500; /* Diğer butonlarla uyumlu */
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); /* Hafif gölge */
+    font-size: 16px; /* Yazı boyutunu düzelt */
+    padding: 12px 20px; /* Boyutları eşitle */
+}
+
+#notesPage:hover {
     background: var(--button-primary-hover);
     transform: translateY(-1px);
 }
@@ -586,6 +609,14 @@ body.sky-theme .menu-item-btn {
 }
 
 body.sky-theme .menu-item-btn:hover {
+    background: var(--dipnot-btn-hover);
+}
+
+body.sky-theme #notesPage {
+    background: var(--dipnot-btn-bg); /* Sky temada uyumlu renk */
+}
+
+body.sky-theme #notesPage:hover {
     background: var(--dipnot-btn-hover);
 }
 
@@ -621,6 +652,22 @@ body.sky-theme .menu-item-btn:hover {
     background: var(--transliteration-bg);
     color: var(--transliteration-text);
     transform: translateX(4px);
+}
+
+/* SIDEBAR OVERLAY */
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.3);
+    z-index: 1000;
+}
+
+.sidebar-overlay:not(.hidden) {
+    display: block;
 }
 
 /* CONTENT AREA */
@@ -789,6 +836,7 @@ body.sky-theme .menu-item-btn:hover {
     gap: 8px;
     margin-top: 12px;
     flex-wrap: wrap;
+    justify-content: flex-end;
 }
 
 .toggle-btn {
@@ -916,15 +964,15 @@ body.sky-theme .toggle-btn:hover {
 /* WORD TOOLTIP */
 .word-tooltip {
     position: absolute;
-    background: #ffffff; /* Fixed white background for all themes */
-    border: 1px solid #e0e0e0; /* Light theme border color */
+    background: #ffffff;
+    border: 1px solid #e0e0e0;
     padding: 4px 8px;
     border-radius: 8px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     z-index: 9999;
     display: none;
     max-width: 250px;
-    color: #2d3748; /* Light theme text color */
+    color: #2d3748;
 }
 
 /* UTILITY CLASSES */
@@ -938,6 +986,16 @@ body.sky-theme .toggle-btn:hover {
     border: 2px solid var(--button-primary) !important;
 }
 
+/* PAGE FOOTER */
+.page-footer {
+    margin-top: 20px;
+    padding: 10px;
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    flex-wrap: wrap;
+}
+
 /* RESPONSIVE */
 @media (max-width: 1024px) {
     .main-container {
@@ -947,7 +1005,15 @@ body.sky-theme .toggle-btn:hover {
     
     .sidebar {
         width: 100%;
-        position: static;
+        position: fixed;
+        top: 60px; /* Header'ın altında */
+        left: 0;
+        right: 0;
+        height: calc(100% - 60px); /* Header hariç kalan alan */
+        background: var(--sidebar-bg);
+        box-shadow: none;
+        border: none;
+        z-index: 1001;
     }
 }
 
@@ -969,23 +1035,98 @@ body.sky-theme .toggle-btn:hover {
         margin: 0 8px;
     }
     
-    .verse {
-        padding: 6px;
-    }
-    
-    .verse-arabic, .bismillah {
-        font-size: 24px;
-        padding: 4px 8px;
-    }
-    
-    .buttons {
-        flex-direction: column;
-    }
-    
-    .toggle-btn {
+    .sidebar {
         width: 100%;
-        justify-content: center;
+        background: var(--sidebar-bg);
+        box-shadow: none;
+        border: none;
+        position: fixed;
+        top: 60px; /* Header'ın altında */
+        left: 0;
+        right: 0;
+        z-index: 1001;
+        padding: 10px;
     }
+    
+    .sidebar:not(.hidden) {
+        display: block !important;
+    }
+    
+    .menu-section {
+        background: var(--sidebar-bg);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        padding: 15px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    .menu-item-btn {
+        font-size: 16px;
+        padding: 12px 20px;
+        margin-bottom: 0;
+        display: block !important;
+        background: var(--button-primary);
+        color: var(--header-text);
+        border: none;
+        border-radius: var(--radius);
+        cursor: pointer;
+        transition: var(--transition);
+    }
+    
+    .menu-item-btn:hover {
+        background: var(--button-primary-hover);
+        transform: translateY(-1px);
+    }
+    
+    #notesPage, #settingsPage, #closeMenu {
+        display: block !important;
+    }
+    
+    /* Notlarım butonuna mobil cihazlarda stil */
+    #notesPage {
+        background: var(--button-primary); /* Diğer butonlarla aynı renk */
+        font-weight: 500;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        font-size: 16px;
+        padding: 12px 20px;
+    }
+    
+    #notesPage:hover {
+        background: var(--button-primary-hover);
+        transform: translateY(-1px);
+    }
+    
+    body.sky-theme .menu-item-btn {
+        background: var(--dipnot-btn-bg);
+    }
+    
+    body.sky-theme .menu-item-btn:hover {
+        background: var(--dipnot-btn-hover);
+    }
+    
+    body.sky-theme #notesPage {
+        background: var(--dipnot-btn-bg);
+    }
+    
+    body.sky-theme #notesPage:hover {
+        background: var(--dipnot-btn-hover);
+    }
+}
+
+.notes-section {
+    background: var(--note-bg);
+    padding: 12px;
+    border-radius: var(--radius);
+    border: 1px solid var(--note-border);
+    margin-top: 12px;
+}
+
+.notes-section .note-box {
+    margin: 8px 0;
+    padding: 8px;
+    border-left: 4px solid var(--note-border);
 }
 
 /* ANIMATIONS */
@@ -1157,4 +1298,16 @@ body.sky-theme .verse-box:hover {
 
 .verse-line strong {
     color: var(--highlight-text);
+}
+
+/* Sura Menu (Scrollable) */
+#suraMenu {
+    max-height: calc(100vh - 200px);
+    overflow-y: auto;
+    padding: 10px;
+}
+
+/* Prevent scrolling on body when sidebar is open */
+body.sidebar-open {
+    overflow: hidden;
 }

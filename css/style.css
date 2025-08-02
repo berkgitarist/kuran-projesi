@@ -1,4 +1,3 @@
-/* TEMA TANIMLARI - Kuransonahit.com.tr benzeri */
 :root {
     --primary-color: #1976d2;
     --primary-hover: #1565c0;
@@ -15,7 +14,6 @@
     --text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
-/* LIGHT THEME - Kuransonahit benzeri */
 .light-theme {
     --bg-color: #f8fafc;
     --card-bg: #ffffff;
@@ -65,7 +63,6 @@
     --english-bismillah-bg: #e3f2fd;
 }
 
-/* DARK THEME */
 .dark-theme {
     --bg-color: #0f172a;
     --card-bg: #1e293b;
@@ -115,7 +112,6 @@
     --english-bismillah-bg: #1e3a8a;
 }
 
-/* GREEN THEME */
 .green-theme {
     --bg-color: #0d2818;
     --card-bg: #1b4332;
@@ -165,7 +161,6 @@
     --english-bismillah-bg: #0a1c12;
 }
 
-/* INDIGO THEME */
 .indigo-theme {
     --bg-color: #1a237e;
     --card-bg: #303f9f;
@@ -215,7 +210,6 @@
     --english-bismillah-bg: #151a5e;
 }
 
-/* BROWN THEME */
 .brown-theme {
     --bg-color: #3e2723;
     --card-bg: #5d4037;
@@ -265,7 +259,6 @@
     --english-bismillah-bg: #2e1f1b;
 }
 
-/* SKY THEME */
 .sky-theme {
     --bg-color: #0f172a;
     --card-bg: #111827;
@@ -317,7 +310,6 @@
     --gradient-end: transparent;
 }
 
-/* TEMEL STİLLER */
 * {
     box-sizing: border-box;
 }
@@ -332,7 +324,6 @@ body {
     transition: var(--transition);
 }
 
-/* HEADER */
 .header-bar {
     background: var(--header-bg);
     color: var(--header-text);
@@ -347,7 +338,7 @@ body {
     align-items: center;
     justify-content: space-between;
     gap: 16px;
-    height: 60px; /* Sabit yükseklik */
+    height: 60px;
 }
 
 .nav-controls {
@@ -412,7 +403,6 @@ body {
     backdrop-filter: blur(10px);
 }
 
-/* AUTOCOMPLETE */
 .autocomplete-suggestions {
     position: absolute;
     top: 100%;
@@ -444,7 +434,6 @@ body {
     border-bottom: none;
 }
 
-/* AUTH CONTAINER */
 .auth-container {
     display: flex;
     align-items: center;
@@ -474,7 +463,6 @@ body {
     font-weight: 500;
 }
 
-/* LOADING */
 .loading-overlay {
     position: fixed;
     top: 0;
@@ -533,29 +521,27 @@ body {
     width: 0%;
 }
 
-/* MAIN CONTAINER */
 .main-container {
     display: flex;
     gap: 20px;
     max-width: 1400px;
     margin: 0 auto;
     padding: 20px;
-    padding-top: 80px; /* Header ve sidebar için yeterli boşluk */
+    padding-top: 80px;
 }
 
-/* SIDEBAR */
 .sidebar {
     position: fixed;
-    top: 60px; /* Header'ın altında başlar */
+    top: 60px;
     left: 0;
     width: 280px;
-    height: calc(100% - 60px); /* Header hariç kalan alan */
+    height: calc(100% - 60px);
     background: var(--sidebar-bg);
     box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
-    z-index: 1001; /* Header'ın üstünde */
+    z-index: 1001;
     transform: translateX(-100%);
     transition: transform 0.3s ease;
-    overflow-y: auto; /* İçerik taşarsa kaydırılabilir */
+    overflow-y: auto;
 }
 
 .sidebar:not(.hidden) {
@@ -567,7 +553,7 @@ body {
     border-bottom: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
-    gap: 12px; /* Butonlar arasında boşluk */
+    gap: 12px;
 }
 
 .menu-item-btn {
@@ -590,13 +576,12 @@ body {
     transform: translateY(-1px);
 }
 
-/* Notlarım butonuna stil düzenlemesi */
 #notesPage {
-    background: var(--button-primary); /* Diğer butonlarla aynı renk */
-    font-weight: 500; /* Diğer butonlarla uyumlu */
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); /* Hafif gölge */
-    font-size: 16px; /* Yazı boyutunu düzelt */
-    padding: 12px 20px; /* Boyutları eşitle */
+    background: var(--button-primary);
+    font-weight: 500;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    font-size: 16px;
+    padding: 12px 20px;
 }
 
 #notesPage:hover {
@@ -613,7 +598,7 @@ body.sky-theme .menu-item-btn:hover {
 }
 
 body.sky-theme #notesPage {
-    background: var(--dipnot-btn-bg); /* Sky temada uyumlu renk */
+    background: var(--dipnot-btn-bg);
 }
 
 body.sky-theme #notesPage:hover {
@@ -654,7 +639,6 @@ body.sky-theme #notesPage:hover {
     transform: translateX(4px);
 }
 
-/* SIDEBAR OVERLAY */
 .sidebar-overlay {
     display: none;
     position: fixed;
@@ -670,13 +654,11 @@ body.sky-theme #notesPage:hover {
     display: block;
 }
 
-/* CONTENT AREA */
 .content-area {
     flex: 1;
     min-height: calc(100vh - 140px);
 }
 
-/* PAGE HEADER */
 .page-header {
     text-align: center;
     margin-bottom: 30px;
@@ -694,7 +676,6 @@ body.sky-theme #notesPage:hover {
     text-shadow: var(--text-shadow);
 }
 
-/* SURA CONTAINER */
 .sura {
     background: var(--card-bg);
     border-radius: var(--radius);
@@ -704,12 +685,12 @@ body.sky-theme #notesPage:hover {
     border: 1px solid var(--border-color);
 }
 
-/* VERSE STYLING */
 .verse {
-    padding: 8px;
+    padding: 2px;
     border-bottom: 1px solid var(--border-color);
     position: relative;
     transition: var(--transition);
+	margin-top: 0px;
 }
 
 .verse:last-child {
@@ -720,7 +701,6 @@ body.sky-theme #notesPage:hover {
     background: rgba(125, 211, 252, 0.1);
 }
 
-/* VERSE NUMBER */
 .verse-number {
     display: block;
     text-align: center;
@@ -732,13 +712,12 @@ body.sky-theme #notesPage:hover {
     color: var(--verse-number-text);
     border-radius: 50%;
     font-weight: 600;
-    margin: 0 auto 4px auto;
+    margin: 2px auto;
     box-shadow: 0 2px 8px rgba(125, 211, 252, 0.5);
     backdrop-filter: blur(4px);
     border: 1px solid var(--border-color);
 }
 
-/* VERSE ARABIC */
 .verse-arabic {
     background: var(--arabic-bg);
     padding: 4px 8px;
@@ -754,7 +733,6 @@ body.sky-theme #notesPage:hover {
     box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
-/* BISMILLAH */
 .bismillah {
     background: var(--bismillah-bg);
     padding: 4px 8px;
@@ -770,7 +748,6 @@ body.sky-theme #notesPage:hover {
     box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
-/* VERSE TRANSLITERATION */
 .verse-transliteration {
     background: var(--transliteration-bg);
     color: var(--transliteration-text);
@@ -784,7 +761,6 @@ body.sky-theme #notesPage:hover {
     border-left: 4px solid var(--verse-border);
 }
 
-/* VERSE TEXT (English) */
 .verse-text {
     background: var(--english-bg);
     color: var(--english-text);
@@ -795,7 +771,6 @@ body.sky-theme #notesPage:hover {
     border-left: 4px solid var(--verse-border);
 }
 
-/* VERSE TEXT (Turkish) */
 .verse-text-tr {
     background: var(--turkish-bg);
     color: var(--turkish-text);
@@ -805,14 +780,18 @@ body.sky-theme #notesPage:hover {
     font-weight: 500;
     line-height: 1.7;
     border-left: 4px solid var(--verse-border);
+    margin-bottom: 2px !important;
 }
 
-/* PASSAGE TITLES */
+.buttons {
+    margin-top: 2px !important;
+}
+
 .passage-title {
     background: var(--verse-border);
     color: var(--text-color);
     padding: 4px 8px;
-    margin: 4px 0;
+    margin: 2px 0;
     border-radius: var(--radius);
     font-weight: 600;
     text-align: center;
@@ -830,7 +809,6 @@ body.sky-theme #notesPage:hover {
     border: 1px solid var(--verse-border);
 }
 
-/* BUTTONS */
 .buttons {
     display: flex;
     gap: 8px;
@@ -881,7 +859,6 @@ body.sky-theme .toggle-btn:hover {
     background: var(--note-btn-hover);
 }
 
-/* NOTE BOXES */
 .note-box {
     background: var(--note-bg);
     color: var(--note-text);
@@ -902,7 +879,6 @@ body.sky-theme .toggle-btn:hover {
     box-shadow: var(--shadow);
 }
 
-/* AI TRANSLATION */
 .ai-translation {
     background: var(--ai-bg);
     color: var(--ai-text);
@@ -913,7 +889,6 @@ body.sky-theme .toggle-btn:hover {
     font-weight: 500;
 }
 
-/* MEAL CONTAINER */
 .meal-container {
     background: var(--meal-bg);
     color: var(--meal-text);
@@ -923,7 +898,6 @@ body.sky-theme .toggle-btn:hover {
     border-left: 4px solid var(--meal-border);
 }
 
-/* NOTE INPUT */
 .note-input-box {
     background: var(--card-bg);
     padding: 4px 8px;
@@ -961,7 +935,6 @@ body.sky-theme .toggle-btn:hover {
     transform: translateY(-1px);
 }
 
-/* WORD TOOLTIP */
 .word-tooltip {
     position: absolute;
     background: #ffffff;
@@ -975,7 +948,6 @@ body.sky-theme .toggle-btn:hover {
     color: #2d3748;
 }
 
-/* UTILITY CLASSES */
 .hidden {
     display: none !important;
 }
@@ -986,7 +958,6 @@ body.sky-theme .toggle-btn:hover {
     border: 2px solid var(--button-primary) !important;
 }
 
-/* PAGE FOOTER */
 .page-footer {
     margin-top: 20px;
     padding: 10px;
@@ -996,20 +967,19 @@ body.sky-theme .toggle-btn:hover {
     flex-wrap: wrap;
 }
 
-/* RESPONSIVE */
 @media (max-width: 1024px) {
     .main-container {
         flex-direction: column;
         padding: 10px;
     }
-    
+
     .sidebar {
         width: 100%;
         position: fixed;
-        top: 60px; /* Header'ın altında */
+        top: 60px;
         left: 0;
         right: 0;
-        height: calc(100% - 60px); /* Header hariç kalan alan */
+        height: calc(100% - 60px);
         background: var(--sidebar-bg);
         box-shadow: none;
         border: none;
@@ -1023,35 +993,35 @@ body.sky-theme .toggle-btn:hover {
         gap: 12px;
         padding: 12px;
     }
-    
+
     .nav-controls {
         width: 100%;
         justify-content: space-between;
     }
-    
+
     .search-container {
         max-width: none;
         flex: 1;
         margin: 0 8px;
     }
-    
+
     .sidebar {
         width: 100%;
         background: var(--sidebar-bg);
         box-shadow: none;
         border: none;
         position: fixed;
-        top: 60px; /* Header'ın altında */
+        top: 60px;
         left: 0;
         right: 0;
         z-index: 1001;
         padding: 10px;
     }
-    
+
     .sidebar:not(.hidden) {
         display: block !important;
     }
-    
+
     .menu-section {
         background: var(--sidebar-bg);
         border-radius: var(--radius);
@@ -1061,7 +1031,7 @@ body.sky-theme .toggle-btn:hover {
         flex-direction: column;
         gap: 10px;
     }
-    
+
     .menu-item-btn {
         font-size: 16px;
         padding: 12px 20px;
@@ -1074,42 +1044,41 @@ body.sky-theme .toggle-btn:hover {
         cursor: pointer;
         transition: var(--transition);
     }
-    
+
     .menu-item-btn:hover {
         background: var(--button-primary-hover);
         transform: translateY(-1px);
     }
-    
+
     #notesPage, #settingsPage, #closeMenu {
         display: block !important;
     }
-    
-    /* Notlarım butonuna mobil cihazlarda stil */
+
     #notesPage {
-        background: var(--button-primary); /* Diğer butonlarla aynı renk */
+        background: var(--button-primary);
         font-weight: 500;
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         font-size: 16px;
         padding: 12px 20px;
     }
-    
+
     #notesPage:hover {
         background: var(--button-primary-hover);
         transform: translateY(-1px);
     }
-    
+
     body.sky-theme .menu-item-btn {
         background: var(--dipnot-btn-bg);
     }
-    
+
     body.sky-theme .menu-item-btn:hover {
         background: var(--dipnot-btn-hover);
     }
-    
+
     body.sky-theme #notesPage {
         background: var(--dipnot-btn-bg);
     }
-    
+
     body.sky-theme #notesPage:hover {
         background: var(--dipnot-btn-hover);
     }
@@ -1129,7 +1098,6 @@ body.sky-theme .toggle-btn:hover {
     border-left: 4px solid var(--note-border);
 }
 
-/* ANIMATIONS */
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(10px); }
     to { opacity: 1; transform: translateY(0); }
@@ -1139,7 +1107,6 @@ body.sky-theme .toggle-btn:hover {
     animation: fadeIn 0.3s ease-out;
 }
 
-/* TEMA PICKER */
 .theme-picker {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
@@ -1182,7 +1149,6 @@ body.sky-theme .toggle-btn:hover {
     font-size: 16px;
 }
 
-/* SETTINGS STYLES */
 .settings-section {
     padding: 8px;
     background: var(--settings-bg);
@@ -1224,7 +1190,6 @@ body.sky-theme .toggle-btn:hover {
     accent-color: var(--button-primary);
 }
 
-/* VERSE PREVIEW */
 .verse-preview {
     background: var(--verse-bg);
     border: 1px solid var(--border-color);
@@ -1259,9 +1224,8 @@ body.sky-theme .toggle-btn:hover {
     color: var(--note-text);
 }
 
-/* ABOUT SECTION */
 .about-section {
-    text-align: center;
+    text-align: left;
     padding: 8px;
 }
 
@@ -1275,7 +1239,16 @@ body.sky-theme .toggle-btn:hover {
     font-weight: 600;
 }
 
-/* VERSE BOX (Sky Theme Specific) */
+.about-section ul {
+    margin: 8px 0;
+    padding-left: 20px;
+    list-style-type: disc;
+}
+
+.about-section li {
+    margin-bottom: 8px;
+}
+
 body.sky-theme .verse-box {
     background: var(--gradient-start);
     padding: 4px 8px;
@@ -1300,14 +1273,49 @@ body.sky-theme .verse-box:hover {
     color: var(--highlight-text);
 }
 
-/* Sura Menu (Scrollable) */
 #suraMenu {
     max-height: calc(100vh - 200px);
     overflow-y: auto;
     padding: 10px;
 }
 
-/* Prevent scrolling on body when sidebar is open */
 body.sidebar-open {
     overflow: hidden;
+}
+
+.intro-verse-screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: #111;
+    color: #fff;
+    z-index: 9999;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    flex-direction: column;
+    opacity: 1;
+    transition: opacity 1s ease-out;
+    font-family: 'Inter', sans-serif;
+    padding: 20px;
+}
+
+.intro-verse-screen.fade-out {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.intro-verse-content h2 {
+    font-size: 2rem;
+    margin-bottom: 1rem;
+    color: #00ffc8;
+}
+
+.intro-verse-content p {
+    font-size: 1.2rem;
+    margin: 0.3rem 0;
+    color: #f0f0f0;
 }

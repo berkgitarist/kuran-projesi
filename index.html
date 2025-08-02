@@ -3,25 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kuran Çalışması</title>
+    <title>Kuran Teyit Yazılımı</title>
+    
     <link rel="stylesheet" href="css/style.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Scheherazade+New:wght@400;700&display=swap" rel="stylesheet">
-    <script src="https://apis.google.com/js/api.js"></script>
-    <script src="js/script.js" defer></script>
+
+    <!-- Script defer yüklenecek -->
+    <script src="js/script.js?v=2" defer></script>
 </head>
 <body>
+    <!-- Üst Menü -->
     <div class="header-bar">
         <div class="nav-controls">
             <button id="menuToggle" class="nav-btn" aria-label="Menüyü Aç">☰</button>
             <button id="prevPage" class="nav-btn" aria-label="Önceki Sayfa">⟵</button>
+
             <div class="search-container">
                 <input type="text" id="searchInput" placeholder="Sure, ayet ara">
                 <div id="autocomplete" class="autocomplete-suggestions"></div>
             </div>
+
             <button id="nextPage" class="nav-btn" aria-label="Sonraki Sayfa">⟶</button>
             <span id="currentPageDisplay">Kuran Teyit</span>
         </div>
+
         <div id="authContainer" class="auth-container">
             <button id="loginBtn" class="auth-btn hidden" aria-label="Google ile Giriş Yap">Google ile Giriş</button>
             <span id="userEmail" class="login-info hidden"></span>
@@ -29,6 +35,7 @@
         </div>
     </div>
 
+    <!-- Yükleme Göstergesi -->
     <div class="loading-overlay" id="loadingOverlay">
         <div class="loading-spinner"></div>
         <div class="loading-text">Yükleniyor...</div>
@@ -37,7 +44,9 @@
         </div>
     </div>
 
+    <!-- Ana İçerik -->
     <div class="main-container">
+        <!-- Yan Menü -->
         <div class="sidebar hidden" id="sidebar">
             <div class="menu-section">
                 <button id="notesPage" class="menu-item-btn" aria-label="Notlarım Sayfası">📝 Notlarım</button>
@@ -49,11 +58,34 @@
                 <ul id="suraMenu"></ul>
             </div>
         </div>
+
+        <!-- Sidebar arka planı -->
         <div id="sidebarOverlay" class="sidebar-overlay hidden"></div>
+
+        <!-- İçerik alanı -->
         <div class="content-area" id="contentArea">
             <div id="content"></div>
         </div>
     </div>
+
+    <!-- Kelime tooltip gösterimi -->
     <div id="wordTooltip" class="word-tooltip"></div>
+	
+	<!-- Geçici test: 2:255 ayeti için -->
+<div id="note-input-box-2-255" class="note-input-box">
+    <textarea id="note-input-2-255" placeholder="Notunuzu yazın..."></textarea>
+    <button onclick="saveNote(2, 255)">Kaydet</button>
+</div>
+<div id="all-notes-2-255" class="note-box"></div>
+<script>
+    loadNotes(2, 255);
+</script>
+<div id="introVerse" class="intro-verse-screen">
+    <div class="intro-verse-content">
+        <h2>Çok Önemli Tavsiye</h2>
+        <p>[17:36] Kendiniz için teyit etmediğiniz sürece hiçbir bilgiyi kabul etmeyin.</p>
+        <p>Ben size işitme, görme ve beyin verdim ve siz onları kullanmaktan sorumlusunuz.</p>
+    </div>
+</div>	
 </body>
 </html>

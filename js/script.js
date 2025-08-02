@@ -1,6 +1,5 @@
-// Google Drive API configuration
-const API_KEY = 'AIzaSyCI5NXHujKYUlTtRo7LoXz84VQF4CQRxa0';
-const CLIENT_ID = '703541094102-xxxxxxxxxxxx.apps.googleusercontent.com'; // TODO: Replace 'xxxxxxxxxxxx' with your actual Google Client ID
+// PHP tabanlı not sistemi (Google API'siz)
+
 
 // App configuration
 const CONFIG = {
@@ -28,15 +27,15 @@ const CONFIG = {
         translit: './data/Turkce_Transkript.json',
         ai: './data/yapayzekaceviri.json',
         dictionary: './data/manual-dictionary.json'
-    }
+    },
+    folderName: 'Kuranteyit'
 };
 
-// App state
+// Uygulama durumu (state)
 const STATE = {
     currentPage: 1,
     totalPages: 604,
     loadedPages: new Set(),
-    loadingQueue: [],
     isLoading: false,
     data: {
         en: {},
@@ -59,6 +58,7 @@ const STATE = {
     }
 };
 
+
 // DOM elements
 const DOM = {
     content: document.getElementById('content'),
@@ -73,17 +73,27 @@ const DOM = {
     body: document.body
 };
 
-// Initialize app
 document.addEventListener('DOMContentLoaded', async () => {
+    // 1. Intro ayet ekranını 5 saniye göster
+    const intro = document.getElementById('introVerse');
+    if (intro) {
+        setTimeout(() => {
+            intro.classList.add('fade-out');
+        }, 5000); // 5 saniye bekleme
+    }
+
+    // 2. Geri kalan uygulama yükleme işlemleri
     loadSettings();
-    initGoogleAuth();
     await loadInitialData();
     buildSuraMenu();
     setupEventListeners();
+
     STATE.currentPage = 23;
     loadPagesAround(STATE.currentPage);
+
     const activeTheme = document.body.className;
     console.log(`Aktif tema: ${activeTheme}`);
+
     const box = document.querySelector('.verse-box');
     if (box) {
         box.addEventListener('mouseenter', () => {
@@ -91,6 +101,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 });
+
 
 function loadSettings() {
     const savedSettings = localStorage.getItem('quranAppSettings');
@@ -124,7 +135,8 @@ function applySettings() {
         '.word-tooltip',
         '.autocomplete-suggestions div',
         '.settings-section',
-        '.about-section p'
+        '.about-section p',
+        '.about-section li'
     ];
 
     elementsToStyle.forEach(selector => {
@@ -132,50 +144,6 @@ function applySettings() {
             el.style.fontSize = fontSize;
         });
     });
-}
-
-function initGoogleAuth() {
-    gapi.load('client:auth2', () => {
-        gapi.client.init({
-            apiKey: API_KEY,
-            clientId: CLIENT_ID,
-            discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
-            scope: 'https://www.googleapis.com/auth/drive.file'
-        }).then(() => {
-            STATE.googleAuth = gapi.auth2.getAuthInstance();
-            updateAuthUI();
-
-            STATE.googleAuth.isSignedIn.listen(updateAuthUI);
-
-            document.getElementById('loginBtn').addEventListener('click', () => {
-                STATE.googleAuth.signIn();
-            });
-
-            document.getElementById('logoutBtn').addEventListener('click', () => {
-                STATE.googleAuth.signOut();
-            });
-        }).catch(err => {
-            console.error('Google API init error:', err);
-        });
-    });
-}
-
-function updateAuthUI() {
-    const loginBtn = document.getElementById('loginBtn');
-    const logoutBtn = document.getElementById('logoutBtn');
-    const userEmail = document.getElementById('userEmail');
-
-    if (STATE.googleAuth && STATE.googleAuth.isSignedIn.get()) {
-        STATE.googleUser = STATE.googleAuth.currentUser.get();
-        loginBtn.classList.add('hidden');
-        logoutBtn.classList.remove('hidden');
-        userEmail.textContent = STATE.googleUser.getBasicProfile().getEmail();
-        userEmail.classList.remove('hidden');
-    } else {
-        loginBtn.classList.remove('hidden');
-        logoutBtn.classList.add('hidden');
-        userEmail.classList.add('hidden');
-    }
 }
 
 
@@ -198,15 +166,14 @@ function setupEventListeners() {
         DOM.sidebarOverlay.classList.toggle('hidden');
         document.body.style.overflow = isSidebarOpen ? '' : 'hidden';
         
-        // Menü açıldığında menu-section ve tüm butonların görünürlüğünü garantile
         const menuSection = DOM.sidebar.querySelector('.menu-section');
         const notesPage = document.getElementById('notesPage');
         const settingsPage = document.getElementById('settingsPage');
         const closeMenu = document.getElementById('closeMenu');
         if (menuSection && !isSidebarOpen) {
-            menuSection.style.display = 'flex'; // Flex düzeni ile butonları hizala
+            menuSection.style.display = 'flex';
             [notesPage, settingsPage, closeMenu].forEach(btn => {
-                if (btn) btn.style.display = 'block'; // Her butonun görünürlüğünü garantile
+                if (btn) btn.style.display = 'block';
             });
         }
     });
@@ -218,13 +185,6 @@ function setupEventListeners() {
     });
 
     document.getElementById('sidebarOverlay').addEventListener('click', () => {
-        DOM.sidebar.classList.add('hidden');
-        DOM.sidebarOverlay.classList.add('hidden');
-        document.body.style.overflow = '';
-    });
-
-    document.getElementById('notesPage').addEventListener('click', () => {
-        displayNotesPage();
         DOM.sidebar.classList.add('hidden');
         DOM.sidebarOverlay.classList.add('hidden');
         document.body.style.overflow = '';
@@ -483,7 +443,7 @@ function displayPage(pageNum) {
             }
             html += `
                 <button class="toggle-btn" onclick="toggleMeal('meal-${suraNum}-${verseNum}', ${suraNum}, ${verseNum})">📚 Mealler</button>
-                <button class="toggle-btn note-btn" onclick="toggleNoteInput('note-input-box-${suraNum}-${verseNum}')">✍️ Not Al</button>
+                <button class="toggle-btn note-btn" onclick="toggleNoteInput('note-input-box-${suraNum}-${verseNum}', ${suraNum}, ${verseNum})">✍️ Not Al</button>
             </div>`;
 
             html += `<div id="ai-translation-${suraNum}-${verseNum}" class="ai-translation">`;
@@ -509,11 +469,16 @@ function displayPage(pageNum) {
                 html += `</div>`;
             }
 
+            // Kullanıcı notlarını ekle
+            const noteKey = `${suraNum}:${verseNum}`;
+            html += `<div id="user-note-${suraNum}-${verseNum}" class="note-box hidden"></div>`;
+
             html += `<div id="meal-${suraNum}-${verseNum}" class="note-box hidden"></div>`;
             html += `<div id="note-input-box-${suraNum}-${verseNum}" class="note-input-box hidden">
                         <textarea id="note-input-${suraNum}-${verseNum}" placeholder="Notunuzu buraya yazın..."></textarea>
                         <button onclick="saveNote(${suraNum}, ${verseNum})">Kaydet</button>
                      </div>`;
+			html += `<div id="all-notes-${suraNum}-${verseNum}" class="note-box hidden"></div>`;
 
             html += `</div>`;
         }
@@ -540,6 +505,15 @@ function displayPage(pageNum) {
     attachWordTranslation();
     loadNotesForPage(pageNum, suraNums, enPage);
     applySettings();
+}
+
+function loadNotesForPage(pageNum, suraNums, enPage) {
+    for (const suraNum of suraNums) {
+        const verseKeys = Object.keys(enPage.sura[suraNum].verses);
+        for (const verseNum of verseKeys) {
+            loadNotes(suraNum, verseNum);
+        }
+    }
 }
 
 function mapNotesToVerses(notesData) {
@@ -576,22 +550,6 @@ function buildSuraMenu() {
         html += `<li onclick="goToSura(${suraNum})">${STATE.metadata.sureNames[suraNum]}</li>`;
     });
     DOM.suraMenu.innerHTML = html;
-}
-
-async function loadNotesForPage(pageNum, suraNums, enPage) {
-    if (!STATE.googleUser) return;
-
-    for (const suraNum of suraNums) {
-        const verseKeys = Object.keys(enPage.sura[suraNum].verses).sort((a, b) => Number(a) - Number(b));
-        for (const verseNum of verseKeys) {
-            const noteInputId = `note-input-${suraNum}-${verseNum}`;
-            const note = await loadNote(suraNum, verseNum);
-            const textarea = document.getElementById(noteInputId);
-            if (textarea) {
-                textarea.value = note;
-            }
-        }
-    }
 }
 
 function getOtherTranslations(suraNum, verseNum) {
@@ -666,97 +624,67 @@ function attachWordTranslation() {
     });
 }
 
-async function saveNote(suraNum, verseNum) {
-    if (!STATE.googleUser) {
-        alert('Not kaydetmek için lütfen giriş yapın!');
+function saveNote(sura, verse) {
+    const textarea = document.getElementById(`note-input-${sura}-${verse}`);
+    const note = textarea.value.trim();
+
+    if (!note) {
+        alert("Not boş olamaz.");
         return;
     }
 
-    const noteId = `note-input-${suraNum}-${verseNum}`;
-    const textarea = document.getElementById(noteId);
-    const noteText = textarea.value.trim();
-    const fileName = `kuran_not_${suraNum}_${verseNum}.txt`;
-
-    if (!noteText) {
-        try {
-            const response = await gapi.client.drive.files.list({
-                q: `name='${fileName}' and trashed=false`,
-                fields: 'files(id)'
-            });
-
-            if (response.result.files.length > 0) {
-                await gapi.client.drive.files.delete({
-                    fileId: response.result.files[0].id
-                });
-            }
-            toggleNoteInput(`note-input-box-${suraNum}-${verseNum}`);
-            return;
-        } catch (error) {
-            console.error('Not silinirken hata:', error);
-            return;
-        }
-    }
-
-    try {
-        const response = await gapi.client.drive.files.list({
-            q: `name='${fileName}' and trashed=false`,
-            fields: 'files(id)'
-        });
-
-        if (response.result.files.length > 0) {
-            await gapi.client.request({
-                path: '/upload/drive/v3/files/' + response.result.files[0].id,
-                method: 'PATCH',
-                params: { uploadType: 'media' },
-                body: noteText
-            });
+    fetch('/api/save_note.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sura, verse, note }),
+        credentials: 'include' // ✅ oturum için gerekli
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('Not kaydedildi.');
         } else {
-            await gapi.client.request({
-                path: '/upload/drive/v3/files',
-                method: 'POST',
-                params: { uploadType: 'media' },
-                headers: { 'Content-Type': 'text/plain' },
-                body: noteText,
-                resource: {
-                    name: fileName,
-                    mimeType: 'text/plain'
-                }
-            });
+            alert('Not kaydedilemedi: ' + data.message);
         }
-
-        alert('Not başarıyla kaydedildi!');
-        toggleNoteInput(`note-input-box-${suraNum}-${verseNum}`);
-    } catch (error) {
-        console.error('Not kaydedilirken hata:', error);
-        alert('Not kaydedilirken hata oluştu: ' + error.message);
-    }
+    })
+    .catch(error => {
+        console.error('Hata:', error);
+        alert('Sunucu hatası: not kaydedilemedi.');
+    });
 }
 
-async function loadNote(suraNum, verseNum) {
-    if (!STATE.googleUser) return "";
 
-    const fileName = `kuran_not_${suraNum}_${verseNum}.txt`;
 
-    try {
-        const response = await gapi.client.drive.files.list({
-            q: `name='${fileName}' and trashed=false`,
-            fields: 'files(id)'
+function loadNotes(sura, verse) {
+    fetch(`get_notes.php?sura=${sura}&verse=${verse}`)
+        .then(res => res.json())
+        .then(data => {
+            const container = document.getElementById(`all-notes-${sura}-${verse}`);
+            if (!container) return;
+
+            if (data.length === 0) {
+                container.innerHTML = '<div class="note-box">Henüz not alınmamış.</div>';
+                return;
+            }
+
+            let html = '';
+            data.forEach(note => {
+                html += `
+                    <div class="note-box">
+                        <strong>${note.username}</strong> (${note.email})<br>
+                        <div>${note.note}</div>
+                        <small>${note.created_at}</small>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        })
+        .catch(err => {
+            console.error("Notlar yüklenirken hata:", err);
         });
-
-        if (response.result.files.length > 0) {
-            const fileResponse = await gapi.client.request({
-                path: '/drive/v3/files/' + response.result.files[0].id,
-                method: 'GET',
-                params: { alt: 'media' }
-            });
-            return fileResponse.body;
-        }
-        return "";
-    } catch (error) {
-        console.error("Not yüklenirken hata:", error);
-        return "";
-    }
 }
+
 
 function toggleMeal(id, suraNum, verseNum) {
     const element = document.getElementById(id);
@@ -766,13 +694,6 @@ function toggleMeal(id, suraNum, verseNum) {
     element.classList.toggle('hidden');
 }
 
-function toggleNoteInput(id) {
-    const element = document.getElementById(id);
-    if (element) {
-        element.classList.toggle('hidden');
-    }
-}
-
 function toggleNote(id) {
     const element = document.getElementById(id);
     if (element) {
@@ -780,89 +701,6 @@ function toggleNote(id) {
     }
 }
 
-async function displayNotesPage() {
-    let html = `
-    <div class="page-header">
-        <h1>📝 Kayıtlı Notlar</h1>
-    </div>
-    <div class="sura">
-        <div class="verse">`;
-
-    if (!STATE.googleUser) {
-        html += `
-        <div class="note-box">
-            Notlarınızı görmek için giriş yapmalısınız.
-            <button class="auth-btn" onclick="document.getElementById('loginBtn').click()">Giriş Yap</button>
-        </div>`;
-    } else {
-        try {
-            const response = await gapi.client.drive.files.list({
-                q: "name contains 'kuran_not_' and trashed=false",
-                fields: 'files(id,name)'
-            });
-
-            if (response.result.files.length === 0) {
-                html += `<div class="note-box">Henüz not alınmamış.</div>`;
-            } else {
-                const notes = response.result.files.map(file => {
-                    const matches = file.name.match(/kuran_not_(\d+)_(\d+)\.txt/);
-                    return {
-                        suraNum: matches[1],
-                        verseNum: matches[2],
-                        fileId: file.id
-                    };
-                });
-
-                notes.sort((a, b) => {
-                    if (a.suraNum !== b.suraNum) return a.suraNum - b.suraNum;
-                    return a.verseNum - b.verseNum;
-                });
-
-                for (const note of notes) {
-                    try {
-                        const fileResponse = await gapi.client.request({
-                            path: '/drive/v3/files/' + note.fileId,
-                            method: 'GET',
-                            params: { alt: 'media' }
-                        });
-
-                        html += `
-                        <div class="verse-number">${note.suraNum}:${note.verseNum}</div>
-                        <div class="note-box">${fileResponse.body}</div>
-                        <button class="toggle-btn" onclick="deleteNoteAndRefresh(${note.suraNum}, ${note.verseNum}, '${note.fileId}')">Notu Sil</button>
-                        <button class="toggle-btn" onclick="goToVerse(${note.suraNum}, ${note.verseNum})">Ayete Git</button>
-                        <hr>`;
-                    } catch (error) {
-                        console.error('Not içeriği yüklenirken hata:', error);
-                    }
-                }
-            }
-        } catch (error) {
-            console.error("Notlar yüklenirken hata:", error);
-            html += `<div class="note-box">Notlar yüklenirken hata oluştu: ${error.message}</div>`;
-        }
-    }
-
-    html += `
-        </div>
-    </div>
-
-    <div class="sura">
-        <div class="page-header">
-            <h1>📝 Yazılım Hakkında</h1>
-        </div>
-        <div class="verse">
-            <div class="about-section">
-                <p>Bu yazılımı yapan <strong>"Berk KÖKSAL"</strong></p>
-                <p>berkgitarist@gmail.com</p>
-                <p>https://www.youtube.com/@berkgitarist</strong></p>
-            </div>
-        </div>
-    </div>`;
-
-    DOM.content.innerHTML = html;
-    applySettings();
-}
 
 function displaySettingsPage() {
     const themes = [
@@ -871,7 +709,7 @@ function displaySettingsPage() {
         { name: 'green', label: 'Yeşil' },
         { name: 'indigo', label: 'Çivit' },
         { name: 'brown', label: 'Kahverengi' },
-        { name: 'sky', label: 'Mavi' }
+        { name: 'sky', label: 'Gece' }
     ];
 
     const html = `
@@ -913,6 +751,24 @@ function displaySettingsPage() {
                 </label>
             </div>
 
+            <div class="settings-section">
+                <h2>Kullanma Talimatı</h2>
+                <div class="about-section">
+                    <p>Bu yazılımda:</p>
+                    <ul>
+                        <li>İngilizce metin üzerine geldiğinizde, İngilizce kelimelerin Türkçe çevirileri bir tooltip içinde görünür. <strong>20 adet yapay zeka kelime çevirisi</strong> eklenmiştir.</li>
+                        <li>İngilizce metnin altında yer alan Türkçe çeviri, <strong>"İskender Durmaz ve Soner Tahsinoğlu"</strong> tarafından hazırlanmıştır.</li>
+                        <li>Sure ve ayet aramak için üstteki arama çubuğunu kullanabilirsiniz. Örnek format: <strong>2:209</strong> veya sure ismi.</li>
+                        
+                        <li>Mealler, farklı çevirmenlerin yorumlarını görmek için <strong>Mealler</strong> butonuna tıklayın.</li>
+                        <li>Tema ve yazı boyutu ayarlarını bu sayfadan özelleştirebilirsiniz.</li>
+						<li>AI ÇEVİRİ: Yapay zeka destekli 3 farklı çeviri sunulmuştur. Bu çevirilerde hatalar bulunabilir.</li>
+						<li><strong>"Her Ayetin Altında, Kullanıcıya Özel Not Almak"</strong> için geliştirmeler devam etmektedir.</li>
+						<li><strong>Hata gördüğünüz alanları lütfen bildiriniz.</strong> İlk adımı attık, birlikte büyüteceğiz inşallah. Dualarınızla... 💚</li>
+                    </ul>
+                </div>
+            </div>
+
             <button class="toggle-btn" id="saveSettingsBtn">Ayarları Kaydet</button>
         </div>
     </div>`;
@@ -939,17 +795,6 @@ function displaySettingsPage() {
     document.getElementById('saveSettingsBtn').addEventListener('click', saveSettings);
 }
 
-async function deleteNoteAndRefresh(suraNum, verseNum, fileId) {
-    if (!confirm('Bu notu silmek istediğinize emin misiniz?')) return;
-
-    try {
-        await gapi.client.drive.files.delete({ fileId: fileId });
-        displayNotesPage();
-    } catch (error) {
-        console.error('Not silinirken hata:', error);
-        alert('Not silinirken hata oluştu: ' + error.message);
-    }
-}
 
 function goToVerse(suraNum, verseNum) {
     if (STATE.metadata.sureToPageMap[suraNum]) {
@@ -1060,7 +905,7 @@ function setupSearch() {
                 if (suggestion.type === 'verse') {
                     div.innerHTML = `<strong>${suggestion.suraNum}:${suggestion.verseNum}</strong> - ${suggestion.text.replace(suggestion.text.split(' - ')[0] + ' - ', '')}`;
                 } else {
-                    div.innerHTML = `<strong>${suraNum}:</strong> ${suggestion.suraName}`;
+                    div.innerHTML = `<strong>${suggestion.suraNum}:</strong> ${suggestion.suraName}`;
                 }
 
                 div.onclick = () => {
@@ -1178,3 +1023,63 @@ function updateLoadingProgress(percent) {
     document.querySelector('.loading-text').textContent = `Yükleniyor... %${Math.round(percent)}`;
 }
 
+document.getElementById('notesPage').addEventListener('click', () => {
+    displayNotesPage(); // Bu fonksiyonu JS'e ekleyeceğiz
+    DOM.sidebar.classList.add('hidden');
+    DOM.sidebarOverlay.classList.add('hidden');
+    document.body.style.overflow = '';
+});
+
+function displayNotesPage() {
+    DOM.content.innerHTML = `
+        <div class="page-header">
+            <h1>📝 Notlarım</h1>
+        </div>
+        <div class="sura" id="userNotesContainer">
+            <p>Notlarınız yükleniyor...</p>
+        </div>
+    `;
+
+    fetch('get_user_notes.php', {
+        credentials: 'include'
+    })
+    .then(res => res.json())
+    .then(data => {
+        const container = document.getElementById('userNotesContainer');
+
+        if (!Array.isArray(data) || data.length === 0) {
+            container.innerHTML = `<p>Henüz bir notunuz yok.</p>`;
+            return;
+        }
+
+        let html = '';
+        data.forEach(note => {
+            html += `
+                <div class="note-box">
+                    <div><strong>🕋 Ayet:</strong> ${note.sura}:${note.verse}</div>
+                    <div><strong>🗒️ Not:</strong> ${note.note}</div>
+                    <div><small>🕑 ${note.created_at}</small></div>
+                </div>
+            `;
+        });
+
+        container.innerHTML = html;
+    })
+    .catch(err => {
+        console.error('Notlar alınırken hata:', err);
+        const container = document.getElementById('userNotesContainer');
+        container.innerHTML = '<p>Notlar yüklenemedi.</p>';
+    });
+}
+
+// Bu fonksiyon dışarıda olmalı!
+function toggleNoteInput(id, sura, verse) {
+    const element = document.getElementById(id);
+    if (!element) return;
+
+    element.classList.toggle('hidden');
+    if (!element.classList.contains('hidden')) {
+        const textarea = document.getElementById(`note-input-${sura}-${verse}`);
+        if (textarea) textarea.focus();
+    }
+}

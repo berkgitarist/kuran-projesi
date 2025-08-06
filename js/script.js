@@ -1,7 +1,3 @@
-// PHP tabanlı not sistemi (Google API'siz)
-
-
-// App configuration
 const CONFIG = {
     batchSize: 3,
     initialLoad: 5,
@@ -27,11 +23,9 @@ const CONFIG = {
         translit: './data/Turkce_Transkript.json',
         ai: './data/yapayzekaceviri.json',
         dictionary: './data/manual-dictionary.json'
-    },
-    folderName: 'Kuranteyit'
+    }
 };
 
-// Uygulama durumu (state)
 const STATE = {
     currentPage: 1,
     totalPages: 604,
@@ -51,17 +45,17 @@ const STATE = {
         pageToSuraMap: {}
     },
     settings: {
-        theme: 'light',
+        theme: 'dark',
         fontSize: 'medium',
         translation: 'Diyanet İşleri',
         showTransliteration: true
     }
 };
 
-
-// DOM elements
 const DOM = {
-    content: document.getElementById('content'),
+    quranContent: document.getElementById('quranContent'),
+    iframeContent: document.getElementById('iframeContent'),
+    content: document.getElementById('quranContent'),
     loadingOverlay: document.getElementById('loadingOverlay'),
     currentPageDisplay: document.getElementById('currentPageDisplay'),
     searchInput: document.getElementById('searchInput'),
@@ -70,45 +64,57 @@ const DOM = {
     wordTooltip: document.getElementById('wordTooltip'),
     sidebar: document.getElementById('sidebar'),
     sidebarOverlay: document.getElementById('sidebarOverlay'),
-    body: document.body
+    body: document.body,
+    introVerse: document.getElementById('introVerse')
 };
 
-document.addEventListener('DOMContentLoaded', async () => {
-    // 1. Intro ayet ekranını 5 saniye göster
-    const intro = document.getElementById('introVerse');
-    if (intro) {
-        setTimeout(() => {
-            intro.classList.add('fade-out');
-        }, 5000); // 5 saniye bekleme
-    }
+let externalSiteLoaded = false;
 
-    // 2. Geri kalan uygulama yükleme işlemleri
+document.addEventListener('DOMContentLoaded', async () => {
+    console.log("DOM tamamen yüklendi, introVerse kontrol ediliyor...");
+    showIntroVerse();
     loadSettings();
     await loadInitialData();
     buildSuraMenu();
     setupEventListeners();
-
     STATE.currentPage = 23;
     loadPagesAround(STATE.currentPage);
-
-    const activeTheme = document.body.className;
-    console.log(`Aktif tema: ${activeTheme}`);
-
-    const box = document.querySelector('.verse-box');
-    if (box) {
-        box.addEventListener('mouseenter', () => {
-            console.log('Ayet kutusu üzerine gelindi.');
-        });
-    }
+    console.log("Uygulama başarıyla yüklendi.");
 });
 
+function showIntroVerse() {
+    const intro = DOM.introVerse;
+    console.log("IntroVerse çağrıldı");
+
+    if (!intro) {
+        console.warn("IntroVerse elementi bulunamadı!");
+        ensureQuranView();
+        return;
+    }
+
+    console.log("Intro gösteriliyor");
+    intro.style.display = 'flex';
+    setTimeout(() => {
+        intro.classList.add('fade-out');
+        setTimeout(() => {
+            intro.style.display = 'none';
+            localStorage.setItem('initialVerseShown', 'true');
+            ensureQuranView();
+            console.log("Intro ekranı gizlendi, içerik gösteriliyor.");
+        }, 1000);
+    }, 5000);
+}
 
 function loadSettings() {
     const savedSettings = localStorage.getItem('quranAppSettings');
     if (savedSettings) {
-        STATE.settings = JSON.parse(savedSettings);
-        applySettings();
+        try {
+            STATE.settings = { ...STATE.settings, ...JSON.parse(savedSettings) };
+        } catch (error) {
+            console.warn("Ayarlar yüklenemedi:", error);
+        }
     }
+    applySettings();
 }
 
 function saveSettings() {
@@ -119,90 +125,84 @@ function saveSettings() {
 
 function applySettings() {
     DOM.body.className = `${STATE.settings.theme}-theme`;
-    const sizes = { small: '10px', medium: '14px', large: '24px' };
-    const fontSize = sizes[STATE.settings.fontSize];
-
-    const elementsToStyle = [
-        '.verse-transliteration',
-        '.verse-text',
-        '.verse-text-tr',
-        '.note-box',
-        '.ai-translation',
-        '.meal-container',
-        '.passage-title',
-        '.passage-title-tr',
-        '.note-input-box textarea',
-        '.word-tooltip',
-        '.autocomplete-suggestions div',
-        '.settings-section',
-        '.about-section p',
-        '.about-section li'
-    ];
-
-    elementsToStyle.forEach(selector => {
-        document.querySelectorAll(selector).forEach(el => {
-            el.style.fontSize = fontSize;
-        });
-    });
+    const sizes = { small: '12px', medium: '16px', large: '20px' };
+    const fontSize = sizes[STATE.settings.fontSize] || '16px';
+    document.documentElement.style.setProperty('--base-font-size', fontSize);
 }
-
 
 function setupEventListeners() {
     document.getElementById('prevPage').addEventListener('click', () => {
-        if (STATE.currentPage > 1) {
-            goToPage(STATE.currentPage - 1);
-        }
+        if (STATE.currentPage > 1) goToPage(STATE.currentPage - 1);
     });
 
     document.getElementById('nextPage').addEventListener('click', () => {
-        if (STATE.currentPage < STATE.totalPages) {
-            goToPage(STATE.currentPage + 1);
-        }
+        if (STATE.currentPage < STATE.totalPages) goToPage(STATE.currentPage + 1);
     });
 
-    document.getElementById('menuToggle').addEventListener('click', () => {
-        const isSidebarOpen = !DOM.sidebar.classList.contains('hidden');
-        DOM.sidebar.classList.toggle('hidden');
-        DOM.sidebarOverlay.classList.toggle('hidden');
-        document.body.style.overflow = isSidebarOpen ? '' : 'hidden';
-        
-        const menuSection = DOM.sidebar.querySelector('.menu-section');
-        const notesPage = document.getElementById('notesPage');
-        const settingsPage = document.getElementById('settingsPage');
-        const closeMenu = document.getElementById('closeMenu');
-        if (menuSection && !isSidebarOpen) {
-            menuSection.style.display = 'flex';
-            [notesPage, settingsPage, closeMenu].forEach(btn => {
-                if (btn) btn.style.display = 'block';
-            });
-        }
-    });
-
-    document.getElementById('closeMenu').addEventListener('click', () => {
-        DOM.sidebar.classList.add('hidden');
-        DOM.sidebarOverlay.classList.add('hidden');
-        document.body.style.overflow = '';
-    });
-
-    document.getElementById('sidebarOverlay').addEventListener('click', () => {
-        DOM.sidebar.classList.add('hidden');
-        DOM.sidebarOverlay.classList.add('hidden');
-        document.body.style.overflow = '';
-    });
+    document.getElementById('menuToggle').addEventListener('click', toggleSidebar);
+    document.getElementById('closeMenu').addEventListener('click', closeSidebar);
+    document.getElementById('sidebarOverlay').addEventListener('click', closeSidebar);
 
     document.getElementById('settingsPage').addEventListener('click', () => {
         displaySettingsPage();
-        DOM.sidebar.classList.add('hidden');
-        DOM.sidebarOverlay.classList.add('hidden');
-        document.body.style.overflow = '';
+        closeSidebar();
     });
+
+    document.getElementById('notesPage').addEventListener('click', () => {
+        displayNotesPage();
+        closeSidebar();
+    });
+
+    document.getElementById('currentPageDisplay').addEventListener('click', toggleExternalSite);
 
     setupSearch();
 }
 
-async function loadInitialData() {
-    showLoading();
+function toggleSidebar() {
+    const isOpen = !DOM.sidebar.classList.contains('hidden');
+    isOpen ? closeSidebar() : openSidebar();
+}
 
+function openSidebar() {
+    DOM.sidebar.classList.remove('hidden');
+    DOM.sidebarOverlay.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeSidebar() {
+    DOM.sidebar.classList.add('hidden');
+    DOM.sidebarOverlay.classList.add('hidden');
+    document.body.style.overflow = '';
+}
+
+function toggleExternalSite() {
+    const display = DOM.currentPageDisplay;
+    if (!externalSiteLoaded) {
+        loadExternalSite();
+        display.textContent = "Kur'an Dönüş";
+        externalSiteLoaded = true;
+    } else {
+        ensureQuranView();
+        display.textContent = "Kuran Oku";
+        externalSiteLoaded = false;
+    }
+}
+
+function loadExternalSite() {
+    DOM.quranContent.classList.add('hidden');
+    DOM.iframeContent.classList.remove('hidden');
+    document.querySelector('.content-area').style.padding = '0';
+}
+
+function ensureQuranView() {
+    DOM.iframeContent.classList.add('hidden');
+    DOM.quranContent.classList.remove('hidden');
+    document.querySelector('.content-area').style.padding = '';
+    DOM.quranContent.style.display = 'block'; // Ekstra görünürlük garantisi
+}
+
+async function loadInitialData() {
+    showLoading('Veri dosyaları yükleniyor...');
     try {
         await Promise.all([
             loadDataFile(CONFIG.dataPaths.en, 'en'),
@@ -211,31 +211,21 @@ async function loadInitialData() {
             loadDataFile(CONFIG.dataPaths.dictionary, 'dictionary'),
             loadDataFile(CONFIG.dataPaths.ai, 'ai')
         ]);
-
         processMetadata();
         await loadMeals();
-
-        hideLoading();
     } catch (error) {
-        console.error("Initial data loading error:", error);
-        hideLoading();
+        console.error("Veri yükleme hatası:", error);
         DOM.content.innerHTML = '<div class="error-message">Veri yüklenirken hata oluştu. Lütfen sayfayı yenileyin.</div>';
+    } finally {
+        hideLoading();
     }
 }
 
 async function loadDataFile(path, key) {
-    return new Promise((resolve, reject) => {
-        fetch(path)
-            .then(response => response.json())
-            .then(data => {
-                STATE.data[key] = data;
-                resolve();
-            })
-            .catch(error => {
-                console.error(`Error loading ${key} data:`, error);
-                reject(error);
-            });
-    });
+    const response = await fetch(path);
+    if (!response.ok) throw new Error(`${key} dosyası yüklenemedi: ${response.status}`);
+    STATE.data[key] = await response.json();
+    console.log(`${key} verisi yüklendi.`);
 }
 
 function processMetadata() {
@@ -247,12 +237,9 @@ function processMetadata() {
                     const lines = titles["1"].split("\n").map(l => l.trim()).filter(l => l);
                     const sureLine = lines.find(l => l.startsWith("Sure "));
                     const parantezLine = lines.find(l => l.startsWith("("));
-
                     if (sureLine) {
                         let cleanedTitle = sureLine.replace(/^Sure\s*/, "").trim();
-                        if (parantezLine) {
-                            cleanedTitle += " " + parantezLine;
-                        }
+                        if (parantezLine) cleanedTitle += " " + parantezLine;
                         STATE.metadata.sureNames[suraNum] = cleanedTitle;
                         STATE.metadata.sureToPageMap[suraNum] = parseInt(page);
                     }
@@ -264,21 +251,21 @@ function processMetadata() {
 
 async function loadMeals() {
     showLoading('Mealler yükleniyor...');
-
     try {
         for (let i = 0; i < CONFIG.mealFiles.length; i += CONFIG.batchSize) {
             const batch = CONFIG.mealFiles.slice(i, i + CONFIG.batchSize);
             await Promise.all(batch.map(async file => {
                 try {
                     const response = await fetch(`./data/mealler/${file}`);
-                    const json = await response.json();
-                    const mealName = file.replace('.json', '');
-                    STATE.data.meals[mealName] = json;
+                    if (response.ok) {
+                        const json = await response.json();
+                        const mealName = file.replace('.json', '');
+                        STATE.data.meals[mealName] = json;
+                    }
                 } catch (err) {
-                    console.error(`${file} yüklenirken hata:`, err);
+                    console.warn(`${file} yüklenirken hata:`, err);
                 }
             }));
-
             const progress = Math.min(100, ((i + CONFIG.batchSize) / CONFIG.mealFiles.length) * 100);
             updateLoadingProgress(progress);
         }
@@ -290,44 +277,32 @@ async function loadMeals() {
 }
 
 function loadPagesAround(pageNum) {
-    const startPage = Math.max(1, pageNum - STATE.settings.initialLoad);
-    const endPage = Math.min(STATE.totalPages, pageNum + STATE.settings.initialLoad);
-
+    const startPage = Math.max(1, pageNum - CONFIG.initialLoad);
+    const endPage = Math.min(STATE.totalPages, pageNum + CONFIG.initialLoad);
     const pagesToLoad = [];
     for (let i = startPage; i <= endPage; i++) {
-        if (!STATE.loadedPages.has(i)) {
-            pagesToLoad.push(i);
-        }
+        if (!STATE.loadedPages.has(i)) pagesToLoad.push(i);
     }
-
-    if (pagesToLoad.length > 0) {
-        loadPagesBatch(pagesToLoad);
-    }
-
+    if (pagesToLoad.length > 0) loadPagesBatch(pagesToLoad);
     displayPage(pageNum);
 }
 
 async function loadPagesBatch(pageNumbers) {
     if (STATE.isLoading) return;
-
     STATE.isLoading = true;
     showLoading(`Sayfalar yükleniyor (${pageNumbers[0]}-${pageNumbers[pageNumbers.length - 1]})...`);
-
     try {
         for (const pageNum of pageNumbers) {
             if (!STATE.loadedPages.has(pageNum)) {
                 STATE.loadedPages.add(pageNum);
                 const progress = (pageNumbers.indexOf(pageNum) + 1) / pageNumbers.length * 100;
                 updateLoadingProgress(progress);
-                await new Promise(resolve => setTimeout(resolve, 100));
+                await new Promise(resolve => setTimeout(resolve, 50));
             }
         }
-
-        if (pageNumbers.includes(STATE.currentPage)) {
-            displayPage(STATE.currentPage);
-        }
+        if (pageNumbers.includes(STATE.currentPage)) displayPage(STATE.currentPage);
     } catch (error) {
-        console.error("Sayfa yüklenirken hata:", error);
+        console.error("Sayfa yükleme hatası:", error);
     } finally {
         STATE.isLoading = false;
         hideLoading();
@@ -335,49 +310,56 @@ async function loadPagesBatch(pageNumbers) {
 }
 
 function goToPage(pageNum) {
+    ensureQuranView();
     if (pageNum < 1 || pageNum > STATE.totalPages) return;
-
     STATE.currentPage = pageNum;
-
     if (STATE.loadedPages.has(pageNum)) {
         displayPage(pageNum);
     } else {
         loadPagesAround(pageNum);
     }
-
-    window.scrollTo({
-        top: 0,
-        behavior: 'smooth'
-    });
-
+    window.scrollTo({ top: 0, behavior: 'smooth' });
     if (!STATE.isLoading) {
-        const startPage = Math.max(1, pageNum - STATE.settings.initialLoad);
-        const endPage = Math.min(STATE.totalPages, pageNum + STATE.settings.initialLoad);
-
+        const startPage = Math.max(1, pageNum - CONFIG.initialLoad);
+        const endPage = Math.min(STATE.totalPages, pageNum + CONFIG.initialLoad);
         const pagesToLoad = [];
         for (let i = startPage; i <= endPage; i++) {
-            if (!STATE.loadedPages.has(i)) {
-                pagesToLoad.push(i);
-            }
+            if (!STATE.loadedPages.has(i)) pagesToLoad.push(i);
         }
-
-        if (pagesToLoad.length > 0) {
-            loadPagesBatch(pagesToLoad);
-        }
+        if (pagesToLoad.length > 0) loadPagesBatch(pagesToLoad);
     }
 }
 
 function goToSura(suraNum) {
+    ensureQuranView();
     if (STATE.metadata.sureToPageMap[suraNum]) {
         goToPage(STATE.metadata.sureToPageMap[suraNum]);
+        closeSidebar();
+        setTimeout(() => scrollToVerse(suraNum, 1), 300);
+    }
+}
 
-        DOM.sidebar.classList.add('hidden');
-        DOM.sidebarOverlay.classList.add('hidden');
-        document.body.style.overflow = '';
+function goToVerse(suraNum, verseNum) {
+    if (STATE.metadata.sureToPageMap[suraNum]) {
+        goToPage(STATE.metadata.sureToPageMap[suraNum]);
+        setTimeout(() => scrollToVerse(suraNum, verseNum), 500);
+    }
+}
 
-        setTimeout(() => {
-            scrollToVerse(suraNum, 1);
-        }, 300);
+function scrollToVerse(suraNum, verseNum) {
+    const verseElements = document.querySelectorAll('.verse-number');
+    let targetElement = null;
+    verseElements.forEach(el => {
+        if (el.textContent.trim() === `${suraNum}:${verseNum}`) {
+            targetElement = el.closest('.verse');
+        }
+    });
+    if (targetElement) {
+        const headerHeight = document.querySelector('.header-bar').offsetHeight;
+        const offsetPosition = targetElement.offsetTop - headerHeight - 50;
+        window.scrollTo({ top: offsetPosition, behavior: 'smooth' });
+        targetElement.style.boxShadow = '0 0 20px rgba(10, 104, 71, 0.5)';
+        setTimeout(() => targetElement.style.boxShadow = '', 3000);
     }
 }
 
@@ -386,33 +368,25 @@ function displayPage(pageNum) {
         DOM.content.innerHTML = '<p>Sayfa yükleniyor...</p>';
         return;
     }
-
     const enPage = STATE.data.en[pageNum];
     const trPage = STATE.data.tr[pageNum];
-
     let pageTitle = "Bilinmeyen";
     const suraNums = Object.keys(enPage.sura).sort((a, b) => Number(a) - Number(b));
     if (suraNums.length > 0) {
         const suraTitles = suraNums.map(num => STATE.metadata.sureNames[num] || `Sure ${num}`);
         pageTitle = suraTitles.join(" | ");
     }
-
     let html = `
     <div class="page-header">
         <h1>📖 ${pageTitle}</h1>
     </div>`;
-
     const enNotesMap = mapNotesToVerses(enPage.notes?.data);
     const trNotesMap = mapNotesToVerses(trPage.notes?.data);
-
     for (const suraNum of suraNums) {
         const enSura = enPage.sura[suraNum];
         const trSura = trPage.sura[suraNum];
-
         html += `<div class="sura">`;
-
         const verseKeys = Object.keys(enSura.verses).sort((a, b) => Number(a) - Number(b));
-
         for (const verseNum of verseKeys) {
             if (enSura.titles && enSura.titles[verseNum]) {
                 html += `<div class="passage-title">${enSura.titles[verseNum]}</div>`;
@@ -420,40 +394,33 @@ function displayPage(pageNum) {
                     html += `<div class="passage-title-tr">${trSura.titles[verseNum]}</div>`;
                 }
             }
-
             const verseKey = `${suraNum}:${verseNum}`;
             const hasNotes = (enNotesMap[verseKey]?.length > 0) || (trNotesMap[verseKey]?.length > 0);
-
             html += `
             <div class="verse">
                 <div class="verse-number">${suraNum}:${verseNum}</div>
                 <div class="verse-arabic">${enSura.encrypted[verseNum]}</div>`;
-
             if (STATE.settings.showTransliteration) {
                 html += `<div class="verse-transliteration">${STATE.data.translit[suraNum]?.verses[verseNum] || ''}</div>`;
             }
-
             html += `
                 <div class="verse-text">${enSura.verses[verseNum]}</div>
-                <div class="verse-text-tr"><strong>${trSura.verses[verseNum]}</strong></div>`;
-
-            html += `<div class="buttons">`;
+                <div class="verse-text-tr"><strong>${trSura.verses[verseNum]}</strong></div>
+                <div class="buttons">`;
             if (hasNotes) {
                 html += `<button class="toggle-btn dipnot-btn" onclick="toggleNote('note-${suraNum}-${verseNum}')">📌 Dipnot</button>`;
             }
             html += `
                 <button class="toggle-btn" onclick="toggleMeal('meal-${suraNum}-${verseNum}', ${suraNum}, ${verseNum})">📚 Mealler</button>
                 <button class="toggle-btn note-btn" onclick="toggleNoteInput('note-input-box-${suraNum}-${verseNum}', ${suraNum}, ${verseNum})">✍️ Not Al</button>
-            </div>`;
-
-            html += `<div id="ai-translation-${suraNum}-${verseNum}" class="ai-translation">`;
+                </div>
+                <div id="ai-translation-${suraNum}-${verseNum}" class="ai-translation">`;
             if (STATE.data.ai[suraNum] && STATE.data.ai[suraNum].verses && STATE.data.ai[suraNum].verses[verseNum]) {
-                html += `<strong>AI ÇEVİRİ</strong> ${STATE.data.ai[suraNum].verses[verseNum]}`;
+                html += `<strong>AI ÇEVİRİ:</strong> ${STATE.data.ai[suraNum].verses[verseNum]}`;
             } else {
                 html += `<strong>AI ÇEVİRİ:</strong> Çeviri bulunamadı.`;
             }
             html += `</div>`;
-
             if (hasNotes) {
                 html += `<div id="note-${suraNum}-${verseNum}" class="note-box hidden">`;
                 if (enNotesMap[verseKey]) {
@@ -468,50 +435,48 @@ function displayPage(pageNum) {
                 }
                 html += `</div>`;
             }
-
-            // Kullanıcı notlarını ekle
-            const noteKey = `${suraNum}:${verseNum}`;
-            html += `<div id="user-note-${suraNum}-${verseNum}" class="note-box hidden"></div>`;
-
-            html += `<div id="meal-${suraNum}-${verseNum}" class="note-box hidden"></div>`;
-            html += `<div id="note-input-box-${suraNum}-${verseNum}" class="note-input-box hidden">
-                        <textarea id="note-input-${suraNum}-${verseNum}" placeholder="Notunuzu buraya yazın..."></textarea>
-                        <button onclick="saveNote(${suraNum}, ${verseNum})">Kaydet</button>
-                     </div>`;
-			html += `<div id="all-notes-${suraNum}-${verseNum}" class="note-box hidden"></div>`;
-
-            html += `</div>`;
+            html += `<div id="user-note-${suraNum}-${verseNum}" class="note-box hidden"></div>
+                     <div id="meal-${suraNum}-${verseNum}" class="note-box hidden"></div>
+                     <div id="note-input-box-${suraNum}-${verseNum}" class="note-input-box hidden">
+                        <textarea id="note-input-${suraNum}-${verseNum}" placeholder="Notunuzu buraya yazın..." rows="4"></textarea>
+                        <div class="note-actions">
+                            <button class="save-note-btn" onclick="saveNote(${suraNum}, ${verseNum})">💾 Kaydet</button>
+                            <button class="cancel-note-btn" onclick="cancelNote(${suraNum}, ${verseNum})">❌ İptal</button>
+                        </div>
+                     </div>
+            </div>`;
         }
-
         html += `</div>`;
     }
-
     html += `<div class="page-footer">`;
     if (STATE.currentPage > 1) {
-        html += `<button class="header-btn" onclick="goToPage(${STATE.currentPage - 1})">⟵ Geri</button>`;
+        html += `<button class="header-btn" onclick="goToPage(${STATE.currentPage - 1})">⟵ Önceki Sayfa</button>`;
     }
+    html += `<span class="page-info">Sayfa ${STATE.currentPage} / ${STATE.totalPages}</span>`;
     if (STATE.currentPage < STATE.totalPages) {
-        html += `<button class="header-btn" onclick="goToPage(${STATE.currentPage + 1})">İleri ⟶</button>`;
+        html += `<button class="header-btn" onclick="goToPage(${STATE.currentPage + 1})">Sonraki Sayfa ⟶</button>`;
     }
     html += `</div>`;
-
     DOM.content.innerHTML = html;
-
     document.querySelectorAll('.verse-arabic').forEach(el => {
         el.style.textAlign = 'right';
         el.style.direction = 'rtl';
     });
-
     attachWordTranslation();
-    loadNotesForPage(pageNum, suraNums, enPage);
+    loadNotesForCurrentPage();
     applySettings();
 }
 
-function loadNotesForPage(pageNum, suraNums, enPage) {
-    for (const suraNum of suraNums) {
-        const verseKeys = Object.keys(enPage.sura[suraNum].verses);
-        for (const verseNum of verseKeys) {
-            loadNotes(suraNum, verseNum);
+async function loadNotesForCurrentPage() {
+    if (!isDriveReady()) return;
+    const verseElements = document.querySelectorAll('.verse-number');
+    for (const element of verseElements) {
+        const verseText = element.textContent.trim();
+        const match = verseText.match(/^(\d+):(\d+)$/);
+        if (match) {
+            const [, sura, verse] = match;
+            const content = await loadNoteFromDrive(sura, verse);
+            if (content) displayLoadedNote(sura, verse, content);
         }
     }
 }
@@ -519,7 +484,6 @@ function loadNotesForPage(pageNum, suraNums, enPage) {
 function mapNotesToVerses(notesData) {
     const noteMap = {};
     if (!notesData) return noteMap;
-
     notesData.forEach(note => {
         const match = note.match(/^\*+\s*(\d+:\d+(-\d+)?)/);
         if (match) {
@@ -555,11 +519,9 @@ function buildSuraMenu() {
 function getOtherTranslations(suraNum, verseNum) {
     const suraIndex = parseInt(suraNum) - 1;
     let html = '';
-
     for (const mealName in STATE.data.meals) {
         const meal = STATE.data.meals[mealName];
         const sure = meal.sures?.[suraIndex];
-
         if (sure && sure.ayetler) {
             const ayet = sure.ayetler.find(a => String(a[0]) === String(verseNum));
             if (ayet) {
@@ -567,124 +529,73 @@ function getOtherTranslations(suraNum, verseNum) {
             }
         }
     }
-
     return html || '<div>Bu ayet için diğer mealler bulunamadı.</div>';
 }
 
 function attachWordTranslation() {
     const tooltip = DOM.wordTooltip;
-
     document.querySelectorAll('.verse-text').forEach(el => {
         const text = el.textContent;
         const words = text.split(/\s+/);
         el.innerHTML = '';
-
         words.forEach(word => {
             const cleanWord = word.replace(/[^a-zA-Z]/g, '').toLowerCase();
             const span = document.createElement('span');
             span.textContent = word + ' ';
             span.style.cursor = 'help';
-
             if (cleanWord.length === 0) {
                 el.appendChild(span);
                 return;
             }
-
             span.addEventListener('mouseenter', (e) => {
                 tooltip.style.display = 'block';
                 tooltip.style.left = (e.pageX + 10) + 'px';
                 tooltip.style.top = (e.pageY + 10) + 'px';
                 if (STATE.data.dictionary[cleanWord]) {
                     const translations = STATE.data.dictionary[cleanWord].split(', ').map((trans, index) => {
-                        let color = '';
-                        switch (index % 3) {
-                            case 0: color = 'red'; break;
-                            case 1: color = 'green'; break;
-                            case 2: color = 'blue'; break;
-                        }
+                        const colors = ['#e74c3c', '#27ae60', '#3498db'];
+                        const color = colors[index % 3];
                         return `<strong style="color: ${color}">${trans}</strong>`;
                     }).join(', ');
                     tooltip.innerHTML = `"${word}" ➔ ${translations}`;
                 } else {
-                    tooltip.innerHTML = `"${word}" ➔ <span style="color: red;">Kelime bulunamadı</span>`;
+                    tooltip.innerHTML = `"${word}" ➔ <span style="color: #e74c3c;">Kelime bulunamadı</span>`;
                 }
             });
-
             span.addEventListener('mousemove', (e) => {
                 tooltip.style.left = (e.pageX + 10) + 'px';
                 tooltip.style.top = (e.pageY + 10) + 'px';
             });
-
             span.addEventListener('mouseleave', () => {
                 tooltip.style.display = 'none';
             });
-
             el.appendChild(span);
         });
     });
 }
 
-function saveNote(sura, verse) {
+async function saveNote(sura, verse) {
     const textarea = document.getElementById(`note-input-${sura}-${verse}`);
-    const note = textarea.value.trim();
-
-    if (!note) {
-        alert("Not boş olamaz.");
+    const noteContent = textarea.value.trim();
+    if (!noteContent) {
+        showNotification('⚠️ Not içeriği boş olamaz.', 'warning');
         return;
     }
-
-    fetch('/api/save_note.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sura, verse, note }),
-        credentials: 'include' // ✅ oturum için gerekli
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            alert('Not kaydedildi.');
-        } else {
-            alert('Not kaydedilemedi: ' + data.message);
-        }
-    })
-    .catch(error => {
-        console.error('Hata:', error);
-        alert('Sunucu hatası: not kaydedilemedi.');
-    });
+    const success = await saveNoteToDrive(sura, verse, noteContent);
+    if (success) {
+        textarea.value = '';
+        const inputBox = document.getElementById(`note-input-box-${sura}-${verse}`);
+        if (inputBox) inputBox.classList.add('hidden');
+        displayLoadedNote(sura, verse, noteContent);
+    }
 }
 
-
-
-function loadNotes(sura, verse) {
-    fetch(`get_notes.php?sura=${sura}&verse=${verse}`)
-        .then(res => res.json())
-        .then(data => {
-            const container = document.getElementById(`all-notes-${sura}-${verse}`);
-            if (!container) return;
-
-            if (data.length === 0) {
-                container.innerHTML = '<div class="note-box">Henüz not alınmamış.</div>';
-                return;
-            }
-
-            let html = '';
-            data.forEach(note => {
-                html += `
-                    <div class="note-box">
-                        <strong>${note.username}</strong> (${note.email})<br>
-                        <div>${note.note}</div>
-                        <small>${note.created_at}</small>
-                    </div>
-                `;
-            });
-
-            container.innerHTML = html;
-        })
-        .catch(err => {
-            console.error("Notlar yüklenirken hata:", err);
-        });
+function cancelNote(sura, verse) {
+    const textarea = document.getElementById(`note-input-${sura}-${verse}`);
+    const inputBox = document.getElementById(`note-input-box-${sura}-${verse}`);
+    if (textarea) textarea.value = '';
+    if (inputBox) inputBox.classList.add('hidden');
 }
-
 
 function toggleMeal(id, suraNum, verseNum) {
     const element = document.getElementById(id);
@@ -696,31 +607,44 @@ function toggleMeal(id, suraNum, verseNum) {
 
 function toggleNote(id) {
     const element = document.getElementById(id);
-    if (element) {
-        element.classList.toggle('hidden');
+    if (element) element.classList.toggle('hidden');
+}
+
+async function toggleNoteInput(id, sura, verse) {
+    const element = document.getElementById(id);
+    if (!element) return;
+    element.classList.toggle('hidden');
+    if (!element.classList.contains('hidden') && isDriveReady()) {
+        const textarea = document.getElementById(`note-input-${sura}-${verse}`);
+        if (textarea) {
+            const existingNote = await loadNoteFromDrive(sura, verse);
+            if (existingNote) textarea.value = existingNote;
+            setTimeout(() => textarea.focus(), 100);
+        }
     }
 }
 
-
 function displaySettingsPage() {
+    ensureQuranView();
     const themes = [
         { name: 'light', label: 'Açık' },
         { name: 'dark', label: 'Koyu' },
         { name: 'green', label: 'Yeşil' },
         { name: 'indigo', label: 'Çivit' },
         { name: 'brown', label: 'Kahverengi' },
-        { name: 'sky', label: 'Gece' }
+        { name: 'sky', label: 'Açık Mavi' },
+        { name: 'blackyellow', label: 'Siyah' },
+        { name: 'bluemaize', label: 'Mavi' },
+        { name: 'redpeach', label: 'Kırmızı' },
+        { name: 'greenolive', label: 'Zeytin' }
     ];
-
     const html = `
     <div class="page-header">
         <h1>⚙️ Ayarlar</h1>
     </div>
-
     <div class="sura">
         <div class="settings-section">
             <h2>Tema Ayarları</h2>
-
             <div class="theme-picker">
                 ${themes.map(theme => `
                     <label class="theme-option">
@@ -733,7 +657,6 @@ function displaySettingsPage() {
                     </label>
                 `).join('')}
             </div>
-
             <div class="setting-item">
                 <label for="fontSizeSelect">Yazı Boyutu:</label>
                 <select id="fontSizeSelect">
@@ -742,125 +665,131 @@ function displaySettingsPage() {
                     <option value="large" ${STATE.settings.fontSize === 'large' ? 'selected' : ''}>Büyük</option>
                 </select>
             </div>
-
             <div class="setting-item">
                 <label>
                     <input type="checkbox" id="showTransliteration" 
                            ${STATE.settings.showTransliteration ? 'checked' : ''}>
-                    Transkripsiyon Göster
+                    Arapça-Türkçe Göster
                 </label>
             </div>
-
             <div class="settings-section">
-                <h2>Kullanma Talimatı</h2>
+                <h2>Google Drive Durumu</h2>
+                <div class="drive-status">
+                    <p><strong>Durum:</strong> <span id="driveStatus">${isDriveReady() ? '🟢 Bağlı' : '🔴 Bağlı değil'}</span></p>
+                    <p><strong>Klasör:</strong> <span id="folderStatus">${folderId ? '✅ Hazır' : '❌ Bulunamadı'}</span></p>
+                </div>
+            </div>
+            <div class="settings-section">
+                <h2>Kullanım Kılavuzu</h2>
                 <div class="about-section">
-                    <p>Bu yazılımda:</p>
                     <ul>
-                        <li>İngilizce metin üzerine geldiğinizde, İngilizce kelimelerin Türkçe çevirileri bir tooltip içinde görünür. <strong>20 adet yapay zeka kelime çevirisi</strong> eklenmiştir.</li>
-                        <li>İngilizce metnin altında yer alan Türkçe çeviri, <strong>"İskender Durmaz ve Soner Tahsinoğlu"</strong> tarafından hazırlanmıştır.</li>
-                        <li>Sure ve ayet aramak için üstteki arama çubuğunu kullanabilirsiniz. Örnek format: <strong>2:209</strong> veya sure ismi.</li>
-                        
-                        <li>Mealler, farklı çevirmenlerin yorumlarını görmek için <strong>Mealler</strong> butonuna tıklayın.</li>
-                        <li>Tema ve yazı boyutu ayarlarını bu sayfadan özelleştirebilirsiniz.</li>
-						<li>AI ÇEVİRİ: Yapay zeka destekli 3 farklı çeviri sunulmuştur. Bu çevirilerde hatalar bulunabilir.</li>
-						<li><strong>"Her Ayetin Altında, Kullanıcıya Özel Not Almak"</strong> için geliştirmeler devam etmektedir.</li>
-						<li><strong>Hata gördüğünüz alanları lütfen bildiriniz.</strong> İlk adımı attık, birlikte büyüteceğiz inşallah. Dualarınızla... 💚</li>
+                        <li><strong>Not Alma:</strong> Her ayetin altındaki "✍️ Not Al" butonuna tıklayarak notlarınızı Google Drive'a kaydedebilirsiniz.</li>
+                        <li><strong>Kelime Çevirisi:</strong> İngilizce kelimelerin üzerine fareyle geldiğinizde Türkçe çevirilerini görebilirsiniz.</li>
+                        <li><strong>Arama:</strong> Üstteki arama kutusuna sure adı veya ayet numarası (örn: "2:255") yazabilirsiniz.</li>
+                        <li><strong>Mealler:</strong> Farklı çevirmenlerden çevirileri görmek için "📚 Mealler" butonunu kullanın.</li>
+                        <li><strong>Google Drive:</strong> Notlarınız otomatik olarak "Kuran_Teyit_Not" klasörüne kaydedilir.</li>
                     </ul>
                 </div>
             </div>
-
-            <button class="toggle-btn" id="saveSettingsBtn">Ayarları Kaydet</button>
+            <button class="toggle-btn" id="saveSettingsBtn">💾 Ayarları Kaydet</button>
+            <button class="toggle-btn" onclick="goToPage(${STATE.currentPage})">🔙 Kuran'a Dön</button>
         </div>
     </div>`;
-
     DOM.content.innerHTML = html;
-
     document.querySelectorAll('.theme-option input').forEach(input => {
         input.addEventListener('change', (e) => {
             STATE.settings.theme = e.target.value;
             applySettings();
         });
     });
-
     document.getElementById('fontSizeSelect').addEventListener('change', (e) => {
         STATE.settings.fontSize = e.target.value;
         applySettings();
     });
-
     document.getElementById('showTransliteration').addEventListener('change', (e) => {
         STATE.settings.showTransliteration = e.target.checked;
         saveSettings();
     });
-
-    document.getElementById('saveSettingsBtn').addEventListener('click', saveSettings);
-}
-
-
-function goToVerse(suraNum, verseNum) {
-    if (STATE.metadata.sureToPageMap[suraNum]) {
-        goToPage(STATE.metadata.sureToPageMap[suraNum]);
-
-        setTimeout(() => {
-            const verseElement = Array.from(document.querySelectorAll('.verse-number')).find(
-                el => el.textContent.trim() === `${suraNum}:${verseNum}`
-            );
-            if (verseElement) {
-                verseElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                const verseContainer = verseElement.closest('.verse');
-                if (verseContainer) {
-                    verseContainer.style.boxShadow = '0 0 20px rgba(10, 104, 71, 0.5)';
-                    setTimeout(() => {
-                        verseContainer.style.boxShadow = '';
-                    }, 3000);
-                }
-            }
-        }, 500);
-    }
-}
-
-function scrollToVerse(suraNum, verseNum) {
-    const verseElements = document.querySelectorAll('.verse-number');
-    let targetElement = null;
-
-    verseElements.forEach(el => {
-        if (el.textContent.trim() === `${suraNum}:${verseNum}`) {
-            targetElement = el.closest('.verse');
-        }
+    document.getElementById('saveSettingsBtn').addEventListener('click', () => {
+        saveSettings();
+        showNotification('✅ Ayarlar kaydedildi!', 'success');
     });
+}
 
-    if (targetElement) {
-        const headerHeight = document.querySelector('.header-bar').offsetHeight;
-        const elementTop = targetElement.offsetTop;
-        const offsetPosition = elementTop - headerHeight - 50;
+function displayNotesPage() {
+    ensureQuranView();
+    DOM.content.innerHTML = `
+    <div class="page-header">
+        <h1>📝 Notlarım</h1>
+    </div>
+    <div class="sura">
+        <div class="notes-section">
+            <p>Google Drive'daki notlarınız burada görüntülenecek...</p>
+            <div id="notesList" class="notes-list">
+                ${isDriveReady() ? 'Notlar yükleniyor...' : 'Google hesabınızla giriş yapın.'}
+            </div>
+            <button class="toggle-btn" onclick="goToPage(${STATE.currentPage})">🔙 Kuran'a Dön</button>
+        </div>
+    </div>`;
+    if (isDriveReady()) loadAndDisplayAllNotes();
+}
 
-        window.scrollTo({
-            top: offsetPosition,
-            behavior: 'smooth'
+async function loadAndDisplayAllNotes() {
+    const notesList = document.getElementById('notesList');
+    if (!notesList || !isDriveReady()) return;
+    try {
+        const listResponse = await gapi.client.drive.files.list({
+            q: `'${folderId}' in parents and trashed=false and name contains '.txt'`,
+            fields: 'files(id,name,modifiedTime)',
+            orderBy: 'modifiedTime desc',
+            spaces: 'drive'
         });
-
-        targetElement.style.boxShadow = '0 0 20px rgba(10, 104, 71, 0.5)';
-        setTimeout(() => {
-            targetElement.style.boxShadow = '';
-        }, 3000);
+        if (!listResponse.result.files || listResponse.result.files.length === 0) {
+            notesList.innerHTML = '<p>Henüz kaydedilmiş notunuz bulunmuyor.</p>';
+            return;
+        }
+        let html = '<div class="notes-grid">';
+        for (const file of listResponse.result.files) {
+            const fileName = file.name;
+            const match = fileName.match(/^(\d+)_(\d+)\.txt$/);
+            if (match) {
+                const [, sura, verse] = match;
+                const content = await loadNoteFromDrive(sura, verse);
+                const suraName = STATE.metadata.sureNames[sura] || `Sure ${sura}`;
+                const modifiedDate = new Date(file.modifiedTime).toLocaleDateString('tr-TR');
+                html += `
+                <div class="note-card">
+                    <div class="note-header">
+                        <h3>${suraName} ${sura}:${verse}</h3>
+                        <span class="note-date">${modifiedDate}</span>
+                    </div>
+                    <div class="note-content">${content.substring(0, 150)}${content.length > 150 ? '...' : ''}</div>
+                    <div class="note-actions">
+                        <button onclick="goToVerse(${sura}, ${verse})" class="go-to-verse-btn">📖 Ayete Git</button>
+                    </div>
+                </div>`;
+            }
+        }
+        html += '</div>';
+        notesList.innerHTML = html;
+    } catch (error) {
+        console.error("Notlar yüklenirken hata:", error);
+        notesList.innerHTML = '<p>Notlar yüklenirken bir hata oluştu.</p>';
     }
 }
 
 function setupSearch() {
     const searchInput = DOM.searchInput;
     const autocomplete = DOM.autocomplete;
-
     searchInput.addEventListener('input', (e) => {
         const val = e.target.value.toLowerCase().trim();
         autocomplete.innerHTML = '';
-
         if (val.length < 1) {
             autocomplete.style.display = 'none';
             return;
         }
-
         let found = false;
         const suggestions = [];
-
         for (const suraNum in STATE.metadata.sureNames) {
             const suraName = STATE.metadata.sureNames[suraNum].toLowerCase();
             if (suraName.includes(val)) {
@@ -873,8 +802,7 @@ function setupSearch() {
                 });
             }
         }
-
-        const verseMatch = val.match(/^(\d+):(\d+)$/);
+        const verseMatch = val.match(/^(\d+)(?:[:\/\s])(\d+)$/);
         if (verseMatch) {
             const [_, suraNum, verseNum] = verseMatch;
             if (STATE.data.en && STATE.data.tr) {
@@ -896,10 +824,8 @@ function setupSearch() {
                 }
             }
         }
-
         if (found) {
             suggestions.sort((a, b) => a.priority - b.priority);
-
             suggestions.slice(0, 8).forEach(suggestion => {
                 const div = document.createElement('div');
                 if (suggestion.type === 'verse') {
@@ -907,10 +833,7 @@ function setupSearch() {
                 } else {
                     div.innerHTML = `<strong>${suggestion.suraNum}:</strong> ${suggestion.suraName}`;
                 }
-
-                div.onclick = () => {
-                    navigateToSuggestion(suggestion, searchInput);
-                };
+                div.onclick = () => navigateToSuggestion(suggestion, searchInput);
                 autocomplete.appendChild(div);
             });
             autocomplete.style.display = 'block';
@@ -918,16 +841,13 @@ function setupSearch() {
             autocomplete.style.display = 'none';
         }
     });
-
     searchInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
             e.preventDefault();
             const val = e.target.value.trim();
-
-            const verseMatch = val.match(/^(\d+):(\d+)$/);
+            const verseMatch = val.match(/^(\d+)(?:[:\/\s])(\d+)$/);
             if (verseMatch) {
                 const [_, suraNum, verseNum] = verseMatch;
-
                 if (STATE.data.en && STATE.data.tr) {
                     for (let page in STATE.data.en) {
                         const enPage = STATE.data.en[page];
@@ -935,20 +855,14 @@ function setupSearch() {
                             goToPage(parseInt(page));
                             searchInput.value = '';
                             autocomplete.style.display = 'none';
-
-                            setTimeout(() => {
-                                scrollToVerse(suraNum, verseNum);
-                            }, 300);
-
+                            setTimeout(() => scrollToVerse(suraNum, verseNum), 300);
                             return;
                         }
                     }
-
-                    alert(`${suraNum}:${verseNum} ayeti bulunamadı!`);
+                    showNotification(`${suraNum}:${verseNum} ayeti bulunamadı!`, 'warning');
                     return;
                 }
             }
-
             for (const suraNum in STATE.metadata.sureNames) {
                 const suraName = STATE.metadata.sureNames[suraNum].toLowerCase();
                 if (suraName.includes(val.toLowerCase())) {
@@ -959,38 +873,29 @@ function setupSearch() {
                     return;
                 }
             }
-
             if (val) {
-                alert('Aradığınız sure veya ayet bulunamadı! Format: "2:209" veya sure ismi');
+                showNotification('Aradığınız sure veya ayet bulunamadı! Format: "2:209", "2/209" veya "2 209" veya sure ismi', 'warning');
             }
         }
     });
-
     searchInput.addEventListener('blur', () => {
-        setTimeout(() => {
-            autocomplete.style.display = 'none';
-        }, 200);
+        setTimeout(() => autocomplete.style.display = 'none', 200);
     });
-
     searchInput.addEventListener('focus', () => {
         const val = searchInput.value.toLowerCase().trim();
-        if (val.length >= 1) {
-            autocomplete.style.display = 'block';
-        }
+        if (val.length >= 1) autocomplete.style.display = 'block';
     });
 }
 
 function navigateToSuggestion(suggestion, inputElement) {
+    ensureQuranView();
     if (suggestion.type === 'verse') {
         goToPage(suggestion.page);
-        setTimeout(() => {
-            scrollToVerse(suggestion.suraNum, suggestion.verseNum);
-        }, 300);
+        setTimeout(() => scrollToVerse(suggestion.suraNum, suggestion.verseNum), 300);
     } else {
         goToPage(STATE.metadata.sureToPageMap[suggestion.suraNum]);
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
-
     DOM.autocomplete.innerHTML = '';
     DOM.autocomplete.style.display = 'none';
     inputElement.value = '';
@@ -1000,16 +905,12 @@ function showLoading(text = 'Yükleniyor...') {
     const loadingOverlay = DOM.loadingOverlay;
     loadingOverlay.style.display = 'flex';
     document.querySelector('.loading-text').textContent = text;
-
-    loadingOverlay.autoHideTimeout = setTimeout(() => {
-        hideLoading();
-    }, 2000);
+    loadingOverlay.autoHideTimeout = setTimeout(() => hideLoading(), 2000);
 }
 
 function hideLoading() {
     const loadingOverlay = DOM.loadingOverlay;
     loadingOverlay.style.display = 'none';
-
     if (loadingOverlay.autoHideTimeout) {
         clearTimeout(loadingOverlay.autoHideTimeout);
     }
@@ -1021,65 +922,4 @@ function updateLoadingProgress(percent) {
         progressBar.style.width = `${percent}%`;
     }
     document.querySelector('.loading-text').textContent = `Yükleniyor... %${Math.round(percent)}`;
-}
-
-document.getElementById('notesPage').addEventListener('click', () => {
-    displayNotesPage(); // Bu fonksiyonu JS'e ekleyeceğiz
-    DOM.sidebar.classList.add('hidden');
-    DOM.sidebarOverlay.classList.add('hidden');
-    document.body.style.overflow = '';
-});
-
-function displayNotesPage() {
-    DOM.content.innerHTML = `
-        <div class="page-header">
-            <h1>📝 Notlarım</h1>
-        </div>
-        <div class="sura" id="userNotesContainer">
-            <p>Notlarınız yükleniyor...</p>
-        </div>
-    `;
-
-    fetch('get_user_notes.php', {
-        credentials: 'include'
-    })
-    .then(res => res.json())
-    .then(data => {
-        const container = document.getElementById('userNotesContainer');
-
-        if (!Array.isArray(data) || data.length === 0) {
-            container.innerHTML = `<p>Henüz bir notunuz yok.</p>`;
-            return;
-        }
-
-        let html = '';
-        data.forEach(note => {
-            html += `
-                <div class="note-box">
-                    <div><strong>🕋 Ayet:</strong> ${note.sura}:${note.verse}</div>
-                    <div><strong>🗒️ Not:</strong> ${note.note}</div>
-                    <div><small>🕑 ${note.created_at}</small></div>
-                </div>
-            `;
-        });
-
-        container.innerHTML = html;
-    })
-    .catch(err => {
-        console.error('Notlar alınırken hata:', err);
-        const container = document.getElementById('userNotesContainer');
-        container.innerHTML = '<p>Notlar yüklenemedi.</p>';
-    });
-}
-
-// Bu fonksiyon dışarıda olmalı!
-function toggleNoteInput(id, sura, verse) {
-    const element = document.getElementById(id);
-    if (!element) return;
-
-    element.classList.toggle('hidden');
-    if (!element.classList.contains('hidden')) {
-        const textarea = document.getElementById(`note-input-${sura}-${verse}`);
-        if (textarea) textarea.focus();
-    }
 }

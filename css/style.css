@@ -61,6 +61,15 @@
     --bismillah-bg: #f7fafc;
     --english-bismillah-bg: #e3f2fd;
 }
+
+.erhan-arabic-text {
+    font-family: Arial, sans-serif;
+    font-size: 48px;
+    direction: rtl;
+    line-height: 1.2;
+    display: inline-block;
+    margin-left: 0.4rem;
+}
 .dark-theme {
     --bg-color: #0f172a;
     --card-bg: #1e293b;
@@ -520,12 +529,14 @@ body {
     justify-content: space-between;
     gap: 16px;
     height: 60px;
+    overflow: visible;
 }
 .nav-controls {
     display: flex;
     gap: 8px;
     align-items: center;
     flex: 1;
+    position: relative;
 }
 .nav-btn {
     background: rgba(255, 255, 255, 0.2);
@@ -590,17 +601,40 @@ body {
     border-radius: var(--radius);
     box-shadow: var(--shadow);
     z-index: 1000;
-    max-height: 300px;
+    max-height: 480px;
+    min-height: 200px;
     overflow-y: auto;
     display: none;
+    padding: 8px;
+    -webkit-overflow-scrolling: touch;
 }
 .autocomplete-suggestions div {
-    padding: 8px 12px;
+    padding: 10px 12px;
     cursor: pointer;
     border-bottom: 1px solid var(--border-color);
     transition: var(--transition);
+    white-space: normal;
+    font-size: 15px;
 }
 .autocomplete-suggestions div:hover {
+    background: var(--transliteration-bg);
+    color: var(--transliteration-text);
+    transform: none;
+}
+.verse-search-highlight {
+    border: 2px dashed #f59e0b !important;
+    background: rgba(255, 236, 179, 0.85) !important;
+}
+.meal-focused-result {
+    border-left: 3px solid #f59e0b;
+    background: rgba(255, 243, 205, 0.45);
+    padding-left: 8px;
+}
+.search-result-highlight {
+    background: rgba(255, 229, 100, 0.75);
+    font-weight: 700;
+}
+.page-footer {
     background: var(--transliteration-bg);
     color: var(--transliteration-text);
 }
@@ -841,11 +875,31 @@ body.greenolive-theme #notesPage:hover {
     width: 100%;
 }
 .iframe-container {
-    width: 100%;
-    height: calc(100vh - 140px);
-    border: none;
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
+  display: block;
+  width: 100%;
+  /* Üstte sabit header varsa yüksekliği ondan düşelim.
+     Header'ınız ~64px ise aşağıdaki değer uygundur. Değilse px'i header yüksekliğinize göre ayarlayın. */
+  height: calc(100vh - 64px);
+  border: 0;
+  position: relative;
+  z-index: 1;           /* iframe tıklama önceliği */
+  pointer-events: auto; /* güvene alalım */
+}
+
+/* Tooltip asla tıklamayı ele geçirmesin */
+.word-tooltip, #wordTooltip {
+  pointer-events: none;
+}
+
+/* Yan menü overlay görünmezken tamamen devre dışı kalsın */
+.sidebar-overlay.hidden {
+  display: none !important;
+  pointer-events: none !important;
+}
+
+/* Yükleme katmanı kapalıyken tamamen devre dışı kalsın */
+.loading-overlay[style*="display: none"] {
+  pointer-events: none !important;
 }
 .page-header {
     text-align: center;
@@ -1114,6 +1168,15 @@ body.greenolive-theme .toggle-btn:hover {
     color: var(--highlight-text) !important;
     border: 2px solid var(--button-primary) !important;
 }
+.meal-highlight {
+    border: 2px dashed #f59e0b !important;
+    background: rgba(245, 158, 11, 0.12) !important;
+    transition: background 0.3s ease, border-color 0.3s ease;
+}
+.search-result-highlight {
+    background: rgba(255, 229, 100, 0.75);
+    font-weight: 700;
+}
 .page-footer {
     margin-top: 20px;
     padding: 10px;
@@ -1149,11 +1212,41 @@ body.greenolive-theme .toggle-btn:hover {
     .nav-controls {
         width: 100%;
         justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 8px;
     }
     .search-container {
         max-width: none;
         flex: 1;
-        margin: 0 8px;
+        margin: 0 4px;
+        min-width: 0;
+        order: 2;
+        width: 100%;
+        position: relative;
+    }
+    .search-container input {
+        padding: 10px 12px;
+        font-size: 16px;
+    }
+    .autocomplete-suggestions {
+        max-height: calc(100vh - 70px);
+        min-height: auto;
+        width: 100%;
+        position: fixed;
+        left: 0;
+        right: 0;
+        top: 60px;
+        z-index: 1050;
+        border-radius: 0;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        padding: 0;
+        overflow-y: scroll;
+        -webkit-overflow-scrolling: touch;
+    }
+    .autocomplete-suggestions div {
+        padding: 12px 16px;
+        font-size: 14px;
+        border-bottom: 1px solid var(--border-color);
     }
     .sidebar {
         width: 100%;
@@ -1508,4 +1601,138 @@ body.sidebar-open {
     background: var(--note-background);
     padding: 0.5rem;
     border-radius: 4px;
+}
+.about-section h1 {
+  font-size: 2rem;
+  margin-bottom: 1rem;
+  color: var(--text-color);
+}
+
+.about-section h2 {
+  font-size: 1.5rem;
+  margin: 1rem 0 0.5rem;
+  color: var(--text-color);
+  border-bottom: 2px solid var(--button-primary);
+}
+
+.about-section h3 {
+  font-size: 1.2rem;
+  margin: 0.8rem 0 0.4rem;
+  color: var(--text-color);
+}
+
+.about-section p {
+  margin: 0.5rem 0;
+  color: var(--light-text);
+}
+
+.about-section ul {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+  list-style-type: disc;
+}
+
+.about-section li {
+  margin-bottom: 0.5rem;
+  color: var(--light-text);
+}
+
+.about-section a {
+  color: var(--button-primary);
+  text-decoration: none;
+}
+
+.about-section a:hover {
+  text-decoration: underline;
+}
+
+.about-section {
+    padding: 20px;
+    line-height: 1.6;
+    color: var(--text-color);
+}
+
+.about-section h1 {
+    font-size: 2em;
+    margin-bottom: 1em;
+    color: var(--text-color);
+}
+
+.about-section h2 {
+    font-size: 1.5em;
+    margin: 1em 0 0.5em;
+    color: var(--text-color);
+}
+
+.about-section h3 {
+    font-size: 1.25em;
+    margin: 0.75em 0 0.5em;
+    color: var(--text-color);
+}
+
+.about-section h4 {
+    font-size: 1.1em;
+    margin: 0.5em 0 0.3em;
+    color: var(--text-color);
+}
+
+.about-section p {
+    margin-bottom: 1em;
+}
+
+.about-section ul {
+    margin-bottom: 1em;
+    padding-left: 20px;
+}
+
+.about-section li {
+    margin-bottom: 0.5em;
+}
+
+.about-section code {
+    background-color: var(--code-bg, #f4f4f4);
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-family: monospace;
+}
+
+.about-section a {
+    color: var(--link-color, #3498db);
+    text-decoration: none;
+}
+
+.about-section a:hover {
+    text-decoration: underline;
+}
+
+/* Tema bazlı renk değişkenleri (örnek) */
+:root {
+    --text-color: #333;
+    --link-color: #3498db;
+    --code-bg: #f4f4f4;
+}
+
+.dark-theme {
+    --text-color: #e0e0e0;
+    --link-color: #66b3ff;
+    --code-bg: #2c3e50;
+}
+
+.green-theme {
+    --text-color: #d4edda;
+    --link-color: #28a745;
+    --code-bg: #1a3c34;
+}
+
+/* Diğer temalar için gerekli renk değişkenlerini ekleyin */
+/* ========== Performans: Meal Lazy Load ========== */
+/* Arama açılır listesinde mealler yüklenirken gösterilen bilgi satırı */
+.autocomplete-suggestions .meal-loading-hint {
+    color: var(--light-text);
+    font-style: italic;
+    font-size: 0.85em;
+    padding: 6px 10px;
+    border-top: 1px dashed var(--border-color);
+    cursor: default;
+    pointer-events: none;
 }

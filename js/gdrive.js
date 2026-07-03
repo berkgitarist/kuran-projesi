@@ -7,8 +7,8 @@
 
 /* ========= Yapılandırma ========= */
 const GDRIVE_CONFIG = {
-  CLIENT_ID: '531554591019-2rshc2099esb0mivhu2t0o8rg6lfs1if.apps.googleusercontent.com',
-  API_KEY: 'AIzaSyB53htFfTz7dsIIx2J1RRoQ-i0PiyFKwG4',
+  CLIENT_ID: '',
+  API_KEY: '',
   FOLDER_NAME: 'Kuran_Teyit_Not',
   SCOPES: 'https://www.googleapis.com/auth/drive.file'
 };

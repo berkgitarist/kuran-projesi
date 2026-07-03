@@ -26,7 +26,9 @@ const CONFIG = {
     tr: './data/quran_tr.json',
     translit: './data/Turkce_Transkript.json',
     ai: './data/yapayzekaceviri.json',
-    dictionary: './data/manual-dictionary.json'
+    dictionary: './data/manual-dictionary.json',
+    arabic2: './data/mealler/quran_arapca2.json',
+    erhanArabic: './data/mealler/kuran_erhan_aktas.json'
   }
 };
 
@@ -40,7 +42,9 @@ const STATE = {
     translit: {},
     ai: {},
     meals: {},
-    dictionary: {}
+    dictionary: {},
+    arabic2: {},
+    erhanArabic: {}
   },
   metadata: {
     sureNames: {},
@@ -421,7 +425,9 @@ async function loadInitialData() {
       loadDataFile(CONFIG.dataPaths.tr, 'tr'),
       loadDataFile(CONFIG.dataPaths.translit, 'translit'),
       loadDataFile(CONFIG.dataPaths.dictionary, 'dictionary'),
-      loadDataFile(CONFIG.dataPaths.ai, 'ai')
+      loadDataFile(CONFIG.dataPaths.ai, 'ai'),
+      loadDataFile(CONFIG.dataPaths.arabic2, 'arabic2'),
+      loadDataFile(CONFIG.dataPaths.erhanArabic, 'erhanArabic')
     ]);
   } catch (error) {
     console.error('Veri yükleme hatası:', error);
@@ -851,6 +857,28 @@ function mapNotesToVerses(notesData) {
 /* =========================
    HTML üretimi
 ========================= */
+function getArabic2Text(suraNum, verseNum) {
+  const suraData = STATE.data.arabic2?.[String(suraNum)];
+  if (!Array.isArray(suraData)) return '';
+
+  const found = suraData.find((item) => String(item.verse) === String(verseNum));
+  return found?.text || '';
+}
+
+function getErhanArabicText(suraNum, verseNum) {
+  const surah = STATE.data.erhanArabic?.surahs?.find(
+    (s) => String(s.id) === String(suraNum)
+  );
+
+  if (!surah || !Array.isArray(surah.verses)) return '';
+
+  const verse = surah.verses.find(
+    (v) => String(v.verse_number) === String(verseNum)
+  );
+
+  return verse?.verse || '';
+}
+
 function buildPageHtml(pageNum) {
   const enPage = STATE.data.en[pageNum];
   const trPage = STATE.data.tr[pageNum];
@@ -884,10 +912,9 @@ function buildPageHtml(pageNum) {
     for (const verseNum of verseKeys) {
       if (enSura.titles && enSura.titles[verseNum]) {
         html += `<div class="passage-title">${escapeHtml(enSura.titles[verseNum])}</div>`;
+
         if (trSura.titles && trSura.titles[verseNum]) {
-          html += `<div class="passage-title-tr">${escapeHtml(
-            trSura.titles[verseNum]
-          )}</div>`;
+          html += `<div class="passage-title-tr">${escapeHtml(trSura.titles[verseNum])}</div>`;
         }
       }
 
@@ -895,10 +922,43 @@ function buildPageHtml(pageNum) {
       const hasNotes =
         (enNotesMap[verseKey]?.length > 0) || (trNotesMap[verseKey]?.length > 0);
 
+      const arabic2Text = getArabic2Text(suraNum, verseNum);
+      const erhanArabicText = getErhanArabicText(suraNum, verseNum);
+
       html += `
         <div class="verse">
-          <div class="verse-number">${suraNum}:${verseNum}</div>
-          <div class="verse-arabic">${enSura.encrypted?.[verseNum] || ''}</div>`;
+          <div class="verse-header">
+            <div></div>
+
+            <div class="verse-number">${suraNum}:${verseNum}</div>
+
+            <details class="arabic-section">
+              <summary>📖 Arapça</summary>
+
+              <div class="arabic-dropdown-content">
+                <div class="arabic-label">Standart Arapça - qurantft.json</div>
+                <div class="verse-arabic">${enSura.encrypted?.[verseNum] || ''}</div>
+
+                ${
+                  arabic2Text
+                    ? `
+                      <div class="arabic-label">İkinci Arapça - quran_arapca2.json</div>
+                      <div class="verse-arabic verse-arabic-2">${arabic2Text}</div>
+                    `
+                    : ''
+                }
+
+                ${
+                  erhanArabicText
+                    ? `
+                      <div class="arabic-label">Erhan Aktaş Arapçası - kuran_erhan_aktas.json</div>
+                      <div class="verse-arabic verse-arabic-2">${erhanArabicText}</div>
+                    `
+                    : ''
+                }
+              </div>
+            </details>
+          </div>`;
 
       if (STATE.settings.showTransliteration) {
         html += `<div class="verse-transliteration">${
@@ -908,9 +968,7 @@ function buildPageHtml(pageNum) {
 
       html += `
           <div class="verse-text">${escapeHtml(enSura.verses[verseNum])}</div>
-          <div class="verse-text-tr"><strong>${escapeHtml(
-            trSura.verses[verseNum]
-          )}</strong></div>
+          <div class="verse-text-tr"><strong>${escapeHtml(trSura.verses[verseNum])}</strong></div>
           <div class="buttons">`;
 
       if (hasNotes) {
@@ -926,13 +984,13 @@ function buildPageHtml(pageNum) {
 
       if (STATE.settings.showAiTranslation) {
         html += `<div id="ai-translation-${suraNum}-${verseNum}" class="ai-translation">`;
+
         if (STATE.data.ai[suraNum]?.verses?.[verseNum]) {
-          html += `<strong>AI ÇEVİRİ:</strong> ${escapeHtml(
-            STATE.data.ai[suraNum].verses[verseNum]
-          )}`;
+          html += `<strong>AI ÇEVİRİ:</strong> ${escapeHtml(STATE.data.ai[suraNum].verses[verseNum])}`;
         } else {
           html += `<strong>AI ÇEVİRİ:</strong> Çeviri bulunamadı.`;
         }
+
         html += `</div>`;
       }
 
@@ -955,29 +1013,33 @@ function buildPageHtml(pageNum) {
       }
 
       html += `
-        <div id="user-note-${suraNum}-${verseNum}" class="note-box hidden"></div>
-        <div id="meal-${suraNum}-${verseNum}" class="note-box hidden"></div>
-        <div id="note-input-box-${suraNum}-${verseNum}" class="note-input-box hidden">
-          <textarea id="note-input-${suraNum}-${verseNum}" placeholder="Notunuzu buraya yazın..." rows="4"></textarea>
-          <div class="note-actions">
-            <button class="save-note-btn" onclick="saveNote(${suraNum}, ${verseNum})">💾 Kaydet</button>
-            <button class="cancel-note-btn" onclick="cancelNote(${suraNum}, ${verseNum})">❌ İptal</button>
+          <div id="user-note-${suraNum}-${verseNum}" class="note-box hidden"></div>
+          <div id="meal-${suraNum}-${verseNum}" class="note-box hidden"></div>
+          <div id="note-input-box-${suraNum}-${verseNum}" class="note-input-box hidden">
+            <textarea id="note-input-${suraNum}-${verseNum}" placeholder="Notunuzu buraya yazın..." rows="4"></textarea>
+            <div class="note-actions">
+              <button class="save-note-btn" onclick="saveNote(${suraNum}, ${verseNum})">💾 Kaydet</button>
+              <button class="cancel-note-btn" onclick="cancelNote(${suraNum}, ${verseNum})">❌ İptal</button>
+            </div>
           </div>
-        </div>
-      </div>`;
+        </div>`;
     }
 
     html += `</div>`;
   }
 
   html += `<div class="page-footer">`;
+
   if (STATE.currentPage > 1) {
     html += `<button class="header-btn" onclick="goToPage(${STATE.currentPage - 1})">⟵ Önceki Sayfa</button>`;
   }
+
   html += `<span class="page-info">Sayfa ${STATE.currentPage} / ${STATE.totalPages}</span>`;
+
   if (STATE.currentPage < STATE.totalPages) {
     html += `<button class="header-btn" onclick="goToPage(${STATE.currentPage + 1})">Sonraki Sayfa ⟶</button>`;
   }
+
   html += `</div>`;
 
   return html;
@@ -2091,7 +2153,11 @@ function displaySettingsPage() {
         <h2>Yazılım Hakkında</h2>
         <div class="about-section">
           <ul>
-            <li><strong>Kodlama, Tasarım:</strong> Berk KÖKSAL</li>
+            <li><strong>Kodlama, Tasarım: <strong>Berk KÖKSAL</strong></p>  <a href="https://www.berkkoksal.com" target="_blank" rel="noopener noreferrer">
+            www.berkkoksal.com
+          </a>
+        </li>
+        <li><strong>Arama:</strong> (örn: "2:255") 2 255 veya 2/255 yazabilirsiniz.</li>
             <li><strong>Arama:</strong> (örn: "2:255") 2 255  2/255 yazabilirsiniz.</li>
             <li><strong>Google Drive:</strong> Notlarınız otomatik olarak "Kuran_Teyit_Not" klasörüne kaydedilir.</li>
           </ul>
@@ -2159,19 +2225,118 @@ function displayNotesPage() {
 }
 
 const GUIDE_CONTENT = `
-  <h1>Kuran Teyit Yazılımı: Tanıtım ve Kullanım Kılavuzu</h1>
-  <h2>Tanıtım</h2>
-  <p>Bu yazılım Kur'an okuma, arama, meal karşılaştırma ve not alma için geliştirilmiş modern bir web uygulamasıdır.</p>
-  <h3>Ana Özellikler</h3>
-  <ul>
-    <li>Kur'an okuma ve çeviriler</li>
-    <li>Google Drive not entegrasyonu</li>
-    <li>Kelime çevirisi</li>
-    <li>Farklı mealler</li>
-    <li>Arama</li>
-    <li>Özelleştirilebilir arayüz</li>
-  </ul>
-`;
+    <h1>Kuran Teyit Yazılımı: Tanıtım ve Kullanım Kılavuzu</h1>
+    
+    <h2>Tanıtım: Kuran Teyit Yazılımı Nedir?</h2>
+    <p>[1:1] En Lütufkâr, En Merhametli TANRI’nın adıyla.</p>
+    <p>Bu, Tanrı’nın insanlığa son mesajıdır. Tanrı’nın tüm peygamberleri bu dünyaya geldi ve tüm kutsal yazılar iletildi. Tanrı’nın peygamberleri tarafından iletilen tüm mesajların arındırılıp tek bir mesajda birleştirilmesinin ve bundan böyle Tanrı’nın kabul ettiği tek dinin “Teslimiyet” (3:19, 3:85) olduğunun duyurulmasının zamanı geldi. “Teslimiyet,” Tanrı’nın mutlak otoritesini tanıdığımız ve tüm güce sahip olanın YALNIZCA Tanrı olduğuna; O’ndan bağımsız başka hiçbir varlığın herhangi bir güce sahip olmadığına dair sarsılmaz bir kanaate ulaştığımız dindir. Böyle bir farkındalığın doğal sonucu, yaşamlarımızı ve tapınmamızı mutlak bir şekilde YALNIZCA Tanrı’ya adamaktır. Bu, Eski Ahit, Yeni Ahit ve bu Son Ahit de dâhil olmak üzere tüm kutsal yazılardaki İlk Buyruktur.</p>
+    <p>Kuran Teyit Yazılımı, Tanrı’nın antlaşma elçisi Reşat Halife’nin Yetkilendirilmiş (İngilizce) çevirisi üzerine geliştirilmiş modern bir web uygulamasıdır. Kur'an-ı Kerim'i Arapça, Türkçe ve İngilizce çevirileriyle inceleme, farklı mealleri karşılaştırma, not alma ve kelime çevirisi gibi özelliklerle kullanıcı dostu bir deneyim sunar. Google Drive entegrasyonu ile notlarınızı güvenli bir şekilde kaydedebilirsiniz.</p>
+    <p>Uygulama, [17:36] ayetinden ilhamla, "Kendiniz için teyit etmediğiniz sürece hiçbir bilgiyi kabul etmeyin" mesajıyla eleştirel düşünmeyi teşvik eder. Tema seçenekleri ve özelleştirilebilir arayüzü ile her cihazda kolayca kullanılabilir. Yetkilendirilmiş Çeviri’nin teyide ihtiyacı olmadığını vurgulayarak, İngilizce bilmeyenler için kelimelerin derin anlamlarına ulaşmayı hedefler.</p>
+    
+
+    <h2>Kullanım Kılavuzu</h2>
+
+    <h3>1. Genel Yapı ve Navigasyon</h3>
+    <ul>
+        <li><strong>Menü Butonu (☰):</strong> Sure listesi, notlar ve ayarlara ulaşmanızı sağlar.</li>
+        <li><strong>Önceki/Sonraki Sayfa:</strong> Kur'an sayfaları arasında geçiş yapar.</li>
+        <li><strong>Arama Alanı:</strong> Sure, ayet veya kelime aramak için kullanılır.</li>
+        <li><strong>Kuran Oku:</strong> Harici Kur'an okuma sayfasına geçiş yapar; tekrar tıklayınca uygulama görünümüne dönülür.</li>
+    </ul>
+
+    <h3>2. Arapça Karşılaştırma Alanı</h3>
+    <p>Her ayetin sağ üstünde <strong>📖 Arapça</strong> bağlantısı bulunur. Bu bağlantıya tıklayınca ayetin üç farklı Arapça metni açılır.</p>
+    <ul>
+        <li><strong>Standart Arapça - qurantft.json:</strong> Ana Arapça kaynak.</li>
+        <li><strong>İkinci Arapça - quran_arapca2.json:</strong> Eklenen ikinci Arapça veri dosyası.</li>
+        <li><strong>Erhan Aktaş Arapçası - kuran_erhan_aktas.json:</strong> Erhan Aktaş veri dosyasındaki Arapça metin.</li>
+    </ul>
+    <p>Bu alan özellikle ayet kayması, eksik kelime, fazla kelime veya farklı Arapça yazım kontrolü için kullanışlıdır. İleride bu bölüme kelime farklarını renkli gösterme özelliği eklenebilir.</p>
+
+    <h3>3. Arama Alanının Kullanımı</h3>
+    <p>Arama çubuğuna sure adı, ayet numarası veya kelime yazabilirsiniz.</p>
+    <ul>
+        <li><code>2:255</code> → Bakara 255. ayete gider.</li>
+        <li><code>2/255</code> → Aynı şekilde çalışır.</li>
+        <li><code>2 255</code> → Boşluklu format da desteklenir.</li>
+        <li><code>Bakara</code>, <code>Fatiha</code>, <code>Yasin</code> gibi sure isimleriyle arama yapılabilir.</li>
+    </ul>
+
+    <h3>4. Kur'an Okuma ve Çeviriler</h3>
+    <ul>
+        <li>Ayet numarası ortada gösterilir.</li>
+        <li>📖 Arapça alanı açılır/kapanır yapıdadır; kapalıyken sayfayı kalabalıklaştırmaz.</li>
+        <li>Okunuş satırı açıksa Arapça-Türkçe okunuş gösterilir.</li>
+        <li>İngilizce ve Türkçe çeviriler ayetin altında görünür.</li>
+    </ul>
+
+    <h3>5. Mealler</h3>
+    <ul>
+        <li>Ayarlar bölümünden <strong>Mealler’i Göster</strong> seçeneği açılırsa her ayette <strong>📚 Mealler</strong> butonu görünür.</li>
+        <li>Butona tıklayınca farklı çevirmenlerin mealleri aynı ayet altında listelenir.</li>
+        <li>Mealler ilk ihtiyaç olduğunda yüklenir; bu sayede uygulama ilk açılışta daha hızlı çalışır.</li>
+    </ul>
+
+    <h3>6. Not Alma ve Google Drive</h3>
+    <ul>
+        <li><strong>✍️ Not Al</strong> butonuyla ayete özel not yazabilirsiniz.</li>
+        <li>Google Drive bağlantısı hazırsa notlarınız Drive üzerinde saklanır.</li>
+        <li><strong>📝 Notlarım</strong> sayfasından kayıtlı notlarınıza ulaşabilirsiniz.</li>
+    </ul>
+
+    <h3>7. Kelime Yardımı</h3>
+    <ul>
+        <li>İngilizce metindeki kelimelerin üzerine gelince Türkçe karşılıkları gösterilir.</li>
+        <li>Mobil cihazlarda kelimeye dokunarak yardım kutusu açılabilir.</li>
+    </ul>
+
+    <h3>8. Ayarlar</h3>
+    <ul>
+        <li><strong>Tema:</strong> Açık, koyu, yeşil, mavi ve diğer tema seçenekleri kullanılabilir.</li>
+        <li><strong>Yazı Boyutu:</strong> Küçük, orta veya büyük yazı boyutu seçilebilir.</li>
+        <li><strong>Mealler’i Göster:</strong> Meal butonlarını açar/kapatır.</li>
+        <li><strong>Arapça-Türkçe Göster:</strong> Okunuş satırını açar/kapatır.</li>
+        <li><strong>AI Çeviriyi Göster:</strong> Yapay zeka çevirisi varsa gösterir.</li>
+    </ul>
+
+    <h3>9. Performans ve Kod İyileştirmeleri</h3>
+    <ul>
+        <li>Sayfalar önbelleğe alınarak daha hızlı geçiş sağlanır.</li>
+        <li>Mealler ihtiyaç oldukça yüklenir.</li>
+        <li>Arama indexi uygulama açıldıktan sonra hazırlanır.</li>
+        <li>Üç Arapça veri kaynağı ayrı ayrı yüklenir ve aynı ayet altında karşılaştırmalı gösterilir.</li>
+        <li>Arapça alanı kapalı geldiği için sayfa daha sade ve hızlı okunabilir hale getirilmiştir.</li>
+    </ul>
+
+    <h3>10. Gelecek Geliştirme Fikirleri</h3>
+    <ul>
+        <li>Yapay Zeka ile Referans Ayetleri listeleyen yeni bir ekran.</li>
+        <li>Yapay zeka destekli bağlantılı kelime arama özelliği</li>
+        <li>Üç Arapça metin arasındaki kelime farklarını renkli vurgulama.</li>
+        <li>Ayet bazında “Arapça kaynaklarda fark var” uyarısı.</li>
+        <li>Sadece farklı kelimeleri gösterme modu.</li>
+        <li>Arapça karşılaştırma raporu oluşturma.</li>
+        <li>Kullanım kılavuzunu ileride ayrı bir <code>guide.html</code> veya <code>guide.md</code> dosyasına taşıma.</li>
+    </ul>
+
+    <h3>11. Sıkça Sorulan Sorular</h3>
+    <ul>
+        <li><strong>Mealler butonunu göremiyorum, neden?</strong> Ayarlar bölümünden “Mealler’i Göster” seçeneğini açmalısınız.</li>
+        <li><strong>Arapça metinler neden kapalı geliyor?</strong> Sayfanın sade kalması için Arapça karşılaştırma alanı açılır/kapanır yapıdadır.</li>
+        <li><strong>Üç Arapça metin ne işe yarar?</strong> Aynı ayetin farklı veri kaynaklarındaki Arapça karşılıklarını kontrol etmeye yarar.</li>
+        <li><strong>Notlarım neden kaydedilmiyor?</strong> Google hesabınızla giriş yaptığınızdan ve Drive bağlantısının hazır olduğundan emin olun.</li>
+        <li><strong>Tema değişiklikleri kalıcı mı?</strong> Evet, ayarlar tarayıcıda saklanır.</li>
+    </ul>
+
+    <h2>Son Söz</h2>
+    <p>Kuran Teyit Yazılımı, Kur'an metinlerini okumak, karşılaştırmak, teyit etmek ve kişisel notlarla çalışmak için geliştirilmiş bir araçtır. Yeni eklenen Arapça karşılaştırma alanı sayesinde aynı ayetin üç farklı Arapça veri kaynağı tek ekranda incelenebilir.</p>
+    <p>Geliştirme, tasarım ve kodlama: <strong>Berk KÖKSAL</strong></p>  <a href="https://www.berkkoksal.com" target="_blank" rel="noopener noreferrer">
+            www.berkkoksal.com
+          </a>
+    <p> Sorularınız veya önerileriniz için; <strong><a href=>berkgitarist@gmail.com</a> adreslerinden ulaşabilirsiniz.</p>
+    <p> Bu proje Tamamen <strong>TANRI<strong>'ya Adanmıştır.
+`;    
+
 
 function displayGuidePage() {
   ensureQuranView();

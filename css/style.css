@@ -1749,3 +1749,127 @@ body.sidebar-open {
     cursor: default;
     pointer-events: none;
 }
+.verse-arabic-2 {
+  margin-top: 8px;
+  opacity: 0.75;
+  font-size: calc(var(--verse-arabic-size) - 2px);
+}
+.arabic-section {
+  margin: 12px 0;
+}
+
+.arabic-section{
+    margin:0;
+    padding:0;
+}
+
+.arabic-section summary{
+    display:flex;
+    justify-content:flex-end;
+    align-items:center;
+
+    margin:0;
+    padding:2px 0;
+
+    cursor:pointer;
+    font-size:15px;
+    font-weight:600;
+    color:#8dc6ff;
+
+    line-height:1.1;
+    min-height:20px;
+}
+
+.arabic-section[open] summary{
+    margin-bottom:4px;
+}
+
+.arabic-label {
+  margin-top: 12px;
+  margin-bottom: 4px;
+  font-size: 13px;
+  opacity: 0.75;
+}
+.verse{
+    position: relative;
+}
+
+.verse-header{
+    display:grid;
+    grid-template-columns:1fr auto 1fr;
+    align-items:center;
+    margin-bottom:8px;
+}
+
+.verse-number{
+    justify-self:center;
+}
+/* ===== Arapça Açılır Bölüm ===== */
+/* ===== Arapça Açılır Bölüm ===== */
+
+.verse-header {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: start;
+    margin-bottom: 6px;
+}
+
+.verse-header .verse-number {
+    justify-self: center;
+    margin: 0;
+}
+
+.arabic-section {
+    justify-self: stretch;
+    grid-column: 1 / 4;
+    margin: 0;
+    padding: 0;
+    text-align: right;
+}
+
+.arabic-section summary {
+    cursor: pointer;
+    color: #8dc6ff;
+    font-weight: 600;
+    font-size: 15px;
+    list-style: none;
+    line-height: 1.2;
+    text-align: right;
+}
+
+.arabic-section summary::-webkit-details-marker {
+    display: none;
+}
+
+.arabic-section summary::after {
+    content: " ▼";
+    font-size: 11px;
+}
+
+.arabic-section[open] summary::after {
+    content: " ▲";
+}
+
+.arabic-dropdown-content {
+    margin-top: 6px;
+    width: 100%;
+}
+
+.arabic-label {
+    margin: 6px 0 3px;
+    font-size: 13px;
+    opacity: .75;
+    text-align: right;
+}
+
+.arabic-section .verse-arabic {
+    direction: rtl;
+    text-align: right;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.verse-arabic-2 {
+    margin-top: 8px;
+    opacity: .75;
+}

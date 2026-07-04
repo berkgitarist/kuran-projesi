@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="tr" class="dark-theme">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Kuran Teyit Yazılımı</title>
+
+  <!-- Stil ve fontlar -->
+  <link rel="stylesheet" href="css/style.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Scheherazade+New:wght@400;700&display=swap" rel="stylesheet">
+
+  <!-- ÖNCE kendi kodun: onload callback'leri burada tanımlı olmalı -->
+  <script src="js/gdrive.js"></script>
+
+  <!-- Google SDK'lar: onload ile bizim fonksiyonları çağırır -->
+  <script src="https://accounts.google.com/gsi/client" async defer onload="gisLoaded()"></script>
+  <script src="https://apis.google.com/js/api.js" async defer onload="gapiLoaded()"></script>
+
+  <!-- Diğer kütüphaneler -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+  <!-- Meta (isteğe bağlı) -->
+  <meta name="theme-color" content="#0a6847">
+  <meta name="description" content="Kuran Teyit Yazılımı — Arapça/Türkçe/İngilizce okuma, mealler, not alma ve Google Drive entegrasyonu.">
+</head>
+<body>
+  <!-- Üst Menü -->
+  <div class="header-bar">
+    <div class="nav-controls">
+      <button id="menuToggle" class="nav-btn" aria-label="Menüyü Aç" title="Menüyü Aç">☰</button>
+      <button id="prevPage" class="nav-btn" aria-label="Önceki Sayfa" title="Önceki Sayfa">⟵</button>
+
+      <div class="search-container">
+        <input type="text" id="searchInput" placeholder="Sure, ayet ara" aria-label="Sure, ayet ara"/>
+        <div id="autocomplete" class="autocomplete-suggestions" role="listbox" aria-label="Öneriler"></div>
+      </div>
+
+      <button id="nextPage" class="nav-btn" aria-label="Sonraki Sayfa" title="Sonraki Sayfa">⟶</button>
+      <span id="currentPageDisplay" class="page-toggle" role="button" tabindex="0" aria-label="Görünümü Değiştir">Kuran Oku</span>
+    </div>
+
+    <!-- Google Giriş / Çıkış -->
+    <div id="authContainer" class="auth-container">
+      <!-- Google Sign-In (herkes) -->
+      <div id="g_id_onload"
+           data-client_id="531554591019-2rshc2099esb0mivhu2t0o8rg6lfs1if.apps.googleusercontent.com"
+           data-callback="onSignIn"
+           data-auto_prompt="false">
+      </div>
+      <div id="g_id_signin"></div>
+
+      <!-- Drive izni (isteğe bağlı, incremental) -->
+      <button id="connectDriveBtn" class="auth-btn hidden" onclick="connectDrive()">Drive’a Bağla</button>
+      <button id="logoutBtn" class="auth-btn hidden" onclick="signOut()">Çıkış</button>
+    </div>
+  </div>
+
+  <!-- Yükleme Göstergesi -->
+  <div class="loading-overlay" id="loadingOverlay" aria-live="polite" aria-busy="true">
+    <div class="loading-spinner" aria-hidden="true"></div>
+    <div class="loading-text">Yükleniyor...</div>
+    <div class="progress-container"><div class="progress-bar"></div></div>
+  </div>
+
+  <!-- Ana İçerik -->
+  <div class="main-container">
+    <!-- Yan Menü -->
+    <div class="sidebar hidden" id="sidebar" aria-hidden="true">
+      <div class="menu-section">
+        <button id="notesPage" class="menu-item-btn">📝 Notlarım</button>
+        <button id="settingsPage" class="menu-item-btn">⚙️ Ayarlar</button>
+        <!-- DİKKAT: onclick kaldırıldı; JS'te addEventListener ile yönetiliyor -->
+        <button id="guidePage" class="menu-item-btn">📖 Kullanım Kılavuzu</button>
+        <button id="closeMenu" class="menu-item-btn">✖ Kapat</button>
+      </div>
+      <div class="menu">
+        <h2>Sureler</h2>
+        <ul id="suraMenu"></ul>
+      </div>
+    </div>
+    <div id="sidebarOverlay" class="sidebar-overlay hidden" tabindex="-1" aria-hidden="true"></div>
+
+    <!-- İçerik alanı -->
+    <div class="content-area" id="contentArea">
+      <div id="quranContent" class="content-container"></div>
+
+      <div id="iframeContent" class="content-container hidden">
+        <div class="page-header"><h1>📖 Kuran Oku</h1></div>
+        <iframe id="externalIframe"
+                src="https://qurantft.com/"
+                class="iframe-container"
+                title="Kuran Oku"
+                loading="lazy"
+                referrerpolicy="no-referrer">
+        </iframe>
+      </div>
+    </div>
+  </div>
+
+  <!-- Kelime tooltip -->
+  <div id="wordTooltip" class="word-tooltip" role="tooltip" aria-hidden="true"></div>
+
+  <!-- Açılış metni -->
+  <div id="introVerse" class="intro-verse-screen" aria-hidden="false">
+    <div class="intro-verse-content">
+      <h2>Çok Önemli Tavsiye</h2>
+      <p>[17:36] Hiçbir bilgiyi, kendiniz için teyit etmediğiniz sürece, kabul etmeyin</p>
+      <p>Ben size işitmeyi, görmeyi ve beyni verdim ve siz onları kullanmaktan sorumlusunuz.</p>
+    </div>
+  </div>
+
+  <!-- Uygulama JS'i -->
+  <script src="js/script.js" defer></script>
+</body>
+</html>

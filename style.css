@@ -12,6 +12,8 @@
     --transition: all 0.3s ease;
     --box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     --text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    --link-color: #3498db;
+    --code-bg: #f4f4f4;
 }
 .light-theme {
     --bg-color: #f8fafc;
@@ -637,6 +639,12 @@ body {
 .page-footer {
     background: var(--transliteration-bg);
     color: var(--transliteration-text);
+    margin-top: 20px;
+    padding: 10px;
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    flex-wrap: wrap;
 }
 .autocomplete-suggestions div:last-child {
     border-bottom: none;
@@ -717,14 +725,7 @@ body {
     transition: width 0.3s ease;
     width: 0%;
 }
-.main-container {
-    display: flex;
-    gap: 20px;
-    max-width: 1400px;
-    margin: 0 auto;
-    padding: 20px;
-    padding-top: 80px;
-}
+
 .sidebar {
     position: fixed;
     top: 60px;
@@ -867,10 +868,7 @@ body.greenolive-theme #notesPage:hover {
 .sidebar-overlay:not(.hidden) {
     display: block;
 }
-.content-area {
-    flex: 1;
-    min-height: calc(100vh - 140px);
-}
+
 .content-container {
     width: 100%;
 }
@@ -1190,19 +1188,13 @@ body.greenolive-theme .toggle-btn:hover {
     background: rgba(255, 229, 100, 0.75);
     font-weight: 700;
 }
-.page-footer {
-    margin-top: 20px;
-    padding: 10px;
-    display: flex;
-    justify-content: center;
-    gap: 15px;
-    flex-wrap: wrap;
-}
+
 @media (max-width: 1024px) {
     .main-container {
         flex-direction: column;
-        padding: 10px;
+        padding: 80px 10px 10px;
     }
+
     .sidebar {
         width: 100%;
         position: fixed;
@@ -1482,20 +1474,7 @@ body.greenolive-theme .toggle-btn:hover {
 .about-section li {
     margin-bottom: 8px;
 }
-body.sky-theme .verse-box,
-body.blackyellow-theme .verse-box,
-body.bluemaize-theme .verse-box,
-body.redpeach-theme .verse-box,
-body.greenolive-theme .verse-box {
-    background: var(--gradient-start);
-    padding: 4px 8px;
-    border-radius: 16px;
-    box-shadow: 0 4px 20px rgba(125, 211, 252, 0.3);
-    color: var(--highlight-text);
-    line-height: 1.75;
-    border-left: 5px solid var(--verse-border);
-    transition: all 0.3s ease;
-}
+
 body.sky-theme .verse-box:hover,
 body.blackyellow-theme .verse-box:hover,
 body.bluemaize-theme .verse-box:hover,
@@ -1580,26 +1559,32 @@ body.sidebar-open {
     margin: 0.3rem 0;
     color: #f0f0f0;
 }
-
-/* İçerik alanı padding'ini kaldır */
-.content-area {
-    padding: 0 !important;
-}
-
-/* Main container padding'ini kaldır */
+/* ===== Ana yerleşim / sabit header düzeltmesi ===== */
 .main-container {
-    padding: 0 !important;
+    display: flex;
+    gap: 20px;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 80px 20px 20px;
 }
+
+.content-area {
+    flex: 1;
+    min-height: calc(100vh - 140px);
+    padding: 0;
+}
+
 .notes-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
     gap: 1rem;
 }
 .note-card {
-    border: 1px solid #ccc;
+    border: 1px solid var(--border-color);
     padding: 1rem;
-    border-radius: 8px;
-    background: var(--background-color);
+    border-radius: var(--radius);
+    background: var(--card-bg);
+    color: var(--text-color);
 }
 .note-header {
     display: flex;
@@ -1611,59 +1596,13 @@ body.sidebar-open {
     color: var(--secondary-color);
 }
 .saved-note {
-    background: var(--note-background);
+    background: var(--note-bg);
+    color: var(--note-text);
     padding: 0.5rem;
-    border-radius: 4px;
-}
-.about-section h1 {
-  font-size: 2rem;
-  margin-bottom: 1rem;
-  color: var(--text-color);
+    border-radius: var(--radius);
 }
 
-.about-section h2 {
-  font-size: 1.5rem;
-  margin: 1rem 0 0.5rem;
-  color: var(--text-color);
-  border-bottom: 2px solid var(--button-primary);
-}
 
-.about-section h3 {
-  font-size: 1.2rem;
-  margin: 0.8rem 0 0.4rem;
-  color: var(--text-color);
-}
-
-.about-section p {
-  margin: 0.5rem 0;
-  color: var(--light-text);
-}
-
-.about-section ul {
-  margin: 0.5rem 0;
-  padding-left: 1.5rem;
-  list-style-type: disc;
-}
-
-.about-section li {
-  margin-bottom: 0.5rem;
-  color: var(--light-text);
-}
-
-.about-section a {
-  color: var(--button-primary);
-  text-decoration: none;
-}
-
-.about-section a:hover {
-  text-decoration: underline;
-}
-
-.about-section {
-    padding: 20px;
-    line-height: 1.6;
-    color: var(--text-color);
-}
 
 .about-section h1 {
     font-size: 2em;
@@ -1718,24 +1657,7 @@ body.sidebar-open {
     text-decoration: underline;
 }
 
-/* Tema bazlı renk değişkenleri (örnek) */
-:root {
-    --text-color: #333;
-    --link-color: #3498db;
-    --code-bg: #f4f4f4;
-}
 
-.dark-theme {
-    --text-color: #e0e0e0;
-    --link-color: #66b3ff;
-    --code-bg: #2c3e50;
-}
-
-.green-theme {
-    --text-color: #d4edda;
-    --link-color: #28a745;
-    --code-bg: #1a3c34;
-}
 
 /* Diğer temalar için gerekli renk değişkenlerini ekleyin */
 /* ========== Performans: Meal Lazy Load ========== */
@@ -1754,59 +1676,9 @@ body.sidebar-open {
   opacity: 0.75;
   font-size: calc(var(--verse-arabic-size) - 2px);
 }
-.arabic-section {
-  margin: 12px 0;
-}
 
-.arabic-section{
-    margin:0;
-    padding:0;
-}
 
-.arabic-section summary{
-    display:flex;
-    justify-content:flex-end;
-    align-items:center;
-
-    margin:0;
-    padding:2px 0;
-
-    cursor:pointer;
-    font-size:15px;
-    font-weight:600;
-    color:#8dc6ff;
-
-    line-height:1.1;
-    min-height:20px;
-}
-
-.arabic-section[open] summary{
-    margin-bottom:4px;
-}
-
-.arabic-label {
-  margin-top: 12px;
-  margin-bottom: 4px;
-  font-size: 13px;
-  opacity: 0.75;
-}
-.verse{
-    position: relative;
-}
-
-.verse-header{
-    display:grid;
-    grid-template-columns:1fr auto 1fr;
-    align-items:center;
-    margin-bottom:8px;
-}
-
-.verse-number{
-    justify-self:center;
-}
 /* ===== Arapça Açılır Bölüm ===== */
-/* ===== Arapça Açılır Bölüm ===== */
-
 .verse-header {
     display: grid;
     grid-template-columns: 1fr auto 1fr;
@@ -1820,8 +1692,8 @@ body.sidebar-open {
 }
 
 .arabic-section {
-    justify-self: stretch;
     grid-column: 1 / 4;
+    justify-self: stretch;
     margin: 0;
     padding: 0;
     text-align: right;
@@ -1858,21 +1730,14 @@ body.sidebar-open {
 .arabic-label {
     margin: 6px 0 3px;
     font-size: 13px;
-    opacity: .75;
+    opacity: 0.75;
     text-align: right;
 }
 
 .arabic-section .verse-arabic {
-    direction: rtl;
-    text-align: right;
     width: 100%;
-    box-sizing: border-box;
 }
 
-.verse-arabic-2 {
-    margin-top: 8px;
-    opacity: .75;
-}
 /* ===== ANALİZ PANELİ ===== */
 
 .analysis-panel {
@@ -2069,4 +1934,95 @@ body.analysis-open {
 
 .inline-speak-btn:hover {
   background: rgba(255, 255, 255, 0.22);
+}
+
+.word-translation-container {
+  margin-top: 14px;
+}
+
+.word-translation-title {
+  font-weight: 700;
+  margin: 12px 0 8px;
+  color: #93c5fd;
+  text-align: right;
+}
+
+.word-translation-table {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--arabic-bg);
+}
+
+.word-translation-head,
+.word-translation-row {
+  display: grid;
+  grid-template-columns: 42px 1.4fr 1.2fr 1.5fr 1fr;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.word-translation-head {
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-color);
+}
+
+.word-translation-row:last-child {
+  border-bottom: none;
+}
+
+.word-arabic {
+  font-family: 'Scheherazade New', serif;
+  font-size: 24px;
+  text-align: right;
+  direction: rtl;
+}
+
+.word-root {
+  color: #22c55e;
+  font-family: 'Scheherazade New', serif;
+  font-size: 20px;
+  text-align: right;
+  direction: rtl;
+}
+
+.word-translation-loading,
+.word-translation-empty {
+  padding: 10px;
+  opacity: 0.85;
+  text-align: right;
+}
+
+/* Mobil görünüm */
+@media (max-width: 768px) {
+  .word-translation-head {
+    display: none;
+  }
+
+  .word-translation-row {
+    grid-template-columns: 36px 1fr;
+    gap: 4px 8px;
+    padding: 10px;
+  }
+
+  .word-translation-row span:first-child {
+    grid-row: 1 / 5;
+    opacity: 0.7;
+  }
+
+  .word-arabic {
+    font-size: 28px;
+  }
+
+  .word-translation-row span:nth-child(3),
+  .word-translation-row span:nth-child(4),
+  .word-translation-row span:nth-child(5) {
+    grid-column: 2;
+  }
+}
+.note-separator{
+    height:16px;
 }

@@ -29,6 +29,7 @@ dataPaths: {
   dictionary: './data/manual-dictionary.json',
   arabic2: './data/mealler/quran_arapca2.json',
   erhanArabic: './data/mealler/kuran_erhan_aktas.json',
+  wordTranslations: './data/word-translations.json',
   mapTr: './data/map_tr.json',
   mapEn: './data/map.json',
   appendicesTr: './data/appendices_tr.json',
@@ -49,6 +50,7 @@ const STATE = {
   dictionary: {},
   arabic2: {},
   erhanArabic: {},
+  wordTranslations: {},
   mapTr: {},
   mapEn: {},
   appendicesTr: {},
@@ -348,7 +350,21 @@ function saveSettings() {
 }
 
 function applySettings() {
-  DOM.body.className = `${STATE.settings.theme}-theme`;
+  const themeClasses = [
+    'light-theme',
+    'dark-theme',
+    'green-theme',
+    'indigo-theme',
+    'brown-theme',
+    'sky-theme',
+    'blackyellow-theme',
+    'bluemaize-theme',
+    'redpeach-theme',
+    'greenolive-theme'
+  ];
+
+  DOM.body.classList.remove(...themeClasses);
+  DOM.body.classList.add(`${STATE.settings.theme}-theme`);
 
   const sizes = {
     small: '14px',
@@ -357,6 +373,7 @@ function applySettings() {
   };
 
   const fontSize = sizes[STATE.settings.fontSize] || '16px';
+
   document.documentElement.style.setProperty('--base-font-size', fontSize);
   document.documentElement.style.setProperty(
     '--verse-arabic-size',
@@ -502,18 +519,18 @@ async function loadInitialData() {
   showLoading('Veri dosyaları yükleniyor...');
   try {
     await Promise.all([
-  loadDataFile(CONFIG.dataPaths.en, 'en'),
-  loadDataFile(CONFIG.dataPaths.tr, 'tr'),
-  loadDataFile(CONFIG.dataPaths.translit, 'translit'),
-  loadDataFile(CONFIG.dataPaths.dictionary, 'dictionary'),
-  loadDataFile(CONFIG.dataPaths.ai, 'ai'),
-  loadDataFile(CONFIG.dataPaths.arabic2, 'arabic2'),
-  loadDataFile(CONFIG.dataPaths.erhanArabic, 'erhanArabic'),
-  loadDataFile(CONFIG.dataPaths.mapTr, 'mapTr'),
-  loadDataFile(CONFIG.dataPaths.mapEn, 'mapEn'),
-  loadDataFile(CONFIG.dataPaths.appendicesTr, 'appendicesTr'),
-  loadDataFile(CONFIG.dataPaths.appendicesEn, 'appendicesEn')
-]);
+      loadDataFile(CONFIG.dataPaths.en, 'en'),
+      loadDataFile(CONFIG.dataPaths.tr, 'tr'),
+      loadDataFile(CONFIG.dataPaths.translit, 'translit'),
+      loadDataFile(CONFIG.dataPaths.dictionary, 'dictionary'),
+      loadDataFile(CONFIG.dataPaths.ai, 'ai'),
+      loadDataFile(CONFIG.dataPaths.arabic2, 'arabic2'),
+      loadDataFile(CONFIG.dataPaths.erhanArabic, 'erhanArabic'),
+      loadDataFile(CONFIG.dataPaths.mapTr, 'mapTr'),
+      loadDataFile(CONFIG.dataPaths.mapEn, 'mapEn'),
+      loadDataFile(CONFIG.dataPaths.appendicesTr, 'appendicesTr'),
+      loadDataFile(CONFIG.dataPaths.appendicesEn, 'appendicesEn')
+    ]);
   } catch (error) {
     console.error('Veri yükleme hatası:', error);
     throw error;
@@ -745,6 +762,11 @@ function areMealsReady() {
   return MEALS_STATE.status === 'ready';
 }
 
+const WORD_TRANSLATIONS_STATE = {
+  status: 'idle',
+  loadPromise: null
+};
+
 /* =========================
    Menü / Sure listesi
 ========================= */
@@ -962,6 +984,84 @@ function getErhanArabicText(suraNum, verseNum) {
   );
 
   return verse?.verse || '';
+}
+
+async function loadWordTranslations() {
+  if (WORD_TRANSLATIONS_STATE.status === 'ready') return;
+
+  if (WORD_TRANSLATIONS_STATE.status === 'loading') {
+    return WORD_TRANSLATIONS_STATE.loadPromise;
+  }
+
+  WORD_TRANSLATIONS_STATE.status = 'loading';
+
+  WORD_TRANSLATIONS_STATE.loadPromise = loadDataFile(
+    CONFIG.dataPaths.wordTranslations,
+    'wordTranslations'
+  )
+    .then(() => {
+      WORD_TRANSLATIONS_STATE.status = 'ready';
+      console.log('Kelime çevirileri yüklendi.');
+    })
+    .catch((err) => {
+      WORD_TRANSLATIONS_STATE.status = 'error';
+      console.error('Kelime çevirileri yüklenemedi:', err);
+      throw err;
+    });
+
+  return WORD_TRANSLATIONS_STATE.loadPromise;
+}
+
+function getWordTranslationHtml(suraNum, verseNum) {
+  const key = `${suraNum}:${verseNum}`;
+  const words = STATE.data.wordTranslations?.[key];
+
+  if (!Array.isArray(words) || words.length === 0) {
+    return '<div class="word-translation-empty">Kelime çevirisi bulunamadı.</div>';
+  }
+
+  return `
+    <div class="word-translation-box">
+      <div class="word-translation-title">🔤 Kelime Çevirisi</div>
+
+      <div class="word-translation-table">
+        <div class="word-translation-head">
+          <span>#</span>
+          <span>Kelime</span>
+          <span>Okunuş</span>
+          <span>Anlam</span>
+          <span>Kök</span>
+        </div>
+
+        ${words.map((item, index) => `
+          <div class="word-translation-row">
+            <span>${item.sort || index + 1}</span>
+            <strong class="word-arabic" dir="rtl">${escapeHtml(item.arabic || '')}</strong>
+            <span>${escapeHtml(item.transcription_tr || '')}</span>
+            <span>${escapeHtml(item.translation_tr || '')}</span>
+            <span class="word-root" dir="rtl">${escapeHtml(item.root?.arabic || '')}</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+async function toggleArabicWords(suraNum, verseNum) {
+  const box = document.getElementById(`word-translation-${suraNum}-${verseNum}`);
+  if (!box) return;
+
+  if (box.dataset.loaded === 'true') return;
+
+  box.innerHTML = '<div class="word-translation-loading">Kelime çevirileri yükleniyor...</div>';
+
+  try {
+    await loadWordTranslations();
+    box.innerHTML = getWordTranslationHtml(suraNum, verseNum);
+    box.dataset.loaded = 'true';
+  } catch (err) {
+    box.innerHTML = '<div class="word-translation-empty">Kelime çevirileri yüklenemedi.</div>';
+  }
 }
 
 function findVerseData(suraNum, verseNum) {
@@ -1219,7 +1319,10 @@ function buildPageHtml(pageNum) {
       }
 
       const verseKey = `${suraNum}:${verseNum}`;
-      const hasNotes = (enNotesMap[verseKey]?.length > 0) || (trNotesMap[verseKey]?.length > 0);
+      const hasNotes =
+        (enNotesMap[verseKey]?.length > 0) ||
+        (trNotesMap[verseKey]?.length > 0);
+
       const arabic2Text = getArabic2Text(suraNum, verseNum);
       const erhanArabicText = getErhanArabicText(suraNum, verseNum);
 
@@ -1228,25 +1331,24 @@ function buildPageHtml(pageNum) {
           <div class="verse-header">
             <div></div>
             <div class="verse-number">${suraNum}:${verseNum}</div>
-            <details class="arabic-section">
+            <details class="arabic-section" ontoggle="if(this.open) toggleArabicWords(${suraNum}, ${verseNum})">
               <summary>📖 Arapça</summary>
               <div class="arabic-dropdown-content">
                 <div class="arabic-label">Standart Arapça - qurantft.json</div>
                 <div class="verse-arabic">${enSura.encrypted?.[verseNum] || ''}</div>
                 ${
                   arabic2Text
-                    ? `
-                <div class="arabic-label">İkinci Arapça - quran_arapca2.json</div>
-                <div class="verse-arabic verse-arabic-2">${arabic2Text}</div>`
+                    ? `<div class="arabic-label">İkinci Arapça - quran_arapca2.json</div>
+                       <div class="verse-arabic verse-arabic-2">${arabic2Text}</div>`
                     : ''
                 }
                 ${
                   erhanArabicText
-                    ? `
-                <div class="arabic-label">Erhan Aktaş Arapçası - kuran_erhan_aktas.json</div>
-                <div class="verse-arabic verse-arabic-2">${erhanArabicText}</div>`
+                    ? `<div class="arabic-label">Erhan Aktaş Arapçası - kuran_erhan_aktas.json</div>
+                       <div class="verse-arabic verse-arabic-2">${erhanArabicText}</div>`
                     : ''
                 }
+                <div id="word-translation-${suraNum}-${verseNum}" class="word-translation-container"></div>
               </div>
             </details>
           </div>`;
@@ -1269,10 +1371,14 @@ function buildPageHtml(pageNum) {
 
       html += `
           <div class="verse-text">
-  ${escapeHtml(enSura.verses[verseNum])}
-  <button class="inline-speak-btn" onclick="speakEnglishVerse(${suraNum}, ${verseNum})" title="İngilizce oku">🔈</button>
-</div>
-          <div class="verse-text-tr"><strong>${escapeHtml(trSura.verses[verseNum])}</strong></div>
+            ${escapeHtml(enSura.verses[verseNum])}
+            <button class="inline-speak-btn" onclick="speakEnglishVerse(${suraNum}, ${verseNum})" title="İngilizce oku">🔈</button>
+          </div>
+
+          <div class="verse-text-tr">
+            <strong>${escapeHtml(trSura.verses[verseNum])}</strong>
+          </div>
+
           <div class="buttons">`;
 
       if (hasNotes) {
@@ -1308,6 +1414,10 @@ function buildPageHtml(pageNum) {
           });
         }
 
+        if (enNotesMap[verseKey] && trNotesMap[verseKey]) {
+          html += `<div class="note-separator"></div>`;
+        }
+
         if (trNotesMap[verseKey]) {
           trNotesMap[verseKey].forEach((note) => {
             html += `<div class="note-tr"><strong>TR:</strong> ${escapeHtml(note)}</div>`;
@@ -1320,6 +1430,7 @@ function buildPageHtml(pageNum) {
       html += `
           <div id="user-note-${suraNum}-${verseNum}" class="note-box hidden"></div>
           <div id="meal-${suraNum}-${verseNum}" class="note-box hidden"></div>
+
           <div id="note-input-box-${suraNum}-${verseNum}" class="note-input-box hidden">
             <textarea id="note-input-${suraNum}-${verseNum}" placeholder="Notunuzu buraya yazın..." rows="4"></textarea>
             <div class="note-actions">
@@ -2461,13 +2572,15 @@ function displaySettingsPage() {
       <div class="settings-section">
         <h2>Yazılım Hakkında</h2>
         <div class="about-section">
-          <ul>
-            <li><strong>Kodlama, Tasarım: <strong>Berk KÖKSAL</strong></p>  <a href="https://www.berkkoksal.com" target="_blank" rel="noopener noreferrer">
-            www.berkkoksal.com
-          </a>
-        </li>
+<ul>
+  <li>
+    <strong>Kodlama, Tasarım:</strong><br>
+    Berk KÖKSAL<br>
+    <a href="https://www.berkkoksal.com" target="_blank" rel="noopener noreferrer">
+      www.berkkoksal.com
+    </a>
+  </li>
         <li><strong>Arama:</strong> (örn: "2:255") 2 255 veya 2/255 yazabilirsiniz.</li>
-            <li><strong>Arama:</strong> (örn: "2:255") 2 255  2/255 yazabilirsiniz.</li>
             <li><strong>Google Drive:</strong> Notlarınız otomatik olarak "Kuran_Teyit_Not" klasörüne kaydedilir.</li>
           </ul>
         </div>
@@ -2540,10 +2653,8 @@ const GUIDE_CONTENT = `
     <p>[1:1] En Lütufkâr, En Merhametli TANRI’nın adıyla.</p>
     <p>Bu, Tanrı’nın insanlığa son mesajıdır. Tanrı’nın tüm peygamberleri bu dünyaya geldi ve tüm kutsal yazılar iletildi. Tanrı’nın peygamberleri tarafından iletilen tüm mesajların arındırılıp tek bir mesajda birleştirilmesinin ve bundan böyle Tanrı’nın kabul ettiği tek dinin “Teslimiyet” (3:19, 3:85) olduğunun duyurulmasının zamanı geldi. “Teslimiyet,” Tanrı’nın mutlak otoritesini tanıdığımız ve tüm güce sahip olanın YALNIZCA Tanrı olduğuna; O’ndan bağımsız başka hiçbir varlığın herhangi bir güce sahip olmadığına dair sarsılmaz bir kanaate ulaştığımız dindir. Böyle bir farkındalığın doğal sonucu, yaşamlarımızı ve tapınmamızı mutlak bir şekilde YALNIZCA Tanrı’ya adamaktır. Bu, Eski Ahit, Yeni Ahit ve bu Son Ahit de dâhil olmak üzere tüm kutsal yazılardaki İlk Buyruktur.</p>
     <p>Kuran Teyit Yazılımı, Tanrı’nın antlaşma elçisi Reşat Halife’nin Yetkilendirilmiş (İngilizce) çevirisi üzerine geliştirilmiş modern bir web uygulamasıdır. Kuran-ı Kerim'i Arapça, Türkçe ve İngilizce çevirileriyle inceleme, farklı mealleri karşılaştırma, not alma ve kelime çevirisi gibi özelliklerle kullanıcı dostu bir deneyim sunar. Google Drive entegrasyonu ile notlarınızı güvenli bir şekilde kaydedebilirsiniz.</p>
-    <p>Uygulama, [17:36] ayetinden ilhamla, "Kendiniz için teyit etmediğiniz sürece hiçbir bilgiyi kabul etmeyin" mesajıyla eleştirel düşünmeyi teşvik eder. Tema seçenekleri ve özelleştirilebilir arayüzü ile her cihazda kolayca kullanılabilir. Yetkilendirilmiş Çeviri’nin teyide ihtiyacı olmadığını vurgulayarak, İngilizce bilmeyenler için kelimelerin derin anlamlarına ulaşmayı hedefler.</p>
-    
+    <p>Uygulama, [17:36] ayetinden ilhamla, "Kendiniz için teyit etmediğiniz sürece hiçbir bilgiyi kabul etmeyin" mesajıyla eleştirel düşünmeyi teşvik eder. Tema seçenekleri ve özelleştirilebilir arayüzü ile her cihazda kolayca kullanılabilir. Yetkilendirilmiş Çeviri’nin teyide ihtiyacı olmadığını vurgulayarak, İngilizce bilmeyen kullanıcıların Authorized English Translation'ı daha rahat inceleyebilmesini amaçlar.</p>
 
-  
 <h2>📖 Temel Referans ve Çalışma Yaklaşımı</h2>
 
 <p><strong>Kuran Teyit Yazılımı</strong>, temel referans olarak <strong>Rashad Khalifa'nın Authorized English Translation (Yetkilendirilmiş İngilizce Çevirisi)</strong> üzerine geliştirilmiştir.</p>
@@ -2572,6 +2683,116 @@ const GUIDE_CONTENT = `
 "Hiçbir bilgiyi, kendiniz için teyit etmediğiniz sürece, kabul etmeyin. Ben size işitmeyi, görmeyi ve beyni verdim ve siz onları kullanmaktan sorumlusunuz."
 </blockquote>
 
+<h2>🙏 Teşekkür ve Veri Kaynakları</h2>
+
+<p>
+Bu yazılım geliştirilirken birçok açık kaynak çalışmadan yararlanılmıştır.
+Bu nedenle emeği geçen herkese teşekkür etmeyi bir borç bilirim.
+</p>
+
+<p>
+Özellikle uygulamanın temel veri yapısının hazırlanmasında ve Kuran metinlerinin
+düzenlenmesinde <strong>QuranTFT (Authorized English Translation)</strong> projesinden
+yararlanılmıştır.
+</p>
+
+<p>
+İngilizce çeviri, Rashad Khalifa'nın
+<strong>Authorized English Translation</strong> çalışmasını temel alan
+<strong>QuranTFT</strong> projesinden alınmıştır.
+Uygulamadaki dipnotlar, sayfa yapısı ve birçok veri de yine bu açık kaynak proje
+sayesinde kullanılabilmektedir.
+</p>
+
+<p>
+Türkçe çeviri (İngilizce çevirinin altında gösterilen ana Türkçe meal)
+de yine <strong>QuranTFT</strong> projesinin sunduğu açık veri dosyalarından
+yararlanılarak hazırlanmıştır.
+</p>
+
+<p>
+Bu vesileyle <strong>QuranTFT</strong> geliştiricilerine emekleri ve açık kaynak
+yaklaşımları için teşekkür ederiz.
+</p>
+
+<p>
+QuranTFT projesini incelemek ve doğrudan Kuran okumak isteyen kullanıcılar için
+resmî web sitesi:
+</p>
+
+<p style="text-align:center;">
+  <a href="https://qurantft.com/" target="_blank" rel="noopener noreferrer">
+    https://qurantft.com/
+  </a>
+  <br>
+  <a href="https://kuransonahit.tr/" target="_blank" rel="noopener noreferrer">
+    https://kuransonahit.tr/
+  </a>
+</p>
+
+<p>
+Özellikle sadece Kuran okumak isteyen kullanıcılar için
+<strong>QuranTFT web sitesi</strong> daha sade ve bu amaç için hazırlanmış
+kapsamlı bir okuma deneyimi sunmaktadır. Bu nedenle uygulamanın üst menüsünde yer alan
+<strong>"Kuran Oku"</strong> bölümü de doğrudan QuranTFT web sitesini açmaktadır.
+</p>
+
+<p>
+QuranTFT'nin hem <strong>Android</strong> hem de
+<strong>iOS</strong> mobil uygulamaları bulunmaktadır.
+</p>
+
+<p style="text-align:center;">
+<a href="https://play.google.com/store/apps/details?id=com.submittertech.quran&hl=tr"
+target="_blank" rel="noopener noreferrer">
+📱 Google Play - Kuran Son Ahit
+</a>
+
+<br><br>
+
+<a href="https://apps.apple.com/tr/app/kuran-son-ahit/id6478772891?l=tr"
+target="_blank" rel="noopener noreferrer">
+🍎 App Store - Kuran Son Ahit
+</a>
+</p>
+
+<p>
+Bu uygulama ise QuranTFT'nin yerine geçmeyi amaçlamaz.
+Tam tersine, onun üzerine araştırma odaklı ek araçlar geliştirmeyi hedefleyen
+bağımsız bir çalışmadır.
+</p>
+
+<p>
+Arapça kelime karşılıkları, kelime kökleri ve bazı sözlük çalışmalarının hazırlanmasında
+<strong>Açık Kuran</strong> projesinden de yararlanılmıştır.
+Bu değerli çalışmayı hazırlayan geliştiricilere ve katkı sağlayan herkese teşekkür ederiz.
+</p>
+
+<p style="text-align:center;">
+<a href="https://acikkuran.com/" target="_blank" rel="noopener noreferrer">
+https://acikkuran.com/
+</a>
+</p>
+
+<p>
+Açık Kuran projesi özellikle Arapça kelimelerin anlamlarını, kök yapılarını ve ayet içerisindeki kullanımlarını incelemek isteyen araştırmacılar için oldukça değerli bir kaynaktır.
+Bu yazılımda kullanılan kelime çevirileri hazırlanırken bu açık kaynaktan da
+yararlanılmıştır.
+</p>
+
+<ul>
+<li>📖 Authorized English Translation temel alınmıştır.</li>
+<li>🇹🇷 Ana Türkçe çeviri QuranTFT veri dosyalarından alınmıştır.</li>
+<li>📚 Rashad Khalifa dipnotları kullanılmaktadır.</li>
+<li>📝 Sayfa yapısı ve referans sistemi QuranTFT veri yapısından yararlanmaktadır.</li>
+<li>🔍 Bu yazılıma ek olarak analiz ekranları, kelime çevirileri, karşılaştırmalı mealler, Google Drive not sistemi, konu haritaları (MAP), ve birçok yeni özellik tarafımızdan geliştirilmiştir.</li>
+</ul>
+
+<p>
+Bu çalışma tamamen açık kaynak çalışmaların üzerine geliştirilmiş bağımsız bir
+araştırma yazılımıdır ve emeği geçen tüm geliştiricilere teşekkür ederiz.
+</p>
+
 <p><strong>Kuran Teyit Yazılımı</strong>, kullanıcı adına karar veren bir uygulama değildir. Araştırmayı kolaylaştıran, karşılaştırmayı mümkün kılan ve Kuran merkezli incelemeyi destekleyen bir çalışma ortamı sunmayı amaçlamaktadır.</p>
 
     <h2>Kullanım Kılavuzu</h2>
@@ -2592,6 +2813,7 @@ const GUIDE_CONTENT = `
         <li><strong>Erhan Aktaş Arapçası - kuran_erhan_aktas.json:</strong> Erhan Aktaş veri dosyasındaki Arapça metin.</li>
     </ul>
     <p>Bu alan özellikle ayet kayması, eksik kelime, fazla kelime veya farklı Arapça yazım kontrolü için kullanışlıdır. İleride bu bölüme kelime farklarını renkli gösterme özelliği eklenebilir.</p>
+<p>Ayrıca açılan bölümde her Arapça kelimenin Türkçe anlamı, okunuşu ve kök bilgisi de görüntülenebilir.</p>
 
     <h3>3. Arama Alanının Kullanımı</h3>
     <p>Arama çubuğuna sure adı, ayet numarası veya kelime yazabilirsiniz.</p>
@@ -2607,7 +2829,20 @@ const GUIDE_CONTENT = `
         <li>Ayet numarası ortada gösterilir.</li>
         <li>📖 Arapça alanı açılır/kapanır yapıdadır; kapalıyken sayfayı kalabalıklaştırmaz.</li>
         <li>Okunuş satırı açıksa Arapça-Türkçe okunuş gösterilir.</li>
-        <li>İngilizce ve Türkçe çeviriler ayetin altında görünür.</li>
+<li>
+İngilizce çeviri, Rashad Khalifa'nın Authorized English Translation
+(QuranTFT) çalışmasıdır ve uygulamanın temel referansıdır.
+</li>
+
+<li>
+İngilizce metnin altında gösterilen ana Türkçe çeviri de
+QuranTFT projesinin açık veri dosyalarından alınmıştır.
+</li>
+
+<li>
+Daha sade ve doğrudan Kuran okumak isteyen kullanıcılar için
+QuranTFT web sitesi ve resmi mobil uygulamaları tavsiye edilir.
+</li>
     </ul>
 
     <h3>5. Mealler</h3>
@@ -2617,7 +2852,7 @@ const GUIDE_CONTENT = `
         <li>Mealler ilk ihtiyaç olduğunda yüklenir; bu sayede uygulama ilk açılışta daha hızlı çalışır.</li>
     </ul>
 
-    <h3>6. Ayet Analizi</h3>
+<h3>6. Ayet Analizi</h3>
 
 <p>Her ayetin altında bulunan <strong>🔎 Analiz</strong> butonu ile o ayete ait kapsamlı analiz ekranı açılır.</p>
 
@@ -2625,6 +2860,8 @@ const GUIDE_CONTENT = `
     <li>Seçilen ayetin Arapçası, Türkçe ve İngilizce çevirisi birlikte gösterilir.</li>
 
     <li>MAP dosyalarındaki ilgili konu başlıkları otomatik listelenir.</li>
+
+    <li>Konu başlıkları, uygulamada kullanılan MAP (Konu Haritaları) veri dosyalarından otomatik olarak oluşturulmaktadır.</li>
 
     <li>Her konu altında o konuyla ilişkili ayetlerin Türkçe mealleri görüntülenir.</li>
 
@@ -2643,10 +2880,14 @@ const GUIDE_CONTENT = `
     </ul>
 
     <h3>8. Kelime Yardımı</h3>
-    <ul>
-        <li>İngilizce metindeki kelimelerin üzerine gelince Türkçe karşılıkları gösterilir.</li>
-        <li>Mobil cihazlarda kelimeye dokunarak yardım kutusu açılabilir.</li>
-    </ul>
+
+<ul>
+<li>İngilizce çeviri üzerindeki kelimelerin üzerine gelerek Türkçe anlamlarını görebilirsiniz.</li>
+
+<li>Mobil cihazlarda kelimeye dokunarak aynı bilgi açılır.</li>
+
+<li>📖 Arapça bölümünü açtığınızda ise her Arapça kelimenin okunuşu, Türkçe anlamı ve kök bilgisi tablo halinde gösterilir.</li>
+</ul>
 
     <h3>9. Ayarlar</h3>
     <ul>
@@ -2664,6 +2905,7 @@ const GUIDE_CONTENT = `
         <li>Arama indexi uygulama açıldıktan sonra hazırlanır.</li>
         <li>Üç Arapça veri kaynağı ayrı ayrı yüklenir ve aynı ayet altında karşılaştırmalı gösterilir.</li>
         <li>Arapça alanı kapalı geldiği için sayfa daha sade ve hızlı okunabilir hale getirilmiştir.</li>
+        <li>Kelime çevirileri ilk ihtiyaç duyulduğunda yüklenir. Böylece uygulamanın açılış hızı korunur.</li>
     </ul>
 
     <h3>11. Gelecek Geliştirme Fikirleri</h3>
@@ -2685,6 +2927,40 @@ const GUIDE_CONTENT = `
         <li><strong>Notlarım neden kaydedilmiyor?</strong> Google hesabınızla giriş yaptığınızdan ve Drive bağlantısının hazır olduğundan emin olun.</li>
         <li><strong>Tema değişiklikleri kalıcı mı?</strong> Evet, ayarlar tarayıcıda saklanır.</li>
     </ul>
+<h2>📚 Kaynaklar</h2>
+
+<ul>
+  <li>
+    <a href="https://qurantft.com/" target="_blank" rel="noopener noreferrer">QuranTFT</a>
+  </li>
+
+  <li>
+    <a href="https://kuransonahit.tr/" target="_blank" rel="noopener noreferrer">Kuran Son Ahit</a>
+  </li>
+
+  <li>
+    <a href="https://acikkuran.com/" target="_blank" rel="noopener noreferrer">Açık Kuran</a>
+    (Arapça kelime çalışmaları ve sözlük verileri)
+  </li>
+
+  <li>Authorized English Translation — Rashad Khalifa</li>
+
+  <li>
+    <a href="https://play.google.com/store/apps/details?id=com.submittertech.quran&hl=tr"
+       target="_blank" rel="noopener noreferrer">
+      QuranTFT Android Uygulaması (Kuran Son Ahit)
+    </a>
+  </li>
+
+  <li>
+    <a href="https://apps.apple.com/tr/app/kuran-son-ahit/id6478772891?l=tr"
+       target="_blank" rel="noopener noreferrer">
+      QuranTFT iOS Uygulaması (Kuran Son Ahit)
+    </a>
+  </li>
+
+  <li>OpenAI (yapay zekâ destekli geliştirme sürecinde kullanılan araçlardan biri)</li>
+</ul>
 
     <h2>Son Söz</h2>
 
@@ -2701,11 +2977,10 @@ Geliştirme süreci devam etmektedir. Yeni analiz araçları, yapay zekâ destek
 </p>
 
 <p>
-Bu proje, kullanıcı adına hüküm vermeyi değil; Kuran'ı doğrudan inceleyebileceğiniz, delilleri karşılaştırabileceğiniz ve kendi araştırmanızı özgürce yapabileceğiniz güvenilir bir çalışma ortamı oluşturmayı amaçlamaktadır.
+Bu proje, kullanıcı adına hüküm vermeyi değil; Kuran'ı doğrudan inceleyebileceğiniz, delilleri karşılaştırabileceğiniz ve kendi araştırmanızı özgürce yapabileceğiniz tarafsız bir çalışma ortamı oluşturmayı amaçlamaktadır.
 </p>
 
 <hr>
-Kuran
 <p><strong>Geliştirme, Tasarım ve Kodlama:</strong><br>
 Berk KÖKSAL</p>
 
@@ -2715,8 +2990,7 @@ www.berkkoksal.com
 </a>
 </p>
 
-<p>
-Sorularınız, önerileriniz ve katkılarınız için:<br>
+<p>Bu yazılım geliştirilmeye devam edecek olup, katkı ve geri bildirimler her zaman memnuniyetle karşılanmaktadır. Sorularınız, önerileriniz ve katkılarınız için:<br>
 <strong>berkgitarist@gmail.com</strong>
 </p>
 
@@ -2760,3 +3034,4 @@ window.closeAnalysisPanel = closeAnalysisPanel;
 window.speakVerse = speakVerse;
 window.stopSpeech = stopSpeech;
 window.speakEnglishVerse = speakEnglishVerse;
+window.toggleArabicWords = toggleArabicWords;

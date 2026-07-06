@@ -854,7 +854,7 @@ async function _applyHighlightAndScroll(suraNum, verseNum, query, openMeal, meal
   let targetElement = null;
 
   document.querySelectorAll('.verse-number').forEach((el) => {
-    if (el.textContent.trim() === `${suraNum}:${verseNum}`) {
+    if (el.textContent.trim() === `${suraNum} : ${verseNum}`) {
       targetElement = el.closest('.verse');
     }
   });
@@ -1330,7 +1330,7 @@ function buildPageHtml(pageNum) {
         <div class="verse">
           <div class="verse-header">
             <div></div>
-            <div class="verse-number">${suraNum}:${verseNum}</div>
+            <div class="verse-number">${suraNum} : ${verseNum}</div>
             <details class="arabic-section" ontoggle="if(this.open) toggleArabicWords(${suraNum}, ${verseNum})">
               <summary>📖 Arapça</summary>
               <div class="arabic-dropdown-content">
@@ -1382,7 +1382,13 @@ function buildPageHtml(pageNum) {
           <div class="buttons">`;
 
       if (hasNotes) {
-        html += `<button class="toggle-btn dipnot-btn" onclick="toggleNote('note-${suraNum}-${verseNum}')">📌 Dipnot</button>`;
+        html += `
+  <button 
+    class="toggle-btn dipnot-btn" 
+    data-target="note-${suraNum}-${verseNum}"
+    onclick="toggleNote('note-${suraNum}-${verseNum}')">
+    📌 Dipnot
+  </button>`;
       }
 
       if (STATE.settings.showMeals) {
@@ -1406,11 +1412,15 @@ function buildPageHtml(pageNum) {
       }
 
       if (hasNotes) {
-        html += `<div id="note-${suraNum}-${verseNum}" class="note-box hidden">`;
+        html += `<div id="note-${suraNum}-${verseNum}" class="note-box footnote-box hidden">`;
 
         if (enNotesMap[verseKey]) {
           enNotesMap[verseKey].forEach((note) => {
-            html += `<div class="note-en"><strong>EN:</strong> ${escapeHtml(note)}</div>`;
+            html += `
+              <div class="footnote-line footnote-en">
+                <strong class="footnote-name">EN:</strong>
+                <span class="footnote-text">${escapeHtml(note)}</span>
+              </div>`;
           });
         }
 
@@ -1420,7 +1430,11 @@ function buildPageHtml(pageNum) {
 
         if (trNotesMap[verseKey]) {
           trNotesMap[verseKey].forEach((note) => {
-            html += `<div class="note-tr"><strong>TR:</strong> ${escapeHtml(note)}</div>`;
+            html += `
+              <div class="footnote-line footnote-tr">
+                <strong class="footnote-name">TR:</strong>
+                <span class="footnote-text">${escapeHtml(note)}</span>
+              </div>`;
           });
         }
 
@@ -1682,7 +1696,7 @@ async function loadNotesForCurrentPage() {
 
   for (const element of verseElements) {
     const verseText = element.textContent.trim();
-    const match = verseText.match(/^(\d+):(\d+)$/);
+    const match = verseText.match(/^(\d+)\s*:\s*(\d+)$/);
     if (!match) continue;
 
     const [, sura, verse] = match;
@@ -1831,12 +1845,21 @@ async function loadAndDisplayAllNotes() {
    Meal
 ========================= */
 function highlightMealText(text, query) {
-  if (!query || !text) return escapeHtml(text);
-  const q = query.trim();
-  if (!q) return escapeHtml(text);
+  if (!text) return '';
 
-  const regex = new RegExp(escapeRegExp(q), 'gi');
-  return String(text).replace(regex, '<strong class="search-result-highlight">$&</strong>');
+  const safeText = escapeHtml(text);
+
+  if (!query) return safeText;
+
+  const q = query.trim();
+  if (!q) return safeText;
+
+  const regex = new RegExp(escapeRegExp(escapeHtml(q)), 'gi');
+
+  return safeText.replace(
+    regex,
+    '<strong class="search-result-highlight">$&</strong>'
+  );
 }
 
 
@@ -1905,9 +1928,12 @@ function getOtherTranslations(suraNum, verseNum, query = '', focusedMealName = '
     if (ayetText && mealName.toLowerCase() !== 'kuran_erhan_aktas') {
       const highlighted = highlightMealText(ayetText, query);
       const isFocused = mealName === focusedMealName ? 'meal-focused-result' : '';
-      otherMealsHtml += `<div class="note-tr ${isFocused}">
-        <strong>${escapeHtml(mealName)}:</strong> ${highlighted}
-      </div>`;
+
+      otherMealsHtml += `
+        <div class="note-tr meal-line ${isFocused}">
+          <strong class="meal-name">${escapeHtml(mealName)}:</strong>
+          <span class="meal-text">${highlighted}</span>
+        </div>`;
     }
   }
 
@@ -2016,7 +2042,16 @@ async function ensureMealOpen(suraNum, verseNum, query = '', focusedMealName = '
 ========================= */
 function toggleNote(id) {
   const element = document.getElementById(id);
-  if (element) element.classList.toggle('hidden');
+  if (!element) return;
+
+  element.classList.toggle('hidden');
+
+  const btn = document.querySelector(`[data-target="${id}"]`);
+  if (btn) {
+    btn.textContent = element.classList.contains('hidden')
+      ? '📌 Dipnot'
+      : '📌 Dipnotu Kapat';
+  }
 }
 
 /* =========================

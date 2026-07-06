@@ -2425,3 +2425,29 @@ body.sky-theme .meal-text {
   border-radius: 6px;
   border-left: 3px solid #38bdf8;
 }
+/* ===== Ayet numarası genişlik düzeltmesi ===== */
+
+.verse-header .verse-number,
+.verse-number {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  min-width: 78px !important;
+  width: auto !important;
+  height: 40px !important;
+
+  padding: 0 14px !important;
+
+  white-space: nowrap !important;
+  line-height: 1 !important;
+
+  border-radius: 999px !important;
+  font-size: 16px !important;
+  font-weight: 700 !important;
+}
+
+.verse-header .verse-number {
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+}

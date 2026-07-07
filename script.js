@@ -1103,21 +1103,44 @@ function expandVerseRefs(refText) {
   if (!refText || typeof refText !== 'string') return [];
 
   const refs = [];
+  let currentSura = null;
 
   refText.split(';').forEach((part) => {
     part.split(',').forEach((item) => {
       const clean = item.trim();
       if (!clean) return;
 
-      const match = clean.match(/^(\d+):(\d+)(?:-(\d+))?$/);
-      if (!match) return;
+      // Tam yazım: 5:118, 24:58-59, 2:284-3:10
+      const fullMatch = clean.match(/^(\d+):(\d+)(?:-(?:(\d+):)?(\d+))?$/);
 
-      const sura = match[1];
-      const start = Number(match[2]);
-      const end = match[3] ? Number(match[3]) : start;
+      if (fullMatch) {
+        currentSura = fullMatch[1];
 
-      for (let v = start; v <= end; v++) {
-        refs.push(`${sura}:${v}`);
+        const startVerse = Number(fullMatch[2]);
+        const endSura = fullMatch[3] || currentSura;
+        const endVerse = fullMatch[4] ? Number(fullMatch[4]) : startVerse;
+
+        if (endSura === currentSura) {
+          for (let v = startVerse; v <= endVerse; v++) {
+            refs.push(`${currentSura}:${v}`);
+          }
+        } else {
+          refs.push(`${currentSura}:${startVerse}`);
+        }
+
+        return;
+      }
+
+      // Kısaltılmış yazım: "5:18, 40, 74, 118"
+      const shortMatch = clean.match(/^(\d+)(?:-(\d+))?$/);
+
+      if (shortMatch && currentSura) {
+        const startVerse = Number(shortMatch[1]);
+        const endVerse = shortMatch[2] ? Number(shortMatch[2]) : startVerse;
+
+        for (let v = startVerse; v <= endVerse; v++) {
+          refs.push(`${currentSura}:${v}`);
+        }
       }
     });
   });

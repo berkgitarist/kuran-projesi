@@ -36,8 +36,14 @@
         <div id="autocomplete" class="autocomplete-suggestions" role="listbox" aria-label="Öneriler"></div>
       </div>
 
-      <button id="nextPage" class="nav-btn" aria-label="Sonraki Sayfa" title="Sonraki Sayfa">⟶</button>
-      <span id="currentPageDisplay" class="page-toggle" role="button" tabindex="0" aria-label="Görünümü Değiştir">Kuran Oku</span>
+<!-- Sonraki Sayfa ve Kuran Oku BAŞLANGIÇ -->
+
+<button id="nextPage" class="nav-btn" aria-label="Sonraki Sayfa" title="Sonraki Sayfa">⟶</button>
+
+<a id="currentPageDisplay" class="page-toggle" href="https://submittertech.com/" target="_blank" rel="noopener noreferrer" aria-label="SubmitterTech sitesini yeni sekmede aç" title="SubmitterTech sitesini yeni sekmede aç">Kuran Oku</a>
+
+<!-- Sonraki Sayfa ve Kuran Oku BİTİŞ -->
+
     </div>
 
     <!-- Google Giriş / Çıkış -->
@@ -63,40 +69,39 @@
     <div class="progress-container"><div class="progress-bar"></div></div>
   </div>
 
-  <!-- Ana İçerik -->
-  <div class="main-container">
-    <!-- Yan Menü -->
-    <div class="sidebar hidden" id="sidebar" aria-hidden="true">
-      <div class="menu-section">
-        <button id="notesPage" class="menu-item-btn">📝 Notlarım</button>
-        <button id="settingsPage" class="menu-item-btn">⚙️ Ayarlar</button>
-        <!-- DİKKAT: onclick kaldırıldı; JS'te addEventListener ile yönetiliyor -->
-        <button id="guidePage" class="menu-item-btn">📖 Kullanım Kılavuzu</button>
-        <button id="closeMenu" class="menu-item-btn">✖ Kapat</button>
-      </div>
-      <div class="menu">
-        <h2>Sureler</h2>
-        <ul id="suraMenu"></ul>
-      </div>
-    </div>
-    <div id="sidebarOverlay" class="sidebar-overlay hidden" tabindex="-1" aria-hidden="true"></div>
+<!-- Ana İçerik BAŞLANGIÇ -->
+<div class="main-container">
 
-    <!-- İçerik alanı -->
-    <div class="content-area" id="contentArea">
-      <div id="quranContent" class="content-container"></div>
+<!-- Yan Menü BAŞLANGIÇ -->
+<div class="sidebar hidden" id="sidebar" aria-hidden="true">
 
-      <div id="iframeContent" class="content-container hidden">
-        <div class="page-header"><h1>📖 Kuran Oku</h1></div>
-        <iframe id="externalIframe"
-                src="https://qurantft.com/"
-                class="iframe-container"
-                title="Kuran Oku"
-                loading="lazy"
-                referrerpolicy="no-referrer">
-        </iframe>
-      </div>
-    </div>
-  </div>
+<div class="menu-section">
+<button id="notesPage" class="menu-item-btn">📝 Notlarım</button>
+<button id="settingsPage" class="menu-item-btn">⚙️ Ayarlar</button>
+<button id="guidePage" class="menu-item-btn">📖 Kullanım Kılavuzu</button>
+<button id="closeMenu" class="menu-item-btn">✖ Kapat</button>
+</div>
+
+<div class="menu">
+<h2>Sureler</h2>
+<ul id="suraMenu"></ul>
+</div>
+
+</div>
+<!-- Yan Menü BİTİŞ -->
+
+<div id="sidebarOverlay" class="sidebar-overlay hidden" tabindex="-1" aria-hidden="true"></div>
+
+<!-- İçerik Alanı BAŞLANGIÇ -->
+<div class="content-area" id="contentArea">
+
+<div id="quranContent" class="content-container"></div>
+
+</div>
+<!-- İçerik Alanı BİTİŞ -->
+
+</div>
+<!-- Ana İçerik BİTİŞ -->
 
   <!-- Kelime tooltip -->
   <div id="wordTooltip" class="word-tooltip" role="tooltip" aria-hidden="true"></div>
@@ -110,7 +115,11 @@
     </div>
   </div>
 
-  <!-- Uygulama JS'i -->
-  <script src="js/script.js" defer></script>
+<!-- Uygulama JS'i BAŞLANGIÇ -->
+
+<script src="js/script.js?v=3" defer></script>
+
+<!-- Uygulama JS'i BİTİŞ -->
+
 </body>
 </html>

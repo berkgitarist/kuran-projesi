@@ -74,7 +74,6 @@ const STATE = {
 
 const DOM = {
   quranContent: document.getElementById('quranContent'),
-  iframeContent: document.getElementById('iframeContent'),
   content: document.getElementById('quranContent'),
   loadingOverlay: document.getElementById('loadingOverlay'),
   currentPageDisplay: document.getElementById('currentPageDisplay'),
@@ -104,7 +103,6 @@ const MEALS_STATE = {
   loadedCount: 0
 };
 
-let externalSiteLoaded = false;
 let activeSearchQuery = '';
 let pendingHighlight = null;
 let tooltipDelegationReady = false;
@@ -390,41 +388,18 @@ function applySettings() {
    Görünüm
 ========================= */
 function ensureQuranView() {
-  DOM.iframeContent.classList.add('hidden');
-  DOM.iframeContent.style.display = 'none';
-
   DOM.quranContent.classList.remove('hidden');
   DOM.quranContent.style.display = 'block';
 
   const contentArea = document.querySelector('.content-area');
-  if (contentArea) contentArea.style.padding = '';
+
+  if (contentArea) {
+    contentArea.style.padding = '';
+  }
 
   if (DOM.introVerse) {
     DOM.introVerse.style.display = 'none';
     DOM.introVerse.classList.add('hidden');
-  }
-}
-
-function loadExternalSite() {
-  DOM.quranContent.classList.add('hidden');
-  DOM.iframeContent.classList.remove('hidden');
-  DOM.iframeContent.style.display = 'block';
-
-  const contentArea = document.querySelector('.content-area');
-  if (contentArea) contentArea.style.padding = '0';
-}
-
-function toggleExternalSite() {
-  const display = DOM.currentPageDisplay;
-
-  if (!externalSiteLoaded) {
-    loadExternalSite();
-    display.textContent = "Kuran Dönüş";
-    externalSiteLoaded = true;
-  } else {
-    ensureQuranView();
-    display.textContent = 'Kuran Oku';
-    externalSiteLoaded = false;
   }
 }
 
@@ -485,7 +460,11 @@ function setupEventListeners() {
     closeSidebar();
   });
 
-  document.getElementById('currentPageDisplay')?.addEventListener('click', toggleExternalSite);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && document.getElementById('analysisPanel')) {
+      closeAnalysisPanel();
+    }
+  });
 
   setupSearch();
   setupWordTooltipDelegation();
@@ -516,27 +495,33 @@ function closeSidebar() {
    Veri yükleme
 ========================= */
 async function loadInitialData() {
-  showLoading('Veri dosyaları yükleniyor...');
-  try {
-    await Promise.all([
-      loadDataFile(CONFIG.dataPaths.en, 'en'),
-      loadDataFile(CONFIG.dataPaths.tr, 'tr'),
-      loadDataFile(CONFIG.dataPaths.translit, 'translit'),
-      loadDataFile(CONFIG.dataPaths.dictionary, 'dictionary'),
-      loadDataFile(CONFIG.dataPaths.ai, 'ai'),
-      loadDataFile(CONFIG.dataPaths.arabic2, 'arabic2'),
-      loadDataFile(CONFIG.dataPaths.erhanArabic, 'erhanArabic'),
-      loadDataFile(CONFIG.dataPaths.mapTr, 'mapTr'),
-      loadDataFile(CONFIG.dataPaths.mapEn, 'mapEn'),
-      loadDataFile(CONFIG.dataPaths.appendicesTr, 'appendicesTr'),
-      loadDataFile(CONFIG.dataPaths.appendicesEn, 'appendicesEn')
-    ]);
-  } catch (error) {
-    console.error('Veri yükleme hatası:', error);
-    throw error;
-  } finally {
-    hideLoading();
-  }
+showLoading('Veri dosyaları yükleniyor...');
+
+try {
+await Promise.all([
+loadDataFile(CONFIG.dataPaths.en, 'en'),
+loadDataFile(CONFIG.dataPaths.tr, 'tr'),
+loadDataFile(CONFIG.dataPaths.translit, 'translit'),
+loadDataFile(CONFIG.dataPaths.dictionary, 'dictionary'),
+loadDataFile(CONFIG.dataPaths.ai, 'ai'),
+loadDataFile(CONFIG.dataPaths.arabic2, 'arabic2'),
+loadDataFile(CONFIG.dataPaths.erhanArabic, 'erhanArabic')
+]);
+
+await Promise.allSettled([
+loadDataFile(CONFIG.dataPaths.mapTr, 'mapTr'),
+loadDataFile(CONFIG.dataPaths.mapEn, 'mapEn'),
+loadDataFile(CONFIG.dataPaths.appendicesTr, 'appendicesTr'),
+loadDataFile(CONFIG.dataPaths.appendicesEn, 'appendicesEn')
+]);
+
+console.log('Veriler başarıyla yüklendi.');
+} catch (error) {
+console.error('Temel veri yükleme hatası:', error);
+throw error;
+} finally {
+hideLoading();
+}
 }
 
 async function loadDataFile(path, key) {
@@ -2985,39 +2970,105 @@ QuranTFT web sitesi ve resmi mobil uygulamaları tavsiye edilir.
         <li><strong>Notlarım neden kaydedilmiyor?</strong> Google hesabınızla giriş yaptığınızdan ve Drive bağlantısının hazır olduğundan emin olun.</li>
         <li><strong>Tema değişiklikleri kalıcı mı?</strong> Evet, ayarlar tarayıcıda saklanır.</li>
     </ul>
-<h2>📚 Kaynaklar</h2>
+
+<h2>🙏 SubmitterTech'e Teşekkür</h2>
+
+<p>
+Kuran Teyit Yazılımı'nın geliştirilmesi sırasında faydalanılan Kuran araştırma
+uygulamaları, dijital kaynaklar ve teknik çalışmalar için
+<strong>SubmitterTech</strong> ekibine teşekkür ederiz.
+</p>
+
+<p>
+SubmitterTech tarafından geliştirilen uygulamalar; Kuran ayetlerinin okunması,
+dinlenmesi, araştırılması, karşılaştırılması ve matematiksel çalışmaların
+incelenmesi konusunda önemli araçlar sunmaktadır.
+</p>
+
+<h3>🌐 SubmitterTech Kaynakları</h3>
 
 <ul>
-  <li>
-    <a href="https://qurantft.com/" target="_blank" rel="noopener noreferrer">QuranTFT</a>
-  </li>
 
-  <li>
-    <a href="https://kuransonahit.tr/" target="_blank" rel="noopener noreferrer">Kuran Son Ahit</a>
-  </li>
+<li>
+<a href="https://submittertech.com/" target="_blank" rel="noopener noreferrer">
+SubmitterTech Ana Sayfası
+</a>
+</li>
 
-  <li>
-    <a href="https://acikkuran.com/" target="_blank" rel="noopener noreferrer">Açık Kuran</a>
-    (Arapça kelime çalışmaları ve sözlük verileri)
-  </li>
+<li>
+<a href="https://qurantft.com/" target="_blank" rel="noopener noreferrer">
+QuranTFT (Web Uygulaması)
+</a>
+</li>
 
-  <li>Authorized English Translation — Rashad Khalifa</li>
+<li>
+<a href="https://play.google.com/store/apps/details?id=com.submittertech.quran&hl=tr" target="_blank" rel="noopener noreferrer">
+QuranTFT Android Uygulaması (Kuran Son Ahit)
+</a>
+</li>
 
-  <li>
-    <a href="https://play.google.com/store/apps/details?id=com.submittertech.quran&hl=tr"
-       target="_blank" rel="noopener noreferrer">
-      QuranTFT Android Uygulaması (Kuran Son Ahit)
-    </a>
-  </li>
+<li>
+<a href="https://apps.apple.com/tr/app/kuran-son-ahit/id6478772891?l=tr" target="_blank" rel="noopener noreferrer">
+QuranTFT iOS Uygulaması (Kuran Son Ahit)
+</a>
+</li>
 
-  <li>
-    <a href="https://apps.apple.com/tr/app/kuran-son-ahit/id6478772891?l=tr"
-       target="_blank" rel="noopener noreferrer">
-      QuranTFT iOS Uygulaması (Kuran Son Ahit)
-    </a>
-  </li>
+<li>
+<a href="https://play.google.com/store/apps/details?id=com.submittertech.quranreciter" target="_blank" rel="noopener noreferrer">
+Quran Reciter Android
+</a>
+</li>
 
-  <li>OpenAI (yapay zekâ destekli geliştirme sürecinde kullanılan araçlardan biri)</li>
+<li>
+<a href="https://apps.apple.com/us/app/quran-reciter-reader/id6766167438" target="_blank" rel="noopener noreferrer">
+Quran Reciter iOS
+</a>
+</li>
+
+<li>
+<a href="https://submittertech.github.io/miracleofquran/" target="_blank" rel="noopener noreferrer">
+Evidence Of Quran
+</a>
+</li>
+
+<li>
+<a href="https://submittertech.github.io/subtitle-searcher-en/" target="_blank" rel="noopener noreferrer">
+Media Search (Reşad Halife ses kayıtlarında arama)
+</a>
+</li>
+
+</ul>
+
+<p>
+Kuran araştırmalarına katkı sağlayan bu değerli uygulamaları ve kaynakları
+hazırlayan SubmitterTech ekibine teşekkür ederiz.
+</p>
+
+<h2>📚 Diğer Kaynaklar</h2>
+
+<ul>
+
+<li>
+<a href="https://kuransonahit.tr/" target="_blank" rel="noopener noreferrer">
+Kuran Son Ahit
+</a>
+</li>
+
+<li>
+<a href="https://acikkuran.com/" target="_blank" rel="noopener noreferrer">
+Açık Kuran
+</a>
+— Arapça kelime çalışmaları ve sözlük verileri
+</li>
+
+<li>
+Authorized English Translation — Rashad Khalifa
+</li>
+
+<li>
+OpenAI — Yapay zekâ destekli geliştirme sürecinde kullanılan araçlardan biri.
+</li>
+
 </ul>
 
     <h2>Son Söz</h2>

@@ -15,7 +15,7 @@ const CONFIG = {
     'Ömer Nasuhi Bilmen.json',
     'Süleyman Ateş.json',
     'Süleymaniye.json',
-    "Tefhim-ul Kur'an.json-Link",
+    "Tefhim-ul Kur'an.json",
     'Yaşar Nuri Öztürk.json',
     'Yusuf Ali (İngilizce).json',
     '2baski_quran_tr.json',
@@ -495,33 +495,33 @@ function closeSidebar() {
    Veri yükleme
 ========================= */
 async function loadInitialData() {
-showLoading('Veri dosyaları yükleniyor...');
+  showLoading('Veri dosyaları yükleniyor...');
 
-try {
-await Promise.all([
-loadDataFile(CONFIG.dataPaths.en, 'en'),
-loadDataFile(CONFIG.dataPaths.tr, 'tr'),
-loadDataFile(CONFIG.dataPaths.translit, 'translit'),
-loadDataFile(CONFIG.dataPaths.dictionary, 'dictionary'),
-loadDataFile(CONFIG.dataPaths.ai, 'ai'),
-loadDataFile(CONFIG.dataPaths.arabic2, 'arabic2'),
-loadDataFile(CONFIG.dataPaths.erhanArabic, 'erhanArabic')
-]);
+  try {
+    await Promise.all([
+      loadDataFile(CONFIG.dataPaths.en, 'en'),
+      loadDataFile(CONFIG.dataPaths.tr, 'tr'),
+      loadDataFile(CONFIG.dataPaths.translit, 'translit'),
+      loadDataFile(CONFIG.dataPaths.dictionary, 'dictionary'),
+      loadDataFile(CONFIG.dataPaths.ai, 'ai'),
+      loadDataFile(CONFIG.dataPaths.arabic2, 'arabic2'),
+      loadDataFile(CONFIG.dataPaths.erhanArabic, 'erhanArabic')
+    ]);
 
-await Promise.allSettled([
-loadDataFile(CONFIG.dataPaths.mapTr, 'mapTr'),
-loadDataFile(CONFIG.dataPaths.mapEn, 'mapEn'),
-loadDataFile(CONFIG.dataPaths.appendicesTr, 'appendicesTr'),
-loadDataFile(CONFIG.dataPaths.appendicesEn, 'appendicesEn')
-]);
+    await Promise.allSettled([
+      loadDataFile(CONFIG.dataPaths.mapTr, 'mapTr'),
+      loadDataFile(CONFIG.dataPaths.mapEn, 'mapEn'),
+      loadDataFile(CONFIG.dataPaths.appendicesTr, 'appendicesTr'),
+      loadDataFile(CONFIG.dataPaths.appendicesEn, 'appendicesEn')
+    ]);
 
-console.log('Veriler başarıyla yüklendi.');
-} catch (error) {
-console.error('Temel veri yükleme hatası:', error);
-throw error;
-} finally {
-hideLoading();
-}
+    console.log('Veriler başarıyla yüklendi.');
+  } catch (error) {
+    console.error('Temel veri yükleme hatası:', error);
+    throw error;
+  } finally {
+    hideLoading();
+  }
 }
 
 async function loadDataFile(path, key) {
@@ -1523,29 +1523,174 @@ function displayPage(pageNum) {
 /* =========================
    Tooltip - delegation
 ========================= */
+function normalizeDictionaryWord(rawWord) {
+  if (!rawWord) return '';
+
+  let word = String(rawWord)
+    // Farklı apostrofları standartlaştır
+    .replace(/[’‘`´ʼʻ＇]/g, "'")
+
+    // Farklı tire biçimlerini standartlaştır
+    .replace(/[‐‒–—﹘﹣－]/g, "-")
+
+    // Aksanları kaldır
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+
+    .toLowerCase()
+    .trim();
+
+  // Baştaki gereksiz karakterleri temizle
+  word = word.replace(/^[^a-z0-9]+/g, '');
+
+  // Sondaki yıldız, virgül, noktalama, parantez vb. temizle
+  word = word.replace(/[^a-z0-9]+$/g, '');
+
+  // Harfler arasındaki nokta, apostrof ve tireyi koru
+  word = word.replace(/[^a-z0-9.'-]/g, '');
+
+  // Art arda gelen işaretleri sadeleştir
+  word = word
+    .replace(/'{2,}/g, "'")
+    .replace(/-{2,}/g, '-')
+    .replace(/\.{2,}/g, '.');
+
+  // Baş ve sondaki nokta/apostrof/tireleri tekrar temizle
+  word = word.replace(/^['.-]+|['.-]+$/g, '');
+
+  return word;
+}
+
+
+function getDictionaryCandidates(rawWord) {
+  const rawText = String(rawWord || '');
+
+  // Orijinal metinde uzun çizgi bulunup bulunmadığını,
+  // normalizasyon yapılmadan önce tespit ediyoruz.
+  const containsLongDash = /[—–―]/.test(rawText);
+
+  const word = normalizeDictionaryWord(rawText);
+
+  if (!word) return [];
+
+  const candidates = [word];
+
+  // A.L.M. → alm
+  if (word.includes('.')) {
+    const noDots = word.replace(/\./g, '');
+
+    if (noDots) {
+      candidates.push(noDots);
+    }
+  }
+
+  // Joseph's → joseph
+  if (word.endsWith("'s") && word.length > 2) {
+    candidates.push(word.slice(0, -2));
+  }
+
+  // prophets' → prophets
+  if (word.endsWith("'") && word.length > 1) {
+    candidates.push(word.slice(0, -1));
+  }
+
+  // Shu'aib → shuaib
+  if (word.includes("'")) {
+    const noApostrophes = word.replace(/'/g, '');
+
+    if (noApostrophes) {
+      candidates.push(noApostrophes);
+    }
+  }
+
+  // well-protected → wellprotected
+  // Birleşik kelime tek parça olarak korunur.
+  if (word.includes('-')) {
+    const noHyphens = word.replace(/-/g, '');
+
+    if (noHyphens) {
+      candidates.push(noHyphens);
+    }
+  }
+
+  /*
+    Yalnızca orijinal metinde uzun çizgi varsa parçala:
+
+    earth—you → earth, you
+    earth–you → earth, you
+
+    Normal kısa tireli kelimeler parçalanmaz:
+
+    empty-handed
+    well-protected
+    one-fifth
+  */
+  if (containsLongDash && word.includes('-')) {
+    const parts = word
+      .split('-')
+      .map((part) => normalizeDictionaryWord(part))
+      .filter(Boolean);
+
+    candidates.push(...parts);
+  }
+
+  // Tüm işaretleri kaldırılmış son aday.
+  const compact = word.replace(/[.'-]/g, '');
+
+  if (compact) {
+    candidates.push(compact);
+  }
+
+  return [...new Set(candidates)];
+}
+
+
 function decorateVerseWords() {
   document.querySelectorAll('.verse-text').forEach((el) => {
     if (el.dataset.decorated === 'true') return;
 
     const button = el.querySelector('.inline-speak-btn');
-    if (button) button.remove();
 
-    const text = el.textContent.trim();
+    // Ses butonu hariç ayet metnini al
+    const text = Array.from(el.childNodes)
+      .filter(
+        (node) =>
+          !(
+            node.nodeType === 1 &&
+            node.classList.contains('inline-speak-btn')
+          )
+      )
+      .map((node) => node.textContent)
+      .join('')
+      .trim();
+
     const words = text.split(/\s+/);
 
-    const html = words
+    el.innerHTML = words
       .map((word) => {
-        const cleanWord = word.replace(/[^a-zA-Z]/g, '').toLowerCase();
-        if (!cleanWord) return escapeHtml(word);
+        const candidates = getDictionaryCandidates(word);
+        const cleanWord = candidates[0] || '';
 
-        return `<span class="word-token" data-word="${escapeHtml(cleanWord)}" data-original="${escapeHtml(word.toLowerCase())}" style="cursor:help;">${escapeHtml(word)}</span>`;
+
+        if (!cleanWord) {
+          return escapeHtml(word);
+        }
+
+        return `
+          <span
+            class="word-token"
+            data-word="${escapeHtml(cleanWord)}"
+            data-candidates="${escapeHtml(JSON.stringify(candidates))}"
+            data-original="${escapeHtml(normalizeDictionaryWord(word))}"
+            style="cursor:help;"
+          >${escapeHtml(word)}</span>
+        `;
       })
       .join(' ');
 
-    el.innerHTML = html;
-
+    // Ses butonunu yeniden ekle
     if (button) {
-      el.appendChild(document.createTextNode('  '));
+      el.appendChild(document.createTextNode(' '));
       el.appendChild(button);
     }
 
@@ -1558,100 +1703,494 @@ function setupWordTooltipDelegation() {
   tooltipDelegationReady = true;
 
   const tooltip = DOM.wordTooltip;
-  if (!tooltip) return;
+
+  if (!tooltip || !DOM.content) return;
 
   let pinnedToken = null;
+  let activeToken = null;
+  let animationFrameId = null;
+
+  Object.assign(tooltip.style, {
+    position: 'fixed',
+    display: 'none',
+    pointerEvents: 'none',
+    zIndex: '99999',
+    maxWidth: '380px',
+    maxHeight: '65vh',
+    overflowY: 'auto',
+    boxSizing: 'border-box'
+  });
 
   function getTranslationHtml(token) {
-    const originalWord = token.dataset.original;
-    const cleanWord = token.dataset.word;
+    const displayedWord = String(
+      token.textContent || ''
+    ).trim();
 
-    let translationValue = null;
-    if (STATE.data.dictionary[originalWord]) {
-      translationValue = STATE.data.dictionary[originalWord];
-    } else if (STATE.data.dictionary[cleanWord]) {
-      translationValue = STATE.data.dictionary[cleanWord];
+    let candidates = [];
+
+    try {
+      candidates = JSON.parse(
+        token.dataset.candidates || '[]'
+      );
+    } catch (error) {
+      console.warn(
+        'Kelime adayları okunamadı:',
+        error
+      );
     }
 
-    if (translationValue) {
-      const translations = String(translationValue)
-        .split(', ')
-        .map((trans, idx) => {
-          const colors = ['#e74c3c', '#27ae60', '#3498db'];
-          const color = colors[idx % 3];
-          return `<strong style="color:${color}">${escapeHtml(trans)}</strong>`;
+    if (
+      !Array.isArray(candidates) ||
+      candidates.length === 0
+    ) {
+      candidates =
+        getDictionaryCandidates(displayedWord);
+    }
+
+    const originalWord =
+      normalizeDictionaryWord(
+        token.dataset.original ||
+        displayedWord
+      );
+
+    const lookupCandidates = [
+      originalWord,
+      ...candidates
+    ].filter(Boolean);
+
+    const uniqueCandidates = [
+      ...new Set(lookupCandidates)
+    ];
+
+    const foundWords = [];
+    const usedMeanings = new Set();
+
+    for (const candidate of uniqueCandidates) {
+      const hasCandidate =
+        Object.prototype.hasOwnProperty.call(
+          STATE.data.dictionary,
+          candidate
+        );
+
+      if (!hasCandidate) continue;
+
+      const meaning =
+        STATE.data.dictionary[candidate];
+
+      if (!meaning) continue;
+
+      const meaningKey =
+        String(meaning).trim();
+
+      if (usedMeanings.has(meaningKey)) {
+        continue;
+      }
+
+      usedMeanings.add(meaningKey);
+
+      foundWords.push({
+        word: candidate,
+        meaning: meaningKey
+      });
+    }
+
+    if (foundWords.length > 0) {
+      const resultHtml = foundWords
+        .map((item) => {
+          const translations = String(
+            item.meaning
+          )
+            .split(/\s*,\s*/)
+            .filter(Boolean)
+            .map((translation, index) => {
+              const colors = [
+                '#e74c3c',
+                '#27ae60',
+                '#3498db'
+              ];
+
+              const color =
+                colors[index % colors.length];
+
+              return `
+                <strong style="color:${color}">
+                  ${escapeHtml(translation)}
+                </strong>
+              `;
+            })
+            .join(', ');
+
+          return `
+            <div style="margin-bottom:8px;">
+              <strong>
+                ${escapeHtml(item.word)}
+              </strong>
+              ➜
+              ${translations}
+            </div>
+          `;
         })
-        .join(', ');
+        .join('<hr>');
 
-      return `"${escapeHtml(token.textContent)}" ➔ ${translations}`;
+      return `
+        <div>
+          <div style="margin-bottom:8px;">
+            "<strong>
+              ${escapeHtml(displayedWord)}
+            </strong>"
+          </div>
+
+          ${resultHtml}
+        </div>
+      `;
     }
 
-    return `"${escapeHtml(token.textContent)}" ➔ <span style="color:#e74c3c;">Kelime bulunamadı</span>`;
+    console.warn(
+      'Sözlükte bulunamayan kelime:',
+      {
+        displayedWord,
+        originalWord,
+        candidates: uniqueCandidates
+      }
+    );
+
+    return `
+      "${escapeHtml(displayedWord)}"
+      ➔
+      <span style="color:#e74c3c;">
+        Kelime bulunamadı
+      </span>
+    `;
   }
 
-  function showTooltipAt(x, y, html) {
-    tooltip.innerHTML = html;
-    tooltip.style.display = 'block';
-    tooltip.style.left = `${x + 10}px`;
-    tooltip.style.top = `${y + 10}px`;
+  function calculateTooltipPosition(
+    clientX,
+    clientY
+  ) {
+    const margin = 10;
+    const offset = 14;
+
+    const tooltipWidth =
+      tooltip.offsetWidth;
+
+    const tooltipHeight =
+      tooltip.offsetHeight;
+
+    let left = clientX + offset;
+    let top = clientY + offset;
+
+    if (
+      left + tooltipWidth >
+      window.innerWidth - margin
+    ) {
+      left =
+        clientX -
+        tooltipWidth -
+        offset;
+    }
+
+    if (
+      top + tooltipHeight >
+      window.innerHeight - margin
+    ) {
+      top =
+        clientY -
+        tooltipHeight -
+        offset;
+    }
+
+    left = Math.max(
+      margin,
+      Math.min(
+        left,
+        window.innerWidth -
+        tooltipWidth -
+        margin
+      )
+    );
+
+    top = Math.max(
+      margin,
+      Math.min(
+        top,
+        window.innerHeight -
+        tooltipHeight -
+        margin
+      )
+    );
+
+    return {
+      left,
+      top
+    };
   }
 
-  function showTooltipNearElement(element, html) {
-    const rect = element.getBoundingClientRect();
-    const x = rect.left + window.pageXOffset;
-    const y = rect.bottom + window.pageYOffset;
+  function moveTooltip(
+    clientX,
+    clientY
+  ) {
+    if (animationFrameId) {
+      cancelAnimationFrame(
+        animationFrameId
+      );
+    }
+
+    animationFrameId =
+      requestAnimationFrame(() => {
+        if (
+          tooltip.style.display !== 'block'
+        ) {
+          return;
+        }
+
+        const position =
+          calculateTooltipPosition(
+            clientX,
+            clientY
+          );
+
+        tooltip.style.left =
+          `${position.left}px`;
+
+        tooltip.style.top =
+          `${position.top}px`;
+
+        animationFrameId = null;
+      });
+  }
+
+  function showTooltipAt(
+    clientX,
+    clientY,
+    html
+  ) {
     tooltip.innerHTML = html;
+    tooltip.style.visibility = 'hidden';
     tooltip.style.display = 'block';
-    tooltip.style.left = `${x}px`;
-    tooltip.style.top = `${y + 8}px`;
+
+    requestAnimationFrame(() => {
+      const position =
+        calculateTooltipPosition(
+          clientX,
+          clientY
+        );
+
+      tooltip.style.left =
+        `${position.left}px`;
+
+      tooltip.style.top =
+        `${position.top}px`;
+
+      tooltip.style.visibility =
+        'visible';
+    });
+  }
+
+  function showTooltipNearElement(
+    element,
+    html
+  ) {
+    const rect =
+      element.getBoundingClientRect();
+
+    const margin = 10;
+    const offset = 8;
+
+    tooltip.innerHTML = html;
+    tooltip.style.visibility = 'hidden';
+    tooltip.style.display = 'block';
+
+    requestAnimationFrame(() => {
+      const tooltipWidth =
+        tooltip.offsetWidth;
+
+      const tooltipHeight =
+        tooltip.offsetHeight;
+
+      let left = rect.left;
+      let top = rect.bottom + offset;
+
+      if (
+        left + tooltipWidth >
+        window.innerWidth - margin
+      ) {
+        left =
+          window.innerWidth -
+          tooltipWidth -
+          margin;
+      }
+
+      if (
+        top + tooltipHeight >
+        window.innerHeight - margin
+      ) {
+        top =
+          rect.top -
+          tooltipHeight -
+          offset;
+      }
+
+      left = Math.max(
+        margin,
+        left
+      );
+
+      top = Math.max(
+        margin,
+        top
+      );
+
+      tooltip.style.left =
+        `${left}px`;
+
+      tooltip.style.top =
+        `${top}px`;
+
+      tooltip.style.visibility =
+        'visible';
+    });
   }
 
   function hideTooltip() {
+    if (animationFrameId) {
+      cancelAnimationFrame(
+        animationFrameId
+      );
+
+      animationFrameId = null;
+    }
+
     tooltip.style.display = 'none';
+    tooltip.style.visibility = 'hidden';
+
+    activeToken = null;
     pinnedToken = null;
   }
 
   function isTouchDevice() {
-    return window.matchMedia('(hover: none)').matches || 'ontouchstart' in window;
+    return (
+      window
+        .matchMedia('(hover: none)')
+        .matches ||
+      navigator.maxTouchPoints > 0
+    );
   }
 
-  // Desktop hover
-  DOM.content.addEventListener('mouseover', (e) => {
-    if (isTouchDevice()) return;
-    if (pinnedToken) return;
+  DOM.content.addEventListener(
+    'mouseover',
+    (event) => {
+      if (
+        isTouchDevice() ||
+        pinnedToken
+      ) {
+        return;
+      }
 
-    const token = e.target.closest('.word-token');
-    if (!token) return;
+      const token =
+        event.target.closest(
+          '.word-token'
+        );
 
-    showTooltipAt(e.pageX, e.pageY, getTranslationHtml(token));
-  });
+      if (
+        !token ||
+        !DOM.content.contains(token)
+      ) {
+        return;
+      }
 
-  DOM.content.addEventListener('mousemove', (e) => {
-    if (isTouchDevice()) return;
-    if (tooltip.style.display === 'block' && !pinnedToken) {
-      tooltip.style.left = `${e.pageX + 10}px`;
-      tooltip.style.top = `${e.pageY + 10}px`;
+      if (
+        event.relatedTarget &&
+        token.contains(
+          event.relatedTarget
+        )
+      ) {
+        return;
+      }
+
+      activeToken = token;
+
+      showTooltipAt(
+        event.clientX,
+        event.clientY,
+        getTranslationHtml(token)
+      );
     }
-  });
+  );
 
-  DOM.content.addEventListener('mouseout', (e) => {
-    if (isTouchDevice()) return;
-    if (pinnedToken) return;
+  DOM.content.addEventListener(
+    'mousemove',
+    (event) => {
+      if (
+        isTouchDevice() ||
+        pinnedToken ||
+        !activeToken
+      ) {
+        return;
+      }
 
-    if (e.target.closest('.word-token')) {
+      moveTooltip(
+        event.clientX,
+        event.clientY
+      );
+    }
+  );
+
+  DOM.content.addEventListener(
+    'mouseout',
+    (event) => {
+      if (
+        isTouchDevice() ||
+        pinnedToken
+      ) {
+        return;
+      }
+
+      const token =
+        event.target.closest(
+          '.word-token'
+        );
+
+      if (
+        !token ||
+        token !== activeToken
+      ) {
+        return;
+      }
+
+      if (
+        event.relatedTarget &&
+        token.contains(
+          event.relatedTarget
+        )
+      ) {
+        return;
+      }
+
       tooltip.style.display = 'none';
+      tooltip.style.visibility = 'hidden';
+      activeToken = null;
     }
-  });
+  );
 
-  // Mobile tap
-  DOM.content.addEventListener('click', (e) => {
-    const token = e.target.closest('.word-token');
+  DOM.content.addEventListener(
+    'click',
+    (event) => {
+      const token =
+        event.target.closest(
+          '.word-token'
+        );
 
-    if (!token) return;
+      if (
+        !token ||
+        !DOM.content.contains(token)
+      ) {
+        return;
+      }
 
-    if (isTouchDevice()) {
-      e.preventDefault();
-      e.stopPropagation();
+      if (!isTouchDevice()) return;
+
+      event.preventDefault();
+      event.stopPropagation();
 
       if (pinnedToken === token) {
         hideTooltip();
@@ -1659,28 +2198,55 @@ function setupWordTooltipDelegation() {
       }
 
       pinnedToken = token;
-      showTooltipNearElement(token, getTranslationHtml(token));
+      activeToken = token;
+
+      showTooltipNearElement(
+        token,
+        getTranslationHtml(token)
+      );
     }
-  });
+  );
 
-  // Tooltip dışına tıklayınca kapat
-  document.addEventListener('click', (e) => {
-    if (!pinnedToken) return;
+  document.addEventListener(
+    'click',
+    (event) => {
+      if (!pinnedToken) return;
 
-    const clickedToken = e.target.closest('.word-token');
-    const clickedTooltip = e.target.closest('#wordTooltip');
+      const clickedToken =
+        event.target.closest(
+          '.word-token'
+        );
 
-    if (!clickedToken && !clickedTooltip) {
-      hideTooltip();
+      const clickedTooltip =
+        event.target.closest(
+          '#wordTooltip'
+        );
+
+      if (
+        !clickedToken &&
+        !clickedTooltip
+      ) {
+        hideTooltip();
+      }
     }
-  });
+  );
 
-  // Scroll olunca mobil popup kapansın
-  window.addEventListener('scroll', () => {
-    if (pinnedToken) {
-      hideTooltip();
+  window.addEventListener(
+    'resize',
+    hideTooltip
+  );
+
+  window.addEventListener(
+    'scroll',
+    () => {
+      if (pinnedToken) {
+        hideTooltip();
+      }
+    },
+    {
+      passive: true
     }
-  });
+  );
 }
 
 /* =========================
@@ -2092,10 +2658,13 @@ function searchPrimarySources(query, maxResults = 16) {
   const q = query.trim();
   if (!q) return [];
 
-  if (!SEARCH_INDEX.ready) {
-  autocomplete.innerHTML = '<div>⏳ Arama hazırlanıyor...</div>';
-  autocomplete.style.display = 'block';
-  return;
+if (!SEARCH_INDEX.ready) {
+  DOM.autocomplete.innerHTML =
+    '<div>⏳ Arama hazırlanıyor...</div>';
+
+  DOM.autocomplete.style.display = 'block';
+
+  return [];
 }
 
   const normalizedQuery = normalizeTurkishText(q);

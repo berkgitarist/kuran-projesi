@@ -2456,3 +2456,315 @@ body.sky-theme .meal-text {
   left: 50% !important;
   transform: translateX(-50%) !important;
 }
+#wordTooltip {
+  position: fixed;
+  display: none;
+  z-index: 99999;
+
+  max-width: 380px;
+  max-height: 65vh;
+  overflow-y: auto;
+  box-sizing: border-box;
+
+  pointer-events: none;
+  overflow-wrap: anywhere;
+}
+/* =========================
+   Notlar Tablo Görünümü
+========================= */
+
+.notes-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  margin-top: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 10px;
+}
+
+.notes-table {
+  width: 100%;
+  min-width: 880px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.notes-table th,
+.notes-table td {
+  padding: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  text-align: left;
+  vertical-align: top;
+}
+
+.notes-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  font-weight: 700;
+  white-space: nowrap;
+  background: var(--header-bg, #243247);
+}
+
+/* Sure sütunu */
+.notes-table th:nth-child(1),
+.notes-table td:nth-child(1) {
+  width: 48px;
+  min-width: 48px;
+  max-width: 48px;
+  text-align: center;
+}
+
+/* Ayet sütunu */
+.notes-table th:nth-child(2),
+.notes-table td:nth-child(2) {
+  width: 48px;
+  min-width: 48px;
+  max-width: 48px;
+  text-align: center;
+}
+
+/* Sure adı sütunu */
+.notes-table th:nth-child(3),
+.notes-table td:nth-child(3) {
+  width: 190px;
+}
+
+/* Not sütunu */
+.notes-table th:nth-child(4),
+.notes-table td:nth-child(4) {
+  width: auto;
+}
+
+/* Güncelleme sütunu */
+.notes-table th:nth-child(5),
+.notes-table td:nth-child(5) {
+  width: 145px;
+}
+
+/* İşlemler sütunu */
+.notes-table th:nth-child(6),
+.notes-table td:nth-child(6) {
+  width: 135px;
+}
+
+.notes-table tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.notes-table tbody tr:hover {
+  background: rgba(59, 130, 246, 0.16);
+}
+
+.notes-number-cell {
+  font-weight: 700;
+  white-space: nowrap;
+  vertical-align: middle !important;
+}
+
+.notes-sura-cell {
+  font-weight: 600;
+  vertical-align: middle !important;
+}
+
+.notes-content-cell {
+  position: relative;
+  min-width: 260px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.notes-content-preview {
+  display: -webkit-box;
+  overflow: hidden;
+  cursor: pointer;
+
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+
+  line-clamp: 3;
+  max-height: calc(1.45em * 3);
+}
+
+.notes-content-preview.expanded {
+  display: block;
+  max-height: none;
+  overflow: visible;
+
+  -webkit-line-clamp: unset;
+  line-clamp: unset;
+}
+
+.notes-expand-btn {
+  margin-top: 6px;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: #93c5fd;
+  background: transparent;
+}
+
+.notes-expand-btn:hover {
+  text-decoration: underline;
+  color: #bfdbfe;
+}
+
+.notes-date-cell {
+  font-size: 0.88rem;
+  white-space: nowrap;
+  vertical-align: middle !important;
+}
+
+.notes-actions-cell {
+  white-space: nowrap;
+  vertical-align: middle !important;
+}
+
+.notes-actions-cell button {
+  margin: 2px;
+  padding: 6px 9px;
+}
+
+@media (max-width: 768px) {
+  .notes-table {
+    min-width: 780px;
+  }
+
+  .notes-table th,
+  .notes-table td {
+    padding: 8px;
+    font-size: 0.9rem;
+  }
+
+  .notes-table th:nth-child(1),
+  .notes-table td:nth-child(1),
+  .notes-table th:nth-child(2),
+  .notes-table td:nth-child(2) {
+    width: 42px;
+    min-width: 42px;
+    max-width: 42px;
+  }
+
+  .notes-table th:nth-child(3),
+  .notes-table td:nth-child(3) {
+    width: 165px;
+  }
+
+  .notes-table th:nth-child(5),
+  .notes-table td:nth-child(5) {
+    width: 130px;
+  }
+
+  .notes-table th:nth-child(6),
+  .notes-table td:nth-child(6) {
+    width: 120px;
+  }
+}
+/* Ekran okuyucu etiketi: görünmez, erişilebilir kalır */
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+/* =========================
+   Ayet Altındaki Kişisel Not
+========================= */
+
+.saved-note-card {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.saved-note-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+}
+
+.saved-note-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.saved-note-title {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.saved-note-content {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.saved-note-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.saved-note-actions button {
+  margin: 0;
+  padding: 6px 10px;
+}
+
+
+/* Mobil ekran */
+@media (max-width: 700px) {
+  .saved-note-row {
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .saved-note-main {
+    padding-top: 6px;
+  }
+
+  .saved-note-actions {
+    gap: 4px;
+  }
+
+  .saved-note-actions button {
+    padding: 5px 7px;
+    font-size: 0.8rem;
+  }
+
+  .saved-note-content {
+    max-width: 38vw;
+  }
+}
+.note-btn.has-note{
+    background:#16a34a !important;
+    border:1px solid #22c55e !important;
+    color:#fff !important;
+}
+.update-note{
+    margin-top:18px;
+    padding-top:10px;
+    border-top:1px solid rgba(255,255,255,.12);
+
+    font-size:.82rem;
+    color:#9bb6d6;
+
+    opacity:.85;
+    text-align:center;
+    line-height:1.5;
+}

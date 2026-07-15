@@ -1,8 +1,7 @@
-/* script.js - temizlenmiş ve hızlandırılmış sürüm */
-
 const CONFIG = {
   batchSize: 3,
   initialLoad: 5,
+
   mealFiles: [
     'Abdülbaki Gölpınarlı.json',
     'Diyanet İşleri.json',
@@ -21,20 +20,21 @@ const CONFIG = {
     '2baski_quran_tr.json',
     'kuran_erhan_aktas.json'
   ],
-dataPaths: {
-  en: './data/qurantft.json',
-  tr: './data/quran_tr.json',
-  translit: './data/Turkce_Transkript.json',
-  ai: './data/yapayzekaceviri.json',
-  dictionary: './data/manual-dictionary.json',
-  arabic2: './data/mealler/quran_arapca2.json',
-  erhanArabic: './data/mealler/kuran_erhan_aktas.json',
-  wordTranslations: './data/word-translations.json',
-  mapTr: './data/map_tr.json',
-  mapEn: './data/map.json',
-  appendicesTr: './data/appendices_tr.json',
-  appendicesEn: './data/appendices.json'
-}
+
+  dataPaths: {
+    en: './data/qurantft.json',
+    tr: './data/quran_tr.json',
+    translit: './data/Turkce_Transkript.json',
+    ai: './data/yapayzekaceviri.json',
+    dictionary: './data/manual-dictionary.json',
+    arabic2: './data/mealler/quran_arapca2.json',
+    erhanArabic: './data/mealler/kuran_erhan_aktas.json',
+    wordTranslations: './data/word-translations.json',
+    mapTr: './data/map_tr.json',
+    mapEn: './data/map.json',
+    appendicesTr: './data/appendices_tr.json',
+    appendicesEn: './data/appendices.json'
+  }
 };
 
 const STATE = {
@@ -480,14 +480,58 @@ function toggleSidebar() {
 }
 
 function openSidebar() {
+  if (!DOM.sidebar || !DOM.sidebarOverlay) {
+    return;
+  }
+
   DOM.sidebar.classList.remove('hidden');
   DOM.sidebarOverlay.classList.remove('hidden');
+
+  DOM.sidebar.setAttribute(
+    'aria-hidden',
+    'false'
+  );
+
+  DOM.sidebarOverlay.setAttribute(
+    'aria-hidden',
+    'false'
+  );
+
+  document
+    .getElementById('menuToggle')
+    ?.setAttribute(
+      'aria-expanded',
+      'true'
+    );
+
   document.body.style.overflow = 'hidden';
 }
 
 function closeSidebar() {
+  if (!DOM.sidebar || !DOM.sidebarOverlay) {
+    return;
+  }
+
   DOM.sidebar.classList.add('hidden');
   DOM.sidebarOverlay.classList.add('hidden');
+
+  DOM.sidebar.setAttribute(
+    'aria-hidden',
+    'true'
+  );
+
+  DOM.sidebarOverlay.setAttribute(
+    'aria-hidden',
+    'true'
+  );
+
+  document
+    .getElementById('menuToggle')
+    ?.setAttribute(
+      'aria-expanded',
+      'false'
+    );
+
   document.body.style.overflow = '';
 }
 
@@ -1404,7 +1448,21 @@ function buildPageHtml(pageNum) {
       }
 
       html += `<button class="toggle-btn analysis-btn" onclick="openAnalysisPanel(${suraNum}, ${verseNum})">🔎 Analiz</button>`;
-      html += `<button class="toggle-btn note-btn" onclick="toggleNoteInput('note-input-box-${suraNum}-${verseNum}', ${suraNum}, ${verseNum})">✍️ Not Al</button>`;
+      const hasUserNote = getLocalNote(suraNum, verseNum);
+
+html += `
+<button
+    id="noteBtn-${suraNum}-${verseNum}"
+    class="toggle-btn note-btn ${hasUserNote ? "has-note" : ""}"
+    onclick="toggleNoteInput(
+        'note-input-box-${suraNum}-${verseNum}',
+        ${suraNum},
+        ${verseNum}
+    )">
+
+    ${hasUserNote ? "📝 Notlu" : "✍️ Not Al"}
+
+</button>`;
       html += `</div>`;
 
       if (STATE.settings.showAiTranslation) {
@@ -2252,167 +2310,709 @@ function setupWordTooltipDelegation() {
 /* =========================
    Notlar
 ========================= */
-function isDriveReady() {
-  return (
-    typeof gapi !== 'undefined' &&
-    typeof folderId !== 'undefined' &&
-    !!folderId &&
-    typeof loadNoteFromDrive === 'function' &&
-    typeof saveNoteToDrive === 'function'
-  );
+/* =========================
+   Yerel Not Sistemi
+========================= */
+
+const LOCAL_NOTES_KEY = 'kuranTeyitNotesV1';
+
+function getAllLocalNotes() {
+  try {
+    const savedNotes = localStorage.getItem(LOCAL_NOTES_KEY);
+
+    if (!savedNotes) {
+      return {};
+    }
+
+    const parsedNotes = JSON.parse(savedNotes);
+
+    if (
+      !parsedNotes ||
+      typeof parsedNotes !== 'object' ||
+      Array.isArray(parsedNotes)
+    ) {
+      return {};
+    }
+
+    return parsedNotes;
+  } catch (error) {
+    console.error('Yerel notlar okunamadı:', error);
+    return {};
+  }
+}
+
+function writeAllLocalNotes(notes) {
+  try {
+    localStorage.setItem(
+      LOCAL_NOTES_KEY,
+      JSON.stringify(notes)
+    );
+
+    return true;
+  } catch (error) {
+    console.error('Yerel notlar kaydedilemedi:', error);
+
+    showNotification(
+      'Notlar tarayıcıya kaydedilemedi.',
+      'warning'
+    );
+
+    return false;
+  }
+}
+
+function getLocalNote(sura, verse) {
+  const notes = getAllLocalNotes();
+  const verseId = `${sura}:${verse}`;
+
+  return notes[verseId] || null;
+}
+
+function saveLocalNote(sura, verse, content) {
+  const notes = getAllLocalNotes();
+  const verseId = `${sura}:${verse}`;
+
+  notes[verseId] = {
+    sura: String(sura),
+    verse: String(verse),
+    content: String(content),
+    updatedAt: new Date().toISOString()
+  };
+
+  return writeAllLocalNotes(notes);
+}
+
+function deleteLocalNote(sura, verse) {
+  const notes = getAllLocalNotes();
+  const verseId = `${sura}:${verse}`;
+
+  if (!notes[verseId]) {
+    return false;
+  }
+
+  delete notes[verseId];
+
+  return writeAllLocalNotes(notes);
 }
 
 async function loadNotesForCurrentPage() {
-  if (!isDriveReady()) return;
+  const verseElements =
+    document.querySelectorAll('.verse-number');
 
-  const verseElements = document.querySelectorAll('.verse-number');
-  const tasks = [];
+  verseElements.forEach((element) => {
+    const verseText =
+      element.textContent.trim();
 
-  for (const element of verseElements) {
-    const verseText = element.textContent.trim();
-    const match = verseText.match(/^(\d+)\s*:\s*(\d+)$/);
-    if (!match) continue;
+    const match =
+      verseText.match(/^(\d+)\s*:\s*(\d+)$/);
+
+    if (!match) return;
 
     const [, sura, verse] = match;
+    const note = getLocalNote(sura, verse);
 
-    tasks.push(
-      loadNoteFromDrive(sura, verse)
-        .then((content) => {
-          if (content) displayLoadedNote(sura, verse, content);
-        })
-        .catch((err) => console.warn('Not okunamadı:', sura, verse, err))
-    );
-  }
-
-  await Promise.allSettled(tasks);
+    if (note?.content) {
+      displayLoadedNote(
+        sura,
+        verse,
+        note.content
+      );
+    }
+  });
 }
 
 function displayLoadedNote(sura, verse, content) {
-  const box = document.getElementById(`user-note-${sura}-${verse}`);
+  const box = document.getElementById(
+    `user-note-${sura}-${verse}`
+  );
+
   if (!box) return;
 
-  const safe = escapeHtml(content || '');
-  box.innerHTML = `<div class="note-tr"><strong>📝 Notunuz:</strong><br>${safe.replace(
-    /\n/g,
-    '<br>'
-  )}</div>`;
-  box.classList.remove('hidden');
+  const safeContent = escapeHtml(content || '');
+
+  box.innerHTML = `
+    <div class="saved-note-card">
+      <div class="saved-note-row">
+        <div class="saved-note-main">
+          <strong class="saved-note-title">
+            📝 Notunuz:
+          </strong>
+
+          <span class="saved-note-content">
+            ${safeContent.replace(/\n/g, '<br>')}
+          </span>
+        </div>
+
+        <div class="saved-note-actions">
+          <button
+            type="button"
+            class="toggle-btn"
+            onclick="editLocalNote(${Number(sura)}, ${Number(verse)})"
+          >
+            ✏️ Düzenle
+          </button>
+
+          <button
+            type="button"
+            class="toggle-btn"
+            onclick="removeLocalNote(${Number(sura)}, ${Number(verse)})"
+          >
+            🗑️ Sil
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Not kaydı hazırlanır fakat başlangıçta kapalı tutulur.
+  box.classList.add('hidden');
+
+  const noteButton = document.getElementById(
+    `noteBtn-${sura}-${verse}`
+  );
+
+  if (noteButton) {
+    noteButton.classList.add('has-note');
+    noteButton.textContent = '📝 Notlu';
+  }
 }
 
 async function saveNote(sura, verse) {
-  const textarea = document.getElementById(`note-input-${sura}-${verse}`);
-  const noteContent = textarea?.value.trim();
 
-  if (!noteContent) {
-    showNotification('⚠️ Not içeriği boş olamaz.', 'warning');
-    return;
-  }
+    const textarea = document.getElementById(
+        `note-input-${sura}-${verse}`
+    );
 
-  if (!isDriveReady()) {
-    showNotification('Google Drive bağlantısı hazır değil.', 'warning');
-    return;
-  }
+    const noteContent = textarea.value.trim();
 
-  const success = await saveNoteToDrive(sura, verse, noteContent);
+    if (!noteContent) {
+        showNotification(
+            "⚠️ Not içeriği boş olamaz.",
+            "warning"
+        );
+        return;
+    }
 
-  if (success) {
-    textarea.value = '';
-    const inputBox = document.getElementById(`note-input-box-${sura}-${verse}`);
-    if (inputBox) inputBox.classList.add('hidden');
-    displayLoadedNote(sura, verse, noteContent);
-    showNotification('✅ Not kaydedildi.', 'success');
-  }
+    const success = saveLocalNote(
+        sura,
+        verse,
+        noteContent
+    );
+
+    if (!success) return;
+
+    textarea.value = "";
+
+    const inputBox = document.getElementById(
+        `note-input-box-${sura}-${verse}`
+    );
+
+    if (inputBox) {
+        inputBox.classList.add("hidden");
+    }
+
+    displayLoadedNote(
+        sura,
+        verse,
+        noteContent
+    );
+
+    showNotification(
+        "✅ Not cihazınıza kaydedildi.",
+        "success"
+    );
 }
 
 function cancelNote(sura, verse) {
-  const textarea = document.getElementById(`note-input-${sura}-${verse}`);
-  const inputBox = document.getElementById(`note-input-box-${sura}-${verse}`);
-  if (textarea) textarea.value = '';
-  if (inputBox) inputBox.classList.add('hidden');
+  const textarea = document.getElementById(
+    `note-input-${sura}-${verse}`
+  );
+
+  const inputBox = document.getElementById(
+    `note-input-box-${sura}-${verse}`
+  );
+
+  if (textarea) {
+    textarea.value = '';
+  }
+
+  if (inputBox) {
+    inputBox.classList.add('hidden');
+  }
 }
 
 async function toggleNoteInput(id, sura, verse) {
-  const element = document.getElementById(id);
-  if (!element) return;
+  const inputBox = document.getElementById(id);
+  const savedNoteBox = document.getElementById(
+    `user-note-${sura}-${verse}`
+  );
 
-  element.classList.toggle('hidden');
+  const existingNote = getLocalNote(sura, verse);
 
-  if (!element.classList.contains('hidden') && isDriveReady()) {
-    const textarea = document.getElementById(`note-input-${sura}-${verse}`);
-    if (textarea) {
-      try {
-        const existingNote = await loadNoteFromDrive(sura, verse);
-        if (existingNote) textarea.value = existingNote;
-      } catch (e) {
-        console.warn('Mevcut not okunamadı:', e);
-      }
+  /*
+    Kayıtlı not varsa:
+    Notlu butonu, kayıtlı not alanını açıp kapatır.
+  */
+  if (existingNote?.content) {
+    if (!savedNoteBox) return;
 
-      setTimeout(() => textarea.focus(), 100);
-    }
+    savedNoteBox.classList.toggle('hidden');
+
+    return;
+  }
+
+  /*
+    Kayıtlı not yoksa:
+    Normal not yazma alanı açılır veya kapanır.
+  */
+  if (!inputBox) return;
+
+  inputBox.classList.toggle('hidden');
+
+  if (!inputBox.classList.contains('hidden')) {
+    const textarea = document.getElementById(
+      `note-input-${sura}-${verse}`
+    );
+
+    if (!textarea) return;
+
+    textarea.value = '';
+
+    setTimeout(() => {
+      textarea.focus();
+    }, 100);
   }
 }
 
-async function loadAndDisplayAllNotes() {
-  const notesList = document.getElementById('notesList');
-  if (!notesList || !isDriveReady()) return;
+function editLocalNote(sura, verse) {
+  const inputBox = document.getElementById(
+    `note-input-box-${sura}-${verse}`
+  );
 
-  try {
-    const listResponse = await gapi.client.drive.files.list({
-      q: `'${folderId}' in parents and trashed=false`,
-      fields: 'files(id,name,mimeType,modifiedTime)',
-      orderBy: 'modifiedTime desc',
-      spaces: 'drive',
-      pageSize: 1000
-    });
+  const textarea = document.getElementById(
+    `note-input-${sura}-${verse}`
+  );
 
-    const files = listResponse.result.files || [];
-    const re = /^(\d+)_(\d+)(?:\.txt)?$/i;
-    const noteFiles = files.filter((f) => re.test(f.name));
+  if (!inputBox || !textarea) return;
 
-    if (noteFiles.length === 0) {
-      notesList.innerHTML = '<p>Henüz kaydedilmiş notunuz bulunmuyor.</p>';
-      return;
+  const note = getLocalNote(sura, verse);
+
+  textarea.value =
+    note?.content || '';
+
+  inputBox.classList.remove('hidden');
+
+  setTimeout(() => {
+    textarea.focus();
+  }, 100);
+}
+
+function removeLocalNote(sura, verse) {
+
+    if (!confirm("Bu not silinsin mi?")) {
+        return;
     }
 
-    let html = '<div class="notes-grid">';
+    deleteLocalNote(sura, verse);
 
-    for (const file of noteFiles) {
-      const [, sura, verse] = file.name.match(re);
+    const noteBox = document.getElementById(
+        `user-note-${sura}-${verse}`
+    );
 
-      let content = '';
-      try {
-        if (typeof getFileTextById === 'function') {
-          content = await getFileTextById(file.id, file.mimeType);
-        }
-      } catch (e) {
-        console.warn('Not içeriği okunamadı:', e);
+    if (noteBox) {
+        noteBox.innerHTML = "";
+        noteBox.classList.add("hidden");
+    }
+
+    const textarea = document.getElementById(
+        `note-input-${sura}-${verse}`
+    );
+
+    if (textarea) {
+        textarea.value = "";
+    }
+
+    const noteButton = document.getElementById(
+        `noteBtn-${sura}-${verse}`
+    );
+
+    if (noteButton) {
+        noteButton.classList.remove("has-note");
+        noteButton.textContent = "✍️ Not Al";
+    }
+
+    showNotification(
+        "Not silindi.",
+        "success"
+    );
+}
+
+function loadAndDisplayAllNotes() {
+  const notesList =
+    document.getElementById('notesList');
+
+  if (!notesList) return;
+
+  const notes = Object
+    .values(getAllLocalNotes())
+    .sort((a, b) => {
+      const suraDifference =
+        Number(a.sura) - Number(b.sura);
+
+      if (suraDifference !== 0) {
+        return suraDifference;
       }
 
-      const suraName = STATE.metadata.sureNames[sura] || `Sure ${sura}`;
-      const modifiedDate = new Date(file.modifiedTime).toLocaleDateString('tr-TR');
-      const preview =
-        escapeHtml((content || '').substring(0, 150)) +
-        ((content || '').length > 150 ? '...' : '');
+      return Number(a.verse) - Number(b.verse);
+    });
 
-      html += `
-        <div class="note-card">
-          <div class="note-header">
-            <h3>${escapeHtml(suraName)} ${sura}:${verse}</h3>
-            <span class="note-date">${modifiedDate}</span>
-          </div>
-          <div class="note-content">${preview}</div>
-          <div class="note-actions">
-            <button onclick="goToVerse(${sura}, ${verse})" class="go-to-verse-btn">📖 Ayete Git</button>
-          </div>
-        </div>`;
-    }
+  if (notes.length === 0) {
+    notesList.innerHTML = `
+      <p>
+        Henüz kaydedilmiş notunuz bulunmuyor.
+      </p>
+    `;
 
-    html += '</div>';
-    notesList.innerHTML = html;
-  } catch (error) {
-    console.error('Notlar yüklenirken hata:', error);
-    notesList.innerHTML = '<p>Notlar yüklenirken bir hata oluştu.</p>';
+    return;
   }
+
+  notesList.innerHTML = `
+    <div class="notes-table-wrapper">
+      <table class="notes-table">
+        <thead>
+          <tr>
+            <th>Sure</th>
+            <th>Ayet</th>
+            <th>Sure Adı</th>
+            <th>Not</th>
+            <th>Güncelleme</th>
+            <th>İşlemler</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${notes
+            .map((note) => {
+              const suraNumber =
+                Number(note.sura);
+
+              const verseNumber =
+                Number(note.verse);
+
+              const suraName =
+                STATE.metadata.sureNames[note.sura] ||
+                `Sure ${note.sura}`;
+
+              const updatedDate =
+                note.updatedAt
+                  ? new Date(
+                      note.updatedAt
+                    ).toLocaleString('tr-TR')
+                  : '';
+
+              const safeContent =
+                escapeHtml(
+                  note.content || ''
+                ).replace(/\n/g, '<br>');
+
+              const noteId =
+                `note-row-${suraNumber}-${verseNumber}`;
+
+              return `
+                <tr>
+                  <td class="notes-number-cell">
+                    ${escapeHtml(note.sura)}
+                  </td>
+
+                  <td class="notes-number-cell">
+                    ${escapeHtml(note.verse)}
+                  </td>
+
+                  <td class="notes-sura-cell">
+                    ${escapeHtml(suraName)}
+                  </td>
+
+                  <td class="notes-content-cell">
+                    <div
+                      id="${noteId}"
+                      class="notes-content-preview"
+                      tabindex="0"
+                      role="button"
+                      aria-expanded="false"
+                      onclick="toggleNotePreview('${noteId}')"
+                      onkeydown="
+                        if (
+                          event.key === 'Enter' ||
+                          event.key === ' '
+                        ) {
+                          event.preventDefault();
+                          toggleNotePreview('${noteId}');
+                        }
+                      "
+                      title="Notu açmak veya kapatmak için tıklayın"
+                    >
+                      ${safeContent}
+                    </div>
+
+                    <button
+                      type="button"
+                      class="notes-expand-btn"
+                      onclick="toggleNotePreview('${noteId}')"
+                      hidden
+                    >
+                      Devamını göster
+                    </button>
+                  </td>
+
+                  <td class="notes-date-cell">
+                    ${escapeHtml(updatedDate)}
+                  </td>
+
+                  <td class="notes-actions-cell">
+                    <button
+                      type="button"
+                      class="go-to-verse-btn"
+                      onclick="goToVerse(
+                        ${suraNumber},
+                        ${verseNumber}
+                      )"
+                      title="Ayete git"
+                    >
+                      📖 Git
+                    </button>
+
+                    <button
+                      type="button"
+                      class="toggle-btn"
+                      onclick="removeLocalNoteFromList(
+                        ${suraNumber},
+                        ${verseNumber}
+                      )"
+                      title="Notu sil"
+                    >
+                      🗑️ Sil
+                    </button>
+                  </td>
+                </tr>
+              `;
+            })
+            .join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  /*
+    Tablo DOM'a eklendikten sonra notların gerçekten
+    üç satırı aşıp aşmadığını ölç.
+  */
+  requestAnimationFrame(() => {
+    notesList
+      .querySelectorAll(
+        '.notes-content-preview'
+      )
+      .forEach((noteElement) => {
+        const cell =
+          noteElement.closest(
+            '.notes-content-cell'
+          );
+
+        const button =
+          cell?.querySelector(
+            '.notes-expand-btn'
+          );
+
+        if (!button) return;
+
+        const isOverflowing =
+          noteElement.scrollHeight >
+          noteElement.clientHeight + 2;
+
+        button.hidden = !isOverflowing;
+      });
+  });
+}
+
+function toggleNotePreview(noteId) {
+  const noteElement =
+    document.getElementById(noteId);
+
+  if (!noteElement) return;
+
+  const isExpanded =
+    noteElement.classList.toggle(
+      'expanded'
+    );
+
+  noteElement.setAttribute(
+    'aria-expanded',
+    String(isExpanded)
+  );
+
+  const cell =
+    noteElement.closest(
+      '.notes-content-cell'
+    );
+
+  const button =
+    cell?.querySelector(
+      '.notes-expand-btn'
+    );
+
+  if (button) {
+    button.textContent =
+      isExpanded
+        ? 'Daha az göster'
+        : 'Devamını göster';
+  }
+}
+
+function removeLocalNoteFromList(
+  sura,
+  verse
+) {
+  const approved = window.confirm(
+    `${sura}:${verse} ayetine ait not silinsin mi?`
+  );
+
+  if (!approved) return;
+
+  if (deleteLocalNote(sura, verse)) {
+    loadAndDisplayAllNotes();
+
+    showNotification(
+      'Not silindi.',
+      'success'
+    );
+  }
+}
+
+function exportLocalNotes() {
+  const notes = getAllLocalNotes();
+
+  if (Object.keys(notes).length === 0) {
+    showNotification(
+      'Dışa aktarılacak not bulunamadı.',
+      'warning'
+    );
+
+    return;
+  }
+
+  const exportData = {
+    application: 'KuranTeyit',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    notes
+  };
+
+  const blob = new Blob(
+    [
+      JSON.stringify(
+        exportData,
+        null,
+        2
+      )
+    ],
+    {
+      type: 'application/json;charset=utf-8'
+    }
+  );
+
+  const downloadUrl =
+    URL.createObjectURL(blob);
+
+  const anchor =
+    document.createElement('a');
+
+  anchor.href = downloadUrl;
+  anchor.download =
+    'KuranTeyit_Notlar.json';
+
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+
+  URL.revokeObjectURL(downloadUrl);
+}
+
+function openNotesImportDialog() {
+  const input =
+    document.createElement('input');
+
+  input.type = 'file';
+  input.accept =
+    '.json,application/json';
+
+  input.addEventListener(
+    'change',
+    async () => {
+      const file = input.files?.[0];
+
+      if (!file) return;
+
+      try {
+        const content =
+          await file.text();
+
+        const parsed =
+          JSON.parse(content);
+
+        const importedNotes =
+          parsed.notes || parsed;
+
+        if (
+          !importedNotes ||
+          typeof importedNotes !== 'object' ||
+          Array.isArray(importedNotes)
+        ) {
+          throw new Error(
+            'Geçersiz not dosyası.'
+          );
+        }
+
+        const existingNotes =
+          getAllLocalNotes();
+
+        const mergedNotes = {
+          ...existingNotes,
+          ...importedNotes
+        };
+
+        writeAllLocalNotes(
+          mergedNotes
+        );
+
+        loadAndDisplayAllNotes();
+
+        if (
+          STATE.data.en[STATE.currentPage] &&
+          STATE.data.tr[STATE.currentPage]
+        ) {
+          displayPage(
+            STATE.currentPage
+          );
+        }
+
+        showNotification(
+          '✅ Notlar içe aktarıldı.',
+          'success'
+        );
+      } catch (error) {
+        console.error(
+          'Not dosyası içe aktarılamadı:',
+          error
+        );
+
+        showNotification(
+          'Not dosyası geçersiz veya bozuk.',
+          'warning'
+        );
+      }
+    }
+  );
+
+  input.click();
 }
 
 /* =========================
@@ -3169,17 +3769,25 @@ function displaySettingsPage() {
         </label>
       </div>
 
-      <div class="settings-section">
-        <h2>Google Drive Durumu</h2>
-        <div class="drive-status">
-          <p><strong>Durum:</strong> <span id="driveStatus">${
-            isDriveReady() ? '🟢 Bağlı' : '🔴 Bağlı değil'
-          }</span></p>
-          <p><strong>Klasör:</strong> <span id="folderStatus">${
-            typeof folderId !== 'undefined' && folderId ? '✅ Hazır' : '❌ Bulunamadı'
-          }</span></p>
+        <div class="settings-section">
+          <h2>Yerel Not Sistemi</h2>
+
+          <div class="drive-status">
+            <p>
+              <strong>Durum:</strong>
+              🟢 Yerel kayıt aktif
+            </p>
+
+            <p>
+              Notlarınız bu tarayıcıda ve bu cihazda saklanır.
+            </p>
+
+            <p>
+              Tarayıcı verilerini silmeden önce notlarınızı
+              JSON dosyası olarak yedeklemeniz önerilir.
+            </p>
+          </div>
         </div>
-      </div>
 
       <div class="settings-section">
         <h2>Yazılım Hakkında</h2>
@@ -3193,7 +3801,7 @@ function displaySettingsPage() {
     </a>
   </li>
         <li><strong>Arama:</strong> (örn: "2:255") 2 255 veya 2/255 yazabilirsiniz.</li>
-            <li><strong>Google Drive:</strong> Notlarınız otomatik olarak "Kuran_Teyit_Not" klasörüne kaydedilir.</li>
+            <li><strong>Yerel Notlar:</strong> Notlarınız otomatik olarak kullandığınız tarayıcıda saklanır.</li>
           </ul>
         </div>
       </div>
@@ -3245,17 +3853,96 @@ function displayNotesPage() {
     <div class="page-header">
       <h1>📝 Notlarım</h1>
     </div>
+
     <div class="sura">
       <div class="notes-section">
-        <p>Google Drive'daki notlarınız burada görüntülenecek...</p>
-        <div id="notesList" class="notes-list">
-          ${isDriveReady() ? 'Notlar yükleniyor...' : 'Google hesabınızla giriş yapın.'}
-        </div>
-        <button class="toggle-btn" onclick="goToPage(${STATE.currentPage})">🔙 Kuran'a Dön</button>
-      </div>
-    </div>`;
+        <p>
+          Notlarınız bu tarayıcıda,
+          cihazınızda saklanmaktadır.
+        </p>
 
-  if (isDriveReady()) loadAndDisplayAllNotes();
+        <div
+          class="note-actions"
+          style="
+            display:flex;
+            gap:10px;
+            flex-wrap:wrap;
+            margin-bottom:20px;
+          "
+        >
+          <button
+            class="toggle-btn"
+            onclick="exportLocalNotes()"
+          >
+            💾 Notları Yedekle
+          </button>
+
+          <button
+            class="toggle-btn"
+            onclick="openNotesImportDialog()"
+          >
+            📂 Not Dosyası Yükle
+          </button>
+
+          <button
+            id="toggleNotesVisibilityBtn"
+            class="toggle-btn"
+            type="button"
+            onclick="toggleNotesVisibility()"
+            aria-expanded="true"
+            aria-controls="notesList"
+          >
+            🙈 Notları Gizle
+          </button>
+        </div>
+
+        <div
+          id="notesList"
+          class="notes-list"
+        >
+          Notlar yükleniyor...
+        </div>
+
+        <button
+          class="toggle-btn"
+          onclick="goToPage(${STATE.currentPage})"
+        >
+          🔙 Kuran'a Dön
+        </button>
+      </div>
+    </div>
+  `;
+
+  loadAndDisplayAllNotes();
+}
+
+function toggleNotesVisibility() {
+  const notesList =
+    document.getElementById('notesList');
+
+  const button =
+    document.getElementById(
+      'toggleNotesVisibilityBtn'
+    );
+
+  if (!notesList || !button) return;
+
+  const willHide =
+    !notesList.classList.contains('hidden');
+
+  notesList.classList.toggle(
+    'hidden',
+    willHide
+  );
+
+  button.textContent = willHide
+    ? '👁️ Notları Göster'
+    : '🙈 Notları Gizle';
+
+  button.setAttribute(
+    'aria-expanded',
+    String(!willHide)
+  );
 }
 
 const GUIDE_CONTENT = `
@@ -3264,7 +3951,15 @@ const GUIDE_CONTENT = `
     <h2>Tanıtım: Kuran Teyit Yazılımı Nedir?</h2>
     <p>[1:1] En Lütufkâr, En Merhametli TANRI’nın adıyla.</p>
     <p>Bu, Tanrı’nın insanlığa son mesajıdır. Tanrı’nın tüm peygamberleri bu dünyaya geldi ve tüm kutsal yazılar iletildi. Tanrı’nın peygamberleri tarafından iletilen tüm mesajların arındırılıp tek bir mesajda birleştirilmesinin ve bundan böyle Tanrı’nın kabul ettiği tek dinin “Teslimiyet” (3:19, 3:85) olduğunun duyurulmasının zamanı geldi. “Teslimiyet,” Tanrı’nın mutlak otoritesini tanıdığımız ve tüm güce sahip olanın YALNIZCA Tanrı olduğuna; O’ndan bağımsız başka hiçbir varlığın herhangi bir güce sahip olmadığına dair sarsılmaz bir kanaate ulaştığımız dindir. Böyle bir farkındalığın doğal sonucu, yaşamlarımızı ve tapınmamızı mutlak bir şekilde YALNIZCA Tanrı’ya adamaktır. Bu, Eski Ahit, Yeni Ahit ve bu Son Ahit de dâhil olmak üzere tüm kutsal yazılardaki İlk Buyruktur.</p>
-    <p>Kuran Teyit Yazılımı, Tanrı’nın antlaşma elçisi Reşat Halife’nin Yetkilendirilmiş (İngilizce) çevirisi üzerine geliştirilmiş modern bir web uygulamasıdır. Kuran-ı Kerim'i Arapça, Türkçe ve İngilizce çevirileriyle inceleme, farklı mealleri karşılaştırma, not alma ve kelime çevirisi gibi özelliklerle kullanıcı dostu bir deneyim sunar. Google Drive entegrasyonu ile notlarınızı güvenli bir şekilde kaydedebilirsiniz.</p>
+    <p>
+Kuran Teyit Yazılımı, Tanrı’nın antlaşma elçisi Reşat Halife’nin
+Yetkilendirilmiş İngilizce Çevirisi üzerine geliştirilmiş modern bir
+web uygulamasıdır. Kuran'ı Arapça, Türkçe ve İngilizce metinlerle
+inceleme, farklı mealleri karşılaştırma, ayet analizi, not alma ve
+kelime yardımı gibi özellikler sunar. Kişisel notlar kullanıcının
+kendi tarayıcısında yerel olarak saklanır ve JSON dosyası olarak
+yedeklenebilir.
+</p>
     <p>Uygulama, [17:36] ayetinden ilhamla, "Kendiniz için teyit etmediğiniz sürece hiçbir bilgiyi kabul etmeyin" mesajıyla eleştirel düşünmeyi teşvik eder. Tema seçenekleri ve özelleştirilebilir arayüzü ile her cihazda kolayca kullanılabilir. Yetkilendirilmiş Çeviri’nin teyide ihtiyacı olmadığını vurgulayarak, İngilizce bilmeyen kullanıcıların Authorized English Translation'ı daha rahat inceleyebilmesini amaçlar.</p>
 
 <h2>📖 Temel Referans ve Çalışma Yaklaşımı</h2>
@@ -3397,7 +4092,11 @@ yararlanılmıştır.
 <li>🇹🇷 Ana Türkçe çeviri QuranTFT veri dosyalarından alınmıştır.</li>
 <li>📚 Rashad Khalifa dipnotları kullanılmaktadır.</li>
 <li>📝 Sayfa yapısı ve referans sistemi QuranTFT veri yapısından yararlanmaktadır.</li>
-<li>🔍 Bu yazılıma ek olarak analiz ekranları, kelime çevirileri, karşılaştırmalı mealler, Google Drive not sistemi, konu haritaları (MAP), ve birçok yeni özellik tarafımızdan geliştirilmiştir.</li>
+<li>
+🔍 Bu yazılıma ek olarak analiz ekranları, kelime çevirileri,
+karşılaştırmalı mealler, yerel not ve JSON yedekleme sistemi,
+konu haritaları (MAP) ve birçok yeni özellik tarafımızdan geliştirilmiştir.
+</li>
 </ul>
 
 <p>
@@ -3414,7 +4113,10 @@ araştırma yazılımıdır ve emeği geçen tüm geliştiricilere teşekkür ed
         <li><strong>Menü Butonu (☰):</strong> Sure listesi, notlar ve ayarlara ulaşmanızı sağlar.</li>
         <li><strong>Önceki/Sonraki Sayfa:</strong> Kuran sayfaları arasında geçiş yapar.</li>
         <li><strong>Arama Alanı:</strong> Sure, ayet veya kelime aramak için kullanılır.</li>
-        <li><strong>Kuran Oku:</strong> Harici Kuran okuma sayfasına geçiş yapar; tekrar tıklayınca uygulama görünümüne dönülür.</li>
+        <li>
+  <strong>Kuran Oku:</strong>
+  QuranTFT Kuran okuma sayfasını yeni sekmede açar.
+</li>
     </ul>
 
     <h3>2. Arapça Karşılaştırma Alanı</h3>
@@ -3484,12 +4186,39 @@ QuranTFT web sitesi ve resmi mobil uygulamaları tavsiye edilir.
     <li>Panel kapatıldığında normal okuma ekranına geri dönülür.</li>
 </ul>
 
-    <h3>7. Not Alma ve Google Drive</h3>
-    <ul>
-        <li><strong>✍️ Not Al</strong> butonuyla ayete özel not yazabilirsiniz.</li>
-        <li>Google Drive bağlantısı hazırsa notlarınız Drive üzerinde saklanır.</li>
-        <li><strong>📝 Notlarım</strong> sayfasından kayıtlı notlarınıza ulaşabilirsiniz.</li>
-    </ul>
+<h3>7. Yerel Not Alma ve Yedekleme</h3>
+
+<ul>
+  <li>
+    <strong>✍️ Not Al</strong> butonuyla ayete özel not
+    yazabilirsiniz.
+  </li>
+
+  <li>
+    Notlarınız kullandığınız tarayıcıda ve cihazda yerel olarak
+    saklanır.
+  </li>
+
+  <li>
+    <strong>📝 Notlarım</strong> sayfasında notlar sure ve ayet
+    numarasına göre sıralanır.
+  </li>
+
+  <li>
+    Uzun notlar ilk aşamada üç satır gösterilir. Notun üzerine veya
+    <strong>Devamını göster</strong> düğmesine tıklanınca tamamı açılır.
+  </li>
+
+  <li>
+    <strong>💾 Notları Yedekle</strong> düğmesiyle bütün notlar
+    JSON dosyası olarak indirilebilir.
+  </li>
+
+  <li>
+    <strong>📂 Not Dosyası Yükle</strong> düğmesiyle daha önce
+    alınan yedek geri yüklenebilir.
+  </li>
+</ul>
 
     <h3>8. Kelime Yardımı</h3>
 
@@ -3536,7 +4265,12 @@ QuranTFT web sitesi ve resmi mobil uygulamaları tavsiye edilir.
         <li><strong>Mealler butonunu göremiyorum, neden?</strong> Ayarlar bölümünden “Mealler’i Göster” seçeneğini açmalısınız.</li>
         <li><strong>Arapça metinler neden kapalı geliyor?</strong> Sayfanın sade kalması için Arapça karşılaştırma alanı açılır/kapanır yapıdadır.</li>
         <li><strong>Üç Arapça metin ne işe yarar?</strong> Aynı ayetin farklı veri kaynaklarındaki Arapça karşılıklarını kontrol etmeye yarar.</li>
-        <li><strong>Notlarım neden kaydedilmiyor?</strong> Google hesabınızla giriş yaptığınızdan ve Drive bağlantısının hazır olduğundan emin olun.</li>
+        <li>
+  <strong>Notlarım neden görünmüyor?</strong>
+  Aynı tarayıcıyı ve aynı site adresini kullandığınızdan emin olun.
+  Tarayıcı verileri silindiyse daha önce indirdiğiniz JSON not
+  dosyasını yeniden yükleyin.
+</li>
         <li><strong>Tema değişiklikleri kalıcı mı?</strong> Evet, ayarlar tarayıcıda saklanır.</li>
     </ul>
 
@@ -3647,7 +4381,11 @@ Kuran Teyit Yazılımı; Kuran ayetlerini okumak, karşılaştırmak, araştırm
 </p>
 
 <p>
-Uygulama içerisinde; ayet analizi, konu haritaları (MAP), referans ayetler, çoklu meal karşılaştırması, üç farklı Arapça metnin eş zamanlı incelenmesi, Arapça okunuş, ayetlerin sesli dinlenebilmesi, İngilizce kelime yardım sistemi, kişisel not alma ve Google Drive senkronizasyonu gibi birçok araştırma aracı bulunmaktadır.
+Uygulama içerisinde; ayet analizi, konu haritaları (MAP), referans
+ayetler, çoklu meal karşılaştırması, üç farklı Arapça metnin eş
+zamanlı incelenmesi, Arapça okunuş, ayetlerin sesli dinlenebilmesi,
+İngilizce kelime yardım sistemi, yerel kişisel not alma ve JSON
+yedekleme gibi birçok araştırma aracı bulunmaktadır.
 </p>
 
 <p>
@@ -3713,3 +4451,9 @@ window.speakVerse = speakVerse;
 window.stopSpeech = stopSpeech;
 window.speakEnglishVerse = speakEnglishVerse;
 window.toggleArabicWords = toggleArabicWords;
+window.editLocalNote = editLocalNote;
+window.removeLocalNote = removeLocalNote;
+window.removeLocalNoteFromList = removeLocalNoteFromList;
+window.exportLocalNotes = exportLocalNotes;
+window.openNotesImportDialog = openNotesImportDialog;
+window.toggleNotePreview = toggleNotePreview;

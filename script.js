@@ -262,11 +262,17 @@ function escapeRegExp(string) {
 }
 
 function normalizeTurkishText(text) {
-  if (!text) return '';
+  if (!text) {
+    return '';
+  }
+
   return String(text)
+    .toLocaleLowerCase('tr-TR')
     .normalize('NFD')
     .replace(/\p{Diacritic}/gu, '')
-    .toLocaleLowerCase('tr-TR');
+    .replace(/ı/g, 'i')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function showNotification(message, type = 'info') {
@@ -348,40 +354,49 @@ function saveSettings() {
 }
 
 function applySettings() {
-  const themeClasses = [
-    'light-theme',
-    'dark-theme',
-    'green-theme',
-    'indigo-theme',
-    'brown-theme',
-    'sky-theme',
-    'blackyellow-theme',
-    'bluemaize-theme',
-    'redpeach-theme',
-    'greenolive-theme'
-  ];
 
-  DOM.body.classList.remove(...themeClasses);
-  DOM.body.classList.add(`${STATE.settings.theme}-theme`);
+    const themeClasses = [
+        "light-theme",
+        "dark-theme",
+        "green-theme",
+        "indigo-theme",
+        "brown-theme",
+        "sky-theme",
+        "blackyellow-theme",
+        "bluemaize-theme",
+        "redpeach-theme",
+        "greenolive-theme"
+    ];
 
-  const sizes = {
-    small: '14px',
-    medium: '16px',
-    large: '20px'
-  };
+    DOM.body.classList.remove(...themeClasses);
+    DOM.body.classList.add(`${STATE.settings.theme}-theme`);
 
-  const fontSize = sizes[STATE.settings.fontSize] || '16px';
+    let rootSize = 16;
 
-  document.documentElement.style.setProperty('--base-font-size', fontSize);
-  document.documentElement.style.setProperty(
-    '--verse-arabic-size',
-    STATE.settings.fontSize === 'small'
-      ? '20px'
-      : STATE.settings.fontSize === 'large'
-      ? '28px'
-      : '24px'
-  );
-  document.documentElement.style.setProperty('--verse-text-size', fontSize);
+    switch (STATE.settings.fontSize) {
+
+        case "small":
+            rootSize = 14;
+            break;
+
+        case "large":
+            rootSize = 20;
+            break;
+
+        default:
+            rootSize = 16;
+    }
+
+    document.documentElement.style.fontSize = rootSize + "px";
+
+    document.documentElement.style.setProperty(
+        "--verse-arabic-size",
+        STATE.settings.fontSize === "small"
+            ? "22px"
+            : STATE.settings.fontSize === "large"
+            ? "34px"
+            : "28px"
+    );
 }
 
 /* =========================
@@ -434,35 +449,61 @@ function updateLoadingProgress(percent) {
 ========================= */
 function setupEventListeners() {
   document.getElementById('prevPage')?.addEventListener('click', () => {
-    if (STATE.currentPage > 1) goToPage(STATE.currentPage - 1);
+    if (STATE.currentPage > 1) {
+      goToPage(STATE.currentPage - 1);
+    }
   });
 
   document.getElementById('nextPage')?.addEventListener('click', () => {
-    if (STATE.currentPage < STATE.totalPages) goToPage(STATE.currentPage + 1);
+    if (STATE.currentPage < STATE.totalPages) {
+      goToPage(STATE.currentPage + 1);
+    }
   });
 
-  document.getElementById('menuToggle')?.addEventListener('click', toggleSidebar);
-  document.getElementById('closeMenu')?.addEventListener('click', closeSidebar);
-  document.getElementById('sidebarOverlay')?.addEventListener('click', closeSidebar);
+  document
+    .getElementById('menuToggle')
+    ?.addEventListener('click', toggleSidebar);
 
-  document.getElementById('settingsPage')?.addEventListener('click', () => {
-    displaySettingsPage();
-    closeSidebar();
-  });
+  document
+    .getElementById('closeMenu')
+    ?.addEventListener('click', closeSidebar);
 
-  document.getElementById('notesPage')?.addEventListener('click', () => {
-    displayNotesPage();
-    closeSidebar();
-  });
+  document
+    .getElementById('sidebarOverlay')
+    ?.addEventListener('click', closeSidebar);
 
-  document.getElementById('guidePage')?.addEventListener('click', () => {
-    displayGuidePage();
-    closeSidebar();
-  });
+  document
+    .getElementById('settingsPage')
+    ?.addEventListener('click', () => {
+      displaySettingsPage();
+      closeSidebar();
+    });
+
+  document
+    .getElementById('notesPage')
+    ?.addEventListener('click', () => {
+      displayNotesPage();
+      closeSidebar();
+    });
+
+  document
+    .getElementById('guidePage')
+    ?.addEventListener('click', () => {
+      displayGuidePage();
+      closeSidebar();
+    });
 
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && document.getElementById('analysisPanel')) {
+    if (event.key !== 'Escape') {
+      return;
+    }
+
+    if (document.getElementById('analysisPanel')) {
       closeAnalysisPanel();
+    }
+
+    if (document.getElementById('searchResultsPanel')) {
+      closeSearchResultsPanel();
     }
   });
 
@@ -629,34 +670,122 @@ function buildSearchIndex() {
   SEARCH_INDEX.quran = [];
   SEARCH_INDEX.ready = false;
 
-  ['tr', 'en', 'translit', 'ai'].forEach((source) => {
-    const data = STATE.data[source];
-    if (!data) return;
+  function pushSearchItem({
+    source,
+    page,
+    suraNum,
+    verseNum,
+    text
+  }) {
+    const cleanText =
+      String(text || '');
+
+    if (!cleanText) {
+      return;
+    }
+
+    SEARCH_INDEX.quran.push({
+      type: 'quran',
+      source,
+      page:
+        Number(page) ||
+        getVersePage(
+          String(suraNum),
+          String(verseNum)
+        ),
+      suraNum:
+        String(suraNum),
+      verseNum:
+        String(verseNum),
+      text: cleanText,
+      normalized:
+        normalizeTurkishText(
+          cleanText
+        )
+    });
+  }
+
+  /*
+    Sayfa tabanlı Türkçe ve İngilizce.
+  */
+  ['tr', 'en'].forEach((source) => {
+    const data =
+      STATE.data[source];
 
     for (const page in data) {
-      const pageObj = data[page];
-      if (!pageObj?.sura) continue;
+      const pageObject =
+        data[page];
 
-      for (const suraNum in pageObj.sura) {
-        const verses = pageObj.sura[suraNum].verses || {};
+      if (!pageObject?.sura) {
+        continue;
+      }
+
+      for (const suraNum in pageObject.sura) {
+        const verses =
+          pageObject.sura[suraNum]?.verses || {};
+
         for (const verseNum in verses) {
-          const text = String(verses[verseNum] || '');
-          SEARCH_INDEX.quran.push({
-            type: 'quran',
+          pushSearchItem({
             source,
-            page: parseInt(page),
+            page,
             suraNum,
             verseNum,
-            text,
-            normalized: normalizeTurkishText(text)
+            text:
+              verses[verseNum]
           });
         }
       }
     }
   });
 
+  /*
+    Sure tabanlı okunuş.
+  */
+  const transliterationData =
+    STATE.data.translit;
+
+  for (const suraNum in transliterationData) {
+    const verses =
+      transliterationData[suraNum]?.verses || {};
+
+    for (const verseNum in verses) {
+      pushSearchItem({
+        source: 'translit',
+        suraNum,
+        verseNum,
+        text:
+          verses[verseNum]
+      });
+    }
+  }
+
+  /*
+    Sure tabanlı AI çeviri.
+  */
+  const aiData =
+    STATE.data.ai;
+
+  for (const suraNum in aiData) {
+    const verses =
+      aiData[suraNum]?.verses || {};
+
+    for (const verseNum in verses) {
+      pushSearchItem({
+        source: 'ai',
+        suraNum,
+        verseNum,
+        text:
+          verses[verseNum]
+      });
+    }
+  }
+
   SEARCH_INDEX.ready = true;
-  console.log('Quran search index hazır:', SEARCH_INDEX.quran.length);
+
+  console.log(
+    'Quran search index hazır:',
+    SEARCH_INDEX.quran.length
+  );
 }
 
 function buildMealsSearchIndex() {
@@ -923,37 +1052,120 @@ function scrollToVerse(suraNum, verseNum, searchQuery) {
   );
 }
 
-function applyTemporaryHighlightToVerse(verseElement, query, duration = 5000) {
-  if (!verseElement || !query) return;
+function applyTemporaryHighlightToVerse(
+  verseElement,
+  query,
+  duration = 5000
+) {
+  if (!verseElement || !query) {
+    return;
+  }
 
-  const cleanQuery = query.trim();
-  if (!cleanQuery) return;
+  const cleanQuery =
+    String(query).trim();
 
-  const regex = new RegExp(escapeRegExp(cleanQuery), 'gi');
-  const targets = ['.verse-arabic', '.verse-text', '.verse-text-tr'];
-  const originalHtml = [];
+  if (!cleanQuery) {
+    return;
+  }
 
-  targets.forEach((selector, i) => {
-    const el = verseElement.querySelector(selector);
-    if (!el) return;
+  const selectors = [
+    '.verse-arabic',
+    '.verse-text',
+    '.verse-text-tr'
+  ];
 
-    originalHtml[i] = el.innerHTML;
+  const changedElements = [];
 
-    if (regex.test(el.textContent)) {
-      el.innerHTML = el.textContent.replace(
-        regex,
-        '<span class="search-result-highlight">$&</span>'
+  selectors.forEach((selector) => {
+    const element =
+      verseElement.querySelector(selector);
+
+    if (!element) {
+      return;
+    }
+
+    const originalHtml =
+      element.innerHTML;
+
+    const walker =
+      document.createTreeWalker(
+        element,
+        NodeFilter.SHOW_TEXT
       );
+
+    const textNodes = [];
+
+    while (walker.nextNode()) {
+      const node =
+        walker.currentNode;
+
+      if (
+        node.parentElement?.closest(
+          'button'
+        )
+      ) {
+        continue;
+      }
+
+      textNodes.push(node);
+    }
+
+    let changed = false;
+
+    textNodes.forEach((textNode) => {
+      const text =
+        textNode.nodeValue || '';
+
+      const regex =
+        new RegExp(
+          escapeRegExp(cleanQuery),
+          'gi'
+        );
+
+      if (!regex.test(text)) {
+        return;
+      }
+
+      const wrapper =
+        document.createElement('span');
+
+      wrapper.innerHTML =
+        escapeHtml(text).replace(
+          new RegExp(
+            escapeRegExp(cleanQuery),
+            'gi'
+          ),
+          '<span class="search-result-highlight">$&</span>'
+        );
+
+      textNode.replaceWith(
+        ...wrapper.childNodes
+      );
+
+      changed = true;
+    });
+
+    if (changed) {
+      changedElements.push({
+        element,
+        originalHtml
+      });
     }
   });
 
   setTimeout(() => {
-    targets.forEach((selector, i) => {
-      const el = verseElement.querySelector(selector);
-      if (el && originalHtml[i] !== undefined) {
-        el.innerHTML = originalHtml[i];
+    changedElements.forEach(
+      ({ element, originalHtml }) => {
+        if (!element.isConnected) {
+          return;
+        }
+
+        element.innerHTML =
+          originalHtml;
       }
-    });
+    );
+
+    decorateVerseWords();
   }, duration);
 }
 
@@ -2395,31 +2607,54 @@ function deleteLocalNote(sura, verse) {
   return writeAllLocalNotes(notes);
 }
 
-async function loadNotesForCurrentPage() {
-  const verseElements =
-    document.querySelectorAll('.verse-number');
+/* =========================
+   loadNotesForCurrentPage BAŞLANGIÇ
+========================= */
 
-  verseElements.forEach((element) => {
-    const verseText =
-      element.textContent.trim();
+function loadNotesForCurrentPage() {
+    const verseElements =
+        document.querySelectorAll(
+            '.verse-number'
+        );
 
-    const match =
-      verseText.match(/^(\d+)\s*:\s*(\d+)$/);
+    verseElements.forEach((element) => {
+        const verseText =
+            element.textContent.trim();
 
-    if (!match) return;
+        const match =
+            verseText.match(
+                /^(\d+)\s*:\s*(\d+)$/
+            );
 
-    const [, sura, verse] = match;
-    const note = getLocalNote(sura, verse);
+        if (!match) {
+            return;
+        }
 
-    if (note?.content) {
-      displayLoadedNote(
-        sura,
-        verse,
-        note.content
-      );
-    }
-  });
+        const [, sura, verse] = match;
+
+        const note = getLocalNote(
+            sura,
+            verse
+        );
+
+        if (note?.content) {
+            displayLoadedNote(
+                sura,
+                verse,
+                note.content
+            );
+        } else {
+            updateLocalNoteUI(
+                sura,
+                verse
+            );
+        }
+    });
 }
+
+/* =========================
+   loadNotesForCurrentPage BİTİŞ
+========================= */
 
 function displayLoadedNote(sura, verse, content) {
   const box = document.getElementById(
@@ -2477,19 +2712,81 @@ function displayLoadedNote(sura, verse, content) {
   }
 }
 
-async function saveNote(sura, verse) {
+/* =========================
+   updateLocalNoteUI BAŞLANGIÇ
+========================= */
 
+function updateLocalNoteUI(sura, verse) {
+    const note = getLocalNote(
+        sura,
+        verse
+    );
+
+    const noteButton = document.getElementById(
+        `noteBtn-${sura}-${verse}`
+    );
+
+    const noteBox = document.getElementById(
+        `user-note-${sura}-${verse}`
+    );
+
+    if (note?.content) {
+        if (noteButton) {
+            noteButton.classList.add(
+                'has-note'
+            );
+
+            noteButton.textContent =
+                '📝 Notlu';
+        }
+
+        return;
+    }
+
+    if (noteButton) {
+        noteButton.classList.remove(
+            'has-note'
+        );
+
+        noteButton.textContent =
+            '✍️ Not Al';
+    }
+
+    if (noteBox) {
+        noteBox.innerHTML = '';
+
+        noteBox.classList.add(
+            'hidden'
+        );
+    }
+}
+
+/* =========================
+   updateLocalNoteUI BİTİŞ
+========================= */
+
+/* =========================
+   saveNote BAŞLANGIÇ
+========================= */
+
+function saveNote(sura, verse) {
     const textarea = document.getElementById(
         `note-input-${sura}-${verse}`
     );
 
-    const noteContent = textarea.value.trim();
+    if (!textarea) {
+        return;
+    }
+
+    const noteContent =
+        textarea.value.trim();
 
     if (!noteContent) {
         showNotification(
-            "⚠️ Not içeriği boş olamaz.",
-            "warning"
+            '⚠️ Not içeriği boş olamaz.',
+            'warning'
         );
+
         return;
     }
 
@@ -2499,16 +2796,26 @@ async function saveNote(sura, verse) {
         noteContent
     );
 
-    if (!success) return;
+    if (!success) {
+        return;
+    }
 
-    textarea.value = "";
+    /*
+      Eski sayfa HTML'inin önbellekten tekrar
+      yüklenmesini engeller.
+    */
+    clearPageCache();
+
+    textarea.value = '';
 
     const inputBox = document.getElementById(
         `note-input-box-${sura}-${verse}`
     );
 
     if (inputBox) {
-        inputBox.classList.add("hidden");
+        inputBox.classList.add(
+            'hidden'
+        );
     }
 
     displayLoadedNote(
@@ -2517,11 +2824,20 @@ async function saveNote(sura, verse) {
         noteContent
     );
 
+    updateLocalNoteUI(
+        sura,
+        verse
+    );
+
     showNotification(
-        "✅ Not cihazınıza kaydedildi.",
-        "success"
+        '✅ Not cihazınıza kaydedildi.',
+        'success'
     );
 }
+
+/* =========================
+   saveNote BİTİŞ
+========================= */
 
 function cancelNote(sura, verse) {
   const textarea = document.getElementById(
@@ -2607,21 +2923,41 @@ function editLocalNote(sura, verse) {
   }, 100);
 }
 
-function removeLocalNote(sura, verse) {
+/* =========================
+   removeLocalNote BAŞLANGIÇ
+========================= */
 
-    if (!confirm("Bu not silinsin mi?")) {
+function removeLocalNote(sura, verse) {
+    const approved = window.confirm(
+        'Bu not silinsin mi?'
+    );
+
+    if (!approved) {
         return;
     }
 
-    deleteLocalNote(sura, verse);
-
-    const noteBox = document.getElementById(
-        `user-note-${sura}-${verse}`
+    const deleted = deleteLocalNote(
+        sura,
+        verse
     );
 
-    if (noteBox) {
-        noteBox.innerHTML = "";
-        noteBox.classList.add("hidden");
+    if (!deleted) {
+        showNotification(
+            'Silinecek not bulunamadı.',
+            'warning'
+        );
+
+        return;
+    }
+
+    const inputBox = document.getElementById(
+        `note-input-box-${sura}-${verse}`
+    );
+
+    if (inputBox) {
+        inputBox.classList.add(
+            'hidden'
+        );
     }
 
     const textarea = document.getElementById(
@@ -2629,29 +2965,41 @@ function removeLocalNote(sura, verse) {
     );
 
     if (textarea) {
-        textarea.value = "";
+        textarea.value = '';
     }
 
-    const noteButton = document.getElementById(
-        `noteBtn-${sura}-${verse}`
+    /*
+      Eski "Notlu" HTML'inin önbellekten
+      tekrar gelmesini engeller.
+    */
+    clearPageCache();
+
+    /*
+      Butonu ve not kutusunu güncel
+      localStorage durumuna göre sıfırlar.
+    */
+    updateLocalNoteUI(
+        sura,
+        verse
     );
-
-    if (noteButton) {
-        noteButton.classList.remove("has-note");
-        noteButton.textContent = "✍️ Not Al";
-    }
 
     showNotification(
-        "Not silindi.",
-        "success"
+        '🗑️ Not silindi.',
+        'success'
     );
 }
+
+/* =========================
+   removeLocalNote BİTİŞ
+========================= */
 
 function loadAndDisplayAllNotes() {
   const notesList =
     document.getElementById('notesList');
 
-  if (!notesList) return;
+  if (!notesList) {
+    return;
+  }
 
   const notes = Object
     .values(getAllLocalNotes())
@@ -2663,7 +3011,10 @@ function loadAndDisplayAllNotes() {
         return suraDifference;
       }
 
-      return Number(a.verse) - Number(b.verse);
+      return (
+        Number(a.verse) -
+        Number(b.verse)
+      );
     });
 
   if (notes.length === 0) {
@@ -2700,98 +3051,108 @@ function loadAndDisplayAllNotes() {
                 Number(note.verse);
 
               const suraName =
-                STATE.metadata.sureNames[note.sura] ||
+                STATE.metadata.sureNames[
+                  String(note.sura)
+                ] ||
                 `Sure ${note.sura}`;
 
               const updatedDate =
                 note.updatedAt
                   ? new Date(
                       note.updatedAt
-                    ).toLocaleString('tr-TR')
+                    ).toLocaleString(
+                      'tr-TR'
+                    )
                   : '';
 
-              const safeContent =
-                escapeHtml(
-                  note.content || ''
-                ).replace(/\n/g, '<br>');
-
-              const noteId =
-                `note-row-${suraNumber}-${verseNumber}`;
+              /*
+                Satır sonlarını boşluğa çevirir.
+                Böylece not tabloda tek satır olur.
+              */
+              const singleLineContent =
+                String(note.content || '')
+                  .replace(/\s+/g, ' ')
+                  .trim();
 
               return `
                 <tr>
                   <td class="notes-number-cell">
-                    ${escapeHtml(note.sura)}
+                    ${escapeHtml(
+                      String(note.sura)
+                    )}
                   </td>
 
                   <td class="notes-number-cell">
-                    ${escapeHtml(note.verse)}
+                    ${escapeHtml(
+                      String(note.verse)
+                    )}
                   </td>
 
-                  <td class="notes-sura-cell">
-                    ${escapeHtml(suraName)}
+                  <td
+                    class="notes-sura-cell"
+                    title="${escapeHtml(
+                      suraName
+                    )}"
+                  >
+                    ${escapeHtml(
+                      suraName
+                    )}
                   </td>
 
-                  <td class="notes-content-cell">
-                    <div
-                      id="${noteId}"
-                      class="notes-content-preview"
-                      tabindex="0"
-                      role="button"
-                      aria-expanded="false"
-                      onclick="toggleNotePreview('${noteId}')"
-                      onkeydown="
-                        if (
-                          event.key === 'Enter' ||
-                          event.key === ' '
-                        ) {
-                          event.preventDefault();
-                          toggleNotePreview('${noteId}');
-                        }
-                      "
-                      title="Notu açmak veya kapatmak için tıklayın"
-                    >
-                      ${safeContent}
+                  <td
+                    class="notes-content-cell"
+                    title="${escapeHtml(
+                      String(
+                        note.content || ''
+                      )
+                    )}"
+                  >
+                    <div class="notes-content-preview">
+                      ${escapeHtml(
+                        singleLineContent
+                      )}
                     </div>
-
-                    <button
-                      type="button"
-                      class="notes-expand-btn"
-                      onclick="toggleNotePreview('${noteId}')"
-                      hidden
-                    >
-                      Devamını göster
-                    </button>
                   </td>
 
-                  <td class="notes-date-cell">
-                    ${escapeHtml(updatedDate)}
+                  <td
+                    class="notes-date-cell"
+                    title="${escapeHtml(
+                      updatedDate
+                    )}"
+                  >
+                    ${escapeHtml(
+                      updatedDate
+                    )}
                   </td>
 
                   <td class="notes-actions-cell">
-                    <button
-                      type="button"
-                      class="go-to-verse-btn"
-                      onclick="goToVerse(
-                        ${suraNumber},
-                        ${verseNumber}
-                      )"
-                      title="Ayete git"
-                    >
-                      📖 Git
-                    </button>
+                    <div class="notes-action-buttons">
+                      <button
+                        type="button"
+                        class="notes-go-btn"
+                        onclick="goToVerseFromNotes(
+                          ${suraNumber},
+                          ${verseNumber}
+                        )"
+                        title="${suraNumber}:${verseNumber} ayetine git"
+                        aria-label="${suraNumber}:${verseNumber} ayetine git"
+                      >
+                        📖 Git
+                      </button>
 
-                    <button
-                      type="button"
-                      class="toggle-btn"
-                      onclick="removeLocalNoteFromList(
-                        ${suraNumber},
-                        ${verseNumber}
-                      )"
-                      title="Notu sil"
-                    >
-                      🗑️ Sil
-                    </button>
+                      <button
+                        type="button"
+                        class="notes-delete-btn"
+                        onclick="removeLocalNoteFromList(
+                          ${suraNumber},
+                          ${verseNumber}
+                        )"
+                        title="${suraNumber}:${verseNumber} notunu sil"
+                        aria-label="${suraNumber}:${verseNumber} notunu sil"
+                      >
+                        🗑️ Sil
+                      </button>
+                    </div>
                   </td>
                 </tr>
               `;
@@ -2801,91 +3162,100 @@ function loadAndDisplayAllNotes() {
       </table>
     </div>
   `;
-
-  /*
-    Tablo DOM'a eklendikten sonra notların gerçekten
-    üç satırı aşıp aşmadığını ölç.
-  */
-  requestAnimationFrame(() => {
-    notesList
-      .querySelectorAll(
-        '.notes-content-preview'
-      )
-      .forEach((noteElement) => {
-        const cell =
-          noteElement.closest(
-            '.notes-content-cell'
-          );
-
-        const button =
-          cell?.querySelector(
-            '.notes-expand-btn'
-          );
-
-        if (!button) return;
-
-        const isOverflowing =
-          noteElement.scrollHeight >
-          noteElement.clientHeight + 2;
-
-        button.hidden = !isOverflowing;
-      });
-  });
 }
 
-function toggleNotePreview(noteId) {
-  const noteElement =
-    document.getElementById(noteId);
-
-  if (!noteElement) return;
-
-  const isExpanded =
-    noteElement.classList.toggle(
-      'expanded'
-    );
-
-  noteElement.setAttribute(
-    'aria-expanded',
-    String(isExpanded)
-  );
-
-  const cell =
-    noteElement.closest(
-      '.notes-content-cell'
-    );
-
-  const button =
-    cell?.querySelector(
-      '.notes-expand-btn'
-    );
-
-  if (button) {
-    button.textContent =
-      isExpanded
-        ? 'Daha az göster'
-        : 'Devamını göster';
-  }
-}
-
-function removeLocalNoteFromList(
+function goToVerseFromNotes(
   sura,
   verse
 ) {
-  const approved = window.confirm(
-    `${sura}:${verse} ayetine ait not silinsin mi?`
+  const suraNumber =
+    Number(sura);
+
+  const verseNumber =
+    Number(verse);
+
+  if (
+    !Number.isInteger(suraNumber) ||
+    !Number.isInteger(verseNumber)
+  ) {
+    showNotification(
+      'Geçersiz ayet bilgisi.',
+      'warning'
+    );
+
+    return;
+  }
+
+  pendingHighlight = {
+    suraNum: String(suraNumber),
+    verseNum: String(verseNumber),
+    query: '',
+    openMeal: false,
+    mealName: ''
+  };
+
+  ensureQuranView();
+
+  goToPage(
+    getVersePage(
+      String(suraNumber),
+      String(verseNumber)
+    )
   );
+}
 
-  if (!approved) return;
+/* =========================
+   removeLocalNoteFromList BAŞLANGIÇ
+========================= */
 
-  if (deleteLocalNote(sura, verse)) {
+function removeLocalNoteFromList(
+    sura,
+    verse
+) {
+    const approved = window.confirm(
+        `${sura}:${verse} ayetine ait not silinsin mi?`
+    );
+
+    if (!approved) {
+        return;
+    }
+
+    const deleted = deleteLocalNote(
+        sura,
+        verse
+    );
+
+    if (!deleted) {
+        showNotification(
+            'Silinecek not bulunamadı.',
+            'warning'
+        );
+
+        return;
+    }
+
+    /*
+      Eski "Notlu" butonlarının önbellekten
+      tekrar yüklenmesini engeller.
+    */
+    clearPageCache();
+
+    updateLocalNoteUI(
+        sura,
+        verse
+    );
+
     loadAndDisplayAllNotes();
 
     showNotification(
-      'Not silindi.',
-      'success'
+        '🗑️ Not silindi.',
+        'success'
     );
-  }
 }
+
+/* =========================
+   removeLocalNoteFromList BİTİŞ
+========================= */
 
 function exportLocalNotes() {
   const notes = getAllLocalNotes();
@@ -3036,14 +3406,71 @@ function highlightMealText(text, query) {
   );
 }
 
+function highlightMealMatch(element, query) {
+  if (!element || !query) {
+    return;
+  }
 
-function getOtherTranslations(suraNum, verseNum, query = '', focusedMealName = '') {
+  const cleanQuery =
+    String(query).trim();
+
+  if (!cleanQuery) {
+    return;
+  }
+
+  const normalizedQuery =
+    normalizeTurkishText(cleanQuery);
+
+  const mealRows =
+    element.querySelectorAll(
+      '.meal-row'
+    );
+
+  mealRows.forEach((row) => {
+    const mealText =
+      row.querySelector('.meal-text');
+
+    if (!mealText) {
+      return;
+    }
+
+    const normalizedText =
+      normalizeTurkishText(
+        mealText.textContent
+      );
+
+    if (
+      normalizedText.includes(
+        normalizedQuery
+      )
+    ) {
+      row.classList.add(
+        'meal-highlight'
+      );
+    } else {
+      row.classList.remove(
+        'meal-highlight'
+      );
+    }
+  });
+}
+
+function getOtherTranslations(
+  suraNum,
+  verseNum,
+  query = '',
+  focusedMealName = ''
+) {
   const suraIndex = parseInt(suraNum, 10) - 1;
 
   const pageTransliteration =
     STATE.data.translit?.[String(suraNum)]?.verses?.[String(verseNum)] || '';
 
-  if (isNaN(suraIndex) || suraIndex < 0 || suraIndex > 113) {
+  if (
+    Number.isNaN(suraIndex) ||
+    suraIndex < 0 ||
+    suraIndex > 113
+  ) {
     return '<div>Geçersiz sure numarası.</div>';
   }
 
@@ -3052,106 +3479,295 @@ function getOtherTranslations(suraNum, verseNum, query = '', focusedMealName = '
   let erhanArabic = null;
 
   for (const mealName in STATE.data.meals) {
-    if (!STATE.data.meals.hasOwnProperty(mealName)) continue;
+    if (
+      !Object.prototype.hasOwnProperty.call(
+        STATE.data.meals,
+        mealName
+      )
+    ) {
+      continue;
+    }
+
     const meal = STATE.data.meals[mealName];
-    if (!meal) continue;
+
+    if (!meal) {
+      continue;
+    }
 
     let ayetText = null;
 
-    if (meal.sures && Array.isArray(meal.sures)) {
+    /*
+      Format 1:
+      {
+        sures: [
+          {
+            ayetler: [
+              [1, "Ayet metni"]
+            ]
+          }
+        ]
+      }
+    */
+    if (
+      meal.sures &&
+      Array.isArray(meal.sures)
+    ) {
       const sure = meal.sures[suraIndex];
-      if (sure && Array.isArray(sure.ayetler)) {
-        const ayet = sure.ayetler.find((a) => a && String(a[0]) === String(verseNum));
-        if (ayet && ayet[1]) ayetText = ayet[1];
+
+      if (
+        sure &&
+        Array.isArray(sure.ayetler)
+      ) {
+        const ayet = sure.ayetler.find(
+          (item) =>
+            item &&
+            String(item[0]) === String(verseNum)
+        );
+
+        if (ayet?.[1]) {
+          ayetText = ayet[1];
+        }
       }
     }
 
-    if (!ayetText && Array.isArray(meal)) {
+    /*
+      Format 2:
+      [
+        {
+          ayetler: [
+            [1, "Ayet metni"]
+          ]
+        }
+      ]
+    */
+    if (
+      !ayetText &&
+      Array.isArray(meal)
+    ) {
       const sure = meal[suraIndex];
-      if (sure && Array.isArray(sure.ayetler)) {
-        const ayet = sure.ayetler.find((a) => a && String(a[0]) === String(verseNum));
-        if (ayet && ayet[1]) ayetText = ayet[1];
+
+      if (
+        sure &&
+        Array.isArray(sure.ayetler)
+      ) {
+        const ayet = sure.ayetler.find(
+          (item) =>
+            item &&
+            String(item[0]) === String(verseNum)
+        );
+
+        if (ayet?.[1]) {
+          ayetText = ayet[1];
+        }
       }
     }
 
-    if (!ayetText && meal && typeof meal === 'object' && !Array.isArray(meal)) {
+    /*
+      Format 3:
+      {
+        "1": {
+          sura: {
+            "1": {
+              verses: {
+                "1": "Ayet metni"
+              }
+            }
+          }
+        }
+      }
+    */
+    if (
+      !ayetText &&
+      typeof meal === 'object' &&
+      !Array.isArray(meal)
+    ) {
       for (const pageKey in meal) {
-        if (!meal.hasOwnProperty(pageKey)) continue;
+        if (
+          !Object.prototype.hasOwnProperty.call(
+            meal,
+            pageKey
+          )
+        ) {
+          continue;
+        }
+
         const page = meal[pageKey];
         const suraData = page?.sura?.[suraNum];
-        if (suraData?.verses?.[verseNum] !== undefined) {
-          ayetText = suraData.verses[verseNum];
+
+        if (
+          suraData?.verses?.[verseNum] !== undefined
+        ) {
+          ayetText =
+            suraData.verses[verseNum];
+
           break;
         }
       }
     }
 
-    if (!ayetText && meal.surahs && Array.isArray(meal.surahs)) {
-      const sura = meal.surahs.find((s) => s && String(s.id) === String(suraNum));
-      if (sura && Array.isArray(sura.verses)) {
-        const verseObj = sura.verses.find(
-          (v) => v && String(v.verse_number) === String(verseNum)
-        );
-        if (verseObj) {
-          if (verseObj.translation) erhanTranslation = verseObj.translation;
-          if (verseObj.verse) erhanArabic = verseObj.verse;
+    /*
+      Erhan Aktaş formatı:
+      {
+        surahs: [
+          {
+            id: 1,
+            verses: [
+              {
+                verse_number: 1,
+                verse: "...",
+                translation: "..."
+              }
+            ]
+          }
+        ]
+      }
+    */
+    if (
+      !ayetText &&
+      meal.surahs &&
+      Array.isArray(meal.surahs)
+    ) {
+      const sura = meal.surahs.find(
+        (item) =>
+          item &&
+          String(item.id) === String(suraNum)
+      );
+
+      if (
+        sura &&
+        Array.isArray(sura.verses)
+      ) {
+        const verseObject =
+          sura.verses.find(
+            (item) =>
+              item &&
+              String(item.verse_number) ===
+                String(verseNum)
+          );
+
+        if (verseObject) {
+          if (verseObject.translation) {
+            erhanTranslation =
+              verseObject.translation;
+          }
+
+          if (verseObject.verse) {
+            erhanArabic =
+              verseObject.verse;
+          }
         }
       }
     }
 
-    if (ayetText && mealName.toLowerCase() !== 'kuran_erhan_aktas') {
-      const highlighted = highlightMealText(ayetText, query);
-      const isFocused = mealName === focusedMealName ? 'meal-focused-result' : '';
+    /*
+      Normal mealleri tek satırlı düzende oluştur.
+    */
+    if (
+      ayetText &&
+      mealName.toLowerCase() !==
+        'kuran_erhan_aktas'
+    ) {
+      const highlightedText =
+        highlightMealText(
+          ayetText,
+          query
+        );
+
+      const focusedClass =
+        mealName === focusedMealName
+          ? 'meal-focused-result'
+          : '';
 
       otherMealsHtml += `
-        <div class="note-tr meal-line ${isFocused}">
-          <strong class="meal-name">${escapeHtml(mealName)}:</strong>
-          <span class="meal-text">${highlighted}</span>
-        </div>`;
+        <div class="meal-row ${focusedClass}">
+          <strong class="meal-name">
+            ${escapeHtml(mealName)}
+          </strong>
+
+          <span class="meal-text">
+            ${highlightedText}
+          </span>
+        </div>
+      `;
     }
   }
 
+  /*
+    Erhan Aktaş Türkçe çevirisi
+  */
   if (erhanTranslation) {
-    otherMealsHtml += `<div class="note-tr"><strong>Erhan Aktaş Çeviri:</strong> ${highlightMealText(
-      erhanTranslation,
-      query
-    )}</div>`;
+    otherMealsHtml += `
+      <div class="meal-row">
+        <strong class="meal-name">
+          Erhan Aktaş Çeviri
+        </strong>
+
+        <span class="meal-text">
+          ${highlightMealText(
+            erhanTranslation,
+            query
+          )}
+        </span>
+      </div>
+    `;
   }
+
+  /*
+    Erhan Aktaş Arapça metni
+  */
   if (erhanArabic) {
-    otherMealsHtml += `<div class="note-tr"><strong>Erhan Aktaş Arapça:</strong> <span class="erhan-arabic-text">${highlightMealText(
-      erhanArabic,
-      query
-    )}</span></div>`;
+    otherMealsHtml += `
+      <div class="meal-row meal-row-arabic">
+        <strong class="meal-name">
+          Erhan Aktaş Arapça
+        </strong>
+
+        <span
+          class="meal-text erhan-arabic-text"
+          dir="rtl"
+        >
+          ${highlightMealText(
+            erhanArabic,
+            query
+          )}
+        </span>
+      </div>
+    `;
   }
+
+  /*
+    Arapça okunuş
+  */
   if (pageTransliteration) {
     otherMealsHtml += `
-    <div class="note-tr">
-        <strong>Arapça Okunuş:</strong>
-        ${highlightMealText(pageTransliteration, query)}
-    </div>`;
-}
+      <div class="meal-row">
+        <strong class="meal-name">
+          Arapça Okunuş
+        </strong>
 
-  if (!otherMealsHtml) {
-    return '<div>Bu ayet için diğer mealler bulunamadı.</div>';
+        <span class="meal-text">
+          ${highlightMealText(
+            pageTransliteration,
+            query
+          )}
+        </span>
+      </div>
+    `;
   }
 
-  return otherMealsHtml;
-}
+  if (!otherMealsHtml) {
+    return `
+      <div class="meal-empty">
+        Bu ayet için diğer mealler bulunamadı.
+      </div>
+    `;
+  }
 
-function highlightMealMatch(element, query) {
-  if (!element || !query) return;
-
-  const q = query.trim();
-  if (!q) return;
-
-  const re = new RegExp(escapeRegExp(q), 'gi');
-
-  element.querySelectorAll('.note-tr').forEach((node) => {
-    node.innerHTML = node.textContent.replace(
-      re,
-      '<strong class="search-result-highlight">$&</strong>'
-    );
-  });
+  return `
+    <div class="meal-list">
+      ${otherMealsHtml}
+    </div>
+  `;
 }
 
 async function toggleMeal(id, suraNum, verseNum, query = '', focusedMealName = '') {
@@ -3231,6 +3847,722 @@ function toggleNote(id) {
 /* =========================
    Arama
 ========================= */
+/* =========================
+   GELİŞMİŞ ARAMA YARDIMCILARI
+========================= */
+
+function parseVerseReference(value) {
+  const input = String(value || '').trim();
+
+  const match = input.match(
+    /^(\d{1,3})\s*[:\/,\-\s]\s*(\d{1,3})$/
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  const suraNum = Number(match[1]);
+  const verseNum = Number(match[2]);
+
+  if (
+    !Number.isInteger(suraNum) ||
+    !Number.isInteger(verseNum) ||
+    suraNum < 1 ||
+    suraNum > 114 ||
+    verseNum < 1
+  ) {
+    return null;
+  }
+
+  const page = getVersePage(
+    String(suraNum),
+    String(verseNum)
+  );
+
+  const exists =
+    STATE.data.en?.[page]?.sura?.[String(suraNum)]?.verses?.[
+      String(verseNum)
+    ] !== undefined;
+
+  if (!exists) {
+    return {
+      suraNum: String(suraNum),
+      verseNum: String(verseNum),
+      page,
+      exists: false
+    };
+  }
+
+  return {
+    suraNum: String(suraNum),
+    verseNum: String(verseNum),
+    page,
+    exists: true
+  };
+}
+
+function findExactSura(query) {
+  const normalizedQuery =
+    normalizeTurkishText(query).trim();
+
+  if (!normalizedQuery) {
+    return null;
+  }
+
+  for (const suraNum in STATE.metadata.sureNames) {
+    const fullName =
+      STATE.metadata.sureNames[suraNum];
+
+    const normalizedFullName =
+      normalizeTurkishText(fullName).trim();
+
+    const shortName =
+      fullName
+        .replace(/\([^)]*\)/g, '')
+        .trim();
+
+    const normalizedShortName =
+      normalizeTurkishText(shortName).trim();
+
+    if (
+      normalizedQuery === normalizedFullName ||
+      normalizedQuery === normalizedShortName
+    ) {
+      return {
+        type: 'sura',
+        suraNum,
+        suraName: fullName,
+        page:
+          STATE.metadata.sureToPageMap[suraNum]
+      };
+    }
+  }
+
+  return null;
+}
+
+function getSearchWordSuggestions(
+  query,
+  limit = 5
+) {
+  const normalizedQuery =
+    normalizeTurkishText(query).trim();
+
+  if (
+    !normalizedQuery ||
+    normalizedQuery.length < 2 ||
+    !SEARCH_INDEX.ready
+  ) {
+    return [];
+  }
+
+  const candidates = new Map();
+
+  for (const item of SEARCH_INDEX.quran) {
+    const words =
+      String(item.text || '')
+        .match(/[\p{L}\p{N}'’-]+/gu) || [];
+
+    for (const word of words) {
+      const normalizedWord =
+        normalizeTurkishText(word)
+          .replace(/[^\p{L}\p{N}]/gu, '')
+          .trim();
+
+      if (
+        !normalizedWord ||
+        normalizedWord.length <=
+          normalizedQuery.length ||
+        !normalizedWord.startsWith(
+          normalizedQuery
+        )
+      ) {
+        continue;
+      }
+
+      const current =
+        candidates.get(normalizedWord);
+
+      if (current) {
+        current.count++;
+      } else {
+        candidates.set(
+          normalizedWord,
+          {
+            text: word,
+            normalized: normalizedWord,
+            count: 1
+          }
+        );
+      }
+    }
+  }
+
+  return Array
+    .from(candidates.values())
+    .sort((a, b) => {
+      if (b.count !== a.count) {
+        return b.count - a.count;
+      }
+
+      return (
+        a.normalized.length -
+        b.normalized.length
+      );
+    })
+    .slice(0, limit);
+}
+
+function highlightSearchResultText(
+  text,
+  query
+) {
+  const safeText =
+    escapeHtml(text || '');
+
+  const cleanQuery =
+    String(query || '').trim();
+
+  if (!cleanQuery) {
+    return safeText;
+  }
+
+  const regex = new RegExp(
+    escapeRegExp(cleanQuery),
+    'gi'
+  );
+
+  return safeText.replace(
+    regex,
+    '<mark class="search-panel-highlight">$&</mark>'
+  );
+}
+
+function getSearchSourceLabel(source) {
+  const labels = {
+    tr: 'Türkçe',
+    en: 'İngilizce',
+    translit: 'Okunuş',
+    ai: 'AI Çeviri'
+  };
+
+  return labels[source] || source || 'Ayet';
+}
+
+function groupDetailedSearchResults(results) {
+  const groups = new Map();
+
+  results.forEach((result) => {
+    const key =
+      `${result.suraNum}:${result.verseNum}`;
+
+    if (!groups.has(key)) {
+      const verseData = findVerseData(
+        String(result.suraNum),
+        String(result.verseNum)
+      );
+
+      groups.set(key, {
+        key,
+        suraNum: String(result.suraNum),
+        verseNum: String(result.verseNum),
+        page: result.page || verseData.page,
+        verseData,
+        sources: new Set(),
+        meals: new Set(),
+        score: 0,
+        fuzzy: false
+      });
+    }
+
+    const group = groups.get(key);
+
+    if (result.type === 'meal') {
+      group.meals.add(
+        result.mealName || 'Meal'
+      );
+    } else {
+      group.sources.add(
+        getSearchSourceLabel(result.source)
+      );
+    }
+
+    group.score = Math.max(
+      group.score,
+      Number(result.score) || 0
+    );
+
+    group.fuzzy =
+      group.score < 100;
+  });
+
+  return Array
+    .from(groups.values())
+    .sort((a, b) => {
+      if (b.score !== a.score) {
+        return b.score - a.score;
+      }
+
+      const suraDifference =
+        Number(a.suraNum) -
+        Number(b.suraNum);
+
+      if (suraDifference !== 0) {
+        return suraDifference;
+      }
+
+      return (
+        Number(a.verseNum) -
+        Number(b.verseNum)
+      );
+    });
+}
+
+function createSearchPanelShell(query) {
+  closeSearchResultsPanel();
+
+  const panel =
+    document.createElement('section');
+
+  panel.id = 'searchResultsPanel';
+  panel.className =
+    'search-results-panel';
+
+  panel.setAttribute(
+    'aria-label',
+    'Arama sonuçları'
+  );
+
+  panel.innerHTML = `
+    <header class="search-results-header">
+      <div>
+        <h2>
+          🔎 Arama Sonuçları
+        </h2>
+
+        <div class="search-results-query">
+          “${escapeHtml(query)}”
+        </div>
+      </div>
+
+      <button
+        type="button"
+        class="search-results-close"
+        aria-label="Arama sonuçlarını kapat"
+        title="Kapat"
+      >
+        ✕
+      </button>
+    </header>
+
+    <div
+      id="searchResultsPanelBody"
+      class="search-results-body"
+    >
+      <div class="search-panel-loading">
+        Arama sonuçları hazırlanıyor...
+      </div>
+    </div>
+  `;
+
+  panel
+    .querySelector(
+      '.search-results-close'
+    )
+    ?.addEventListener(
+      'click',
+      closeSearchResultsPanel
+    );
+
+  document.body.appendChild(panel);
+  document.body.classList.add(
+    'search-results-open'
+  );
+
+  return panel;
+}
+
+async function openSearchResultsPanel(
+  query
+) {
+  const cleanQuery =
+    String(query || '').trim();
+
+  if (!cleanQuery) {
+    return;
+  }
+
+  const panel =
+    createSearchPanelShell(
+      cleanQuery
+    );
+
+  const body =
+    panel.querySelector(
+      '#searchResultsPanelBody'
+    );
+
+  if (!body) {
+    return;
+  }
+
+  if (!SEARCH_INDEX.ready) {
+    body.innerHTML = `
+      <div class="search-panel-empty">
+        Arama dizini henüz hazırlanıyor.
+        Birkaç saniye sonra tekrar deneyin.
+      </div>
+    `;
+
+    return;
+  }
+
+  /*
+    Önce temel Kuran sonuçlarını hazırlar.
+  */
+  let results =
+    searchKeywordInData(
+      cleanQuery,
+      200
+    );
+
+  /*
+    Mealler henüz yüklenmediyse panel açıkken yükler.
+  */
+  if (!areMealsReady()) {
+    body.innerHTML = `
+      <div class="search-panel-loading">
+        Kuran sonuçları bulundu.
+        Mealler de aranıyor...
+      </div>
+    `;
+
+    await loadMeals();
+
+    /*
+      Meal dizini hazırlandıktan sonra
+      aynı aramayı tekrar yap.
+    */
+    results =
+      searchKeywordInData(
+        cleanQuery,
+        1000
+      );
+  }
+
+  const groupedResults =
+    groupDetailedSearchResults(
+      results
+    );
+
+  const wordSuggestions =
+    getSearchWordSuggestions(
+      cleanQuery,
+      5
+    );
+
+  if (
+    groupedResults.length === 0 &&
+    wordSuggestions.length === 0
+  ) {
+    body.innerHTML = `
+      <div class="search-panel-empty">
+        <strong>
+          “${escapeHtml(cleanQuery)}”
+        </strong>
+        için sonuç bulunamadı.
+      </div>
+    `;
+
+    return;
+  }
+
+  let suggestionHtml = '';
+
+  if (wordSuggestions.length > 0) {
+    suggestionHtml = `
+      <div class="search-panel-suggestions">
+        <strong>
+          Şunlardan birini mi demek istediniz?
+        </strong>
+
+        <div class="search-panel-suggestion-list">
+          ${wordSuggestions
+            .map(
+              (suggestion) => `
+                <button
+                  type="button"
+                  class="search-word-suggestion"
+                  data-search-word="${escapeHtml(
+                    suggestion.text
+                  )}"
+                >
+                  ${escapeHtml(
+                    suggestion.text
+                  )}
+                </button>
+              `
+            )
+            .join('')}
+        </div>
+      </div>
+    `;
+  }
+
+const resultCards = groupedResults
+  .map((group) => {
+    const suraName =
+      STATE.metadata.sureNames[group.suraNum] ||
+      `Sure ${group.suraNum}`;
+
+    const sources = [
+      ...group.sources
+    ];
+
+    if (group.meals.size > 0) {
+      sources.push(
+        `${group.meals.size} meal`
+      );
+    }
+
+    const sourceText =
+      sources.length > 0
+        ? sources.join(', ')
+        : 'Ayet';
+
+    const scoreClass =
+      group.score === 100
+        ? 'search-result-exact'
+        : '';
+
+    return `
+      <article class="search-result-card">
+        <div class="search-result-card-header">
+          <div>
+            <strong class="search-result-reference">
+              ${escapeHtml(group.key)}
+            </strong>
+
+            <span class="search-result-sura-name">
+              ${escapeHtml(suraName)}
+            </span>
+          </div>
+
+          <span
+            class="search-result-fuzzy ${scoreClass}"
+          >
+            %${group.score} eşleşme
+          </span>
+        </div>
+
+        <div class="search-result-source">
+          Eşleşen alan:
+          ${escapeHtml(sourceText)}
+        </div>
+
+        ${
+          group.verseData.turkish
+            ? `
+              <div class="search-result-language">
+                <strong>TR:</strong>
+
+                <span>
+                  ${highlightSearchResultText(
+                    group.verseData.turkish,
+                    cleanQuery
+                  )}
+                </span>
+              </div>
+            `
+            : ''
+        }
+
+        ${
+          group.verseData.english
+            ? `
+              <div class="search-result-language">
+                <strong>EN:</strong>
+
+                <span>
+                  ${highlightSearchResultText(
+                    group.verseData.english,
+                    cleanQuery
+                  )}
+                </span>
+              </div>
+            `
+            : ''
+        }
+
+        <div class="search-result-actions">
+          <button
+            type="button"
+            class="search-result-action"
+            data-action="verse"
+            data-sura="${escapeHtml(
+              group.suraNum
+            )}"
+            data-verse="${escapeHtml(
+              group.verseNum
+            )}"
+            data-page="${escapeHtml(
+              group.page
+            )}"
+          >
+            📖 Ayete Git
+          </button>
+
+          <button
+            type="button"
+            class="search-result-action"
+            data-action="meal"
+            data-sura="${escapeHtml(
+              group.suraNum
+            )}"
+            data-verse="${escapeHtml(
+              group.verseNum
+            )}"
+            data-page="${escapeHtml(
+              group.page
+            )}"
+          >
+            📚 Mealler
+          </button>
+
+          <button
+            type="button"
+            class="search-result-action"
+            data-action="analysis"
+            data-sura="${escapeHtml(
+              group.suraNum
+            )}"
+            data-verse="${escapeHtml(
+              group.verseNum
+            )}"
+            data-page="${escapeHtml(
+              group.page
+            )}"
+          >
+            🔎 Analiz
+          </button>
+        </div>
+      </article>
+    `;
+  })
+      .join('');
+
+  body.innerHTML = `
+    ${suggestionHtml}
+
+    <div class="search-results-summary">
+      <strong>
+        ${groupedResults.length}
+      </strong>
+      ayet sonucu bulundu.
+    </div>
+
+    <div class="search-results-list">
+      ${resultCards}
+    </div>
+  `;
+
+  body
+    .querySelectorAll(
+      '.search-word-suggestion'
+    )
+    .forEach((button) => {
+      button.addEventListener(
+        'click',
+        () => {
+          const nextQuery =
+            button.dataset.searchWord || '';
+
+          DOM.searchInput.value =
+            nextQuery;
+
+          openSearchResultsPanel(
+            nextQuery
+          );
+        }
+      );
+    });
+
+  body.addEventListener(
+    'click',
+    (event) => {
+      const button =
+        event.target.closest(
+          '.search-result-action'
+        );
+
+      if (!button) {
+        return;
+      }
+
+      const action =
+        button.dataset.action;
+
+      const suraNum =
+        button.dataset.sura;
+
+      const verseNum =
+        button.dataset.verse;
+
+      const page =
+        Number(button.dataset.page) ||
+        getVersePage(
+          suraNum,
+          verseNum
+        );
+
+      if (action === 'analysis') {
+        closeSearchResultsPanel();
+
+        openAnalysisPanel(
+          suraNum,
+          verseNum
+        );
+
+        return;
+      }
+
+      activeSearchQuery =
+        cleanQuery;
+
+      pendingHighlight = {
+        suraNum,
+        verseNum,
+        query: cleanQuery,
+        openMeal:
+          action === 'meal',
+        mealName: ''
+      };
+
+      closeSearchResultsPanel();
+
+      DOM.searchInput.value = '';
+      DOM.autocomplete.innerHTML = '';
+      DOM.autocomplete.style.display =
+        'none';
+
+      goToPage(page);
+    }
+  );
+}
+
+function closeSearchResultsPanel() {
+  document
+    .getElementById(
+      'searchResultsPanel'
+    )
+    ?.remove();
+
+  document.body.classList.remove(
+    'search-results-open'
+  );
+}
+
 function makeSnippet(text, query) {
   if (!text || typeof text !== 'string') return '';
   if (!query || typeof query !== 'string') {
@@ -3254,70 +4586,6 @@ function makeSnippet(text, query) {
   return snippet;
 }
 
-function searchPrimarySources(query, maxResults = 16) {
-  const q = query.trim();
-  if (!q) return [];
-
-if (!SEARCH_INDEX.ready) {
-  DOM.autocomplete.innerHTML =
-    '<div>⏳ Arama hazırlanıyor...</div>';
-
-  DOM.autocomplete.style.display = 'block';
-
-  return [];
-}
-
-  const normalizedQuery = normalizeTurkishText(q);
-  const results = [];
-  const seenVerses = new Set();
-
-  for (const item of SEARCH_INDEX.quran) {
-    if (results.length >= maxResults) break;
-    if (!item.normalized.includes(normalizedQuery)) continue;
-
-    const key = `${item.suraNum}:${item.verseNum}`;
-    if (seenVerses.has(key)) continue;
-    seenVerses.add(key);
-
-    results.push({
-      type: 'quran',
-      source: item.source,
-      page: item.page,
-      suraNum: item.suraNum,
-      verseNum: item.verseNum,
-      snippet: makeSnippet(item.text, q),
-      query: q,
-    });
-  }
-
-  return results;
-}
-
-function searchMeals(query, maxResults = 16) {
-  const q = query.trim();
-  if (!q || !SEARCH_INDEX.mealsReady) return [];
-
-  const normalizedQuery = normalizeTurkishText(q);
-  const results = [];
-
-  for (const item of SEARCH_INDEX.meals) {
-    if (results.length >= maxResults) break;
-    if (!item.normalized.includes(normalizedQuery)) continue;
-
-    results.push({
-      type: 'meal',
-      mealName: item.mealName,
-      suraNum: item.suraNum,
-      verseNum: item.verseNum,
-      page: item.page,
-      text: item.text,
-      snippet: makeSnippet(item.text, q),
-      query: q
-    });
-  }
-
-  return results;
-}
 
 function levenshtein(a, b) {
   a = String(a || '');
@@ -3345,104 +4613,244 @@ function levenshtein(a, b) {
   return matrix[b.length][a.length];
 }
 
-function isFuzzyMatch(query, text) {
-  const q = normalizeTurkishText(query).trim();
-  const t = normalizeTurkishText(text).trim();
+function getSearchMatchScore(query, text) {
+  const q = normalizeTurkishText(query)
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
-  if (!q || !t) return false;
-  if (q.length < 2) return false;
-  if (t.includes(q)) return true;
+  const t = normalizeTurkishText(text)
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
-  const words = t.split(/\s+/).filter(Boolean);
-  if (!words.length) return false;
+  if (!q || !t) {
+    return 0;
+  }
+
+  /*
+    Metin sorgunun aynısıysa yüzde 100.
+  */
+  if (t === q) {
+    return 100;
+  }
+
+  const words = t
+    .split(/\s+/)
+    .filter(Boolean);
+
+  /*
+    Tam kelime eşleşmesi yüzde 100.
+    Örnek: "rahman" kelimesi gerçekten geçiyorsa.
+  */
+  if (words.includes(q)) {
+    return 100;
+  }
+
+  /*
+    Metnin içinde sorgu doğrudan geçiyorsa
+    çok güçlü eşleşme kabul edilir.
+    Örnek: "lütuf" → "lütufkâr"
+  */
+  if (t.includes(q)) {
+    return 95;
+  }
+
+  let bestScore = 0;
 
   for (const word of words) {
-    if (word.includes(q)) return true;
-
-    const distance = levenshtein(q, word);
-
-    if (q.length <= 4 && distance <= 1) return true;
-    if (q.length <= 7 && distance <= 2) return true;
-    if (q.length > 7 && distance <= 3) return true;
-  }
-
-  return false;
-}
-function searchKeywordInData(query, maxResults = 16) {
-  const q = query.trim();
-  if (!q) return [];
-
-  let primaryResults = searchPrimarySources(q, maxResults);
-
-  if (primaryResults.length < maxResults) {
-    const fuzzyResults = [];
-    const seen = new Set(
-      primaryResults.map(r => `${r.type}:${r.source || r.mealName}:${r.suraNum}:${r.verseNum}`)
-    );
-
-    for (const item of SEARCH_INDEX.quran) {
-      if (primaryResults.length + fuzzyResults.length >= maxResults) break;
-
-      if (!isFuzzyMatch(q, item.text)) continue;
-
-      const key = `${item.type}:${item.source}:${item.suraNum}:${item.verseNum}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-
-      fuzzyResults.push({
-        type: 'quran',
-        source: item.source,
-        page: item.page,
-        suraNum: item.suraNum,
-        verseNum: item.verseNum,
-        snippet: makeSnippet(item.text, q),
-        query: q,
-        fuzzy: true
-      });
+    if (!word) {
+      continue;
     }
 
-    primaryResults = [...primaryResults, ...fuzzyResults];
+    /*
+      Kelime sorguyla başlıyorsa güçlü eşleşme.
+    */
+    if (word.startsWith(q)) {
+      const lengthDifference =
+        word.length - q.length;
+
+      const prefixScore = Math.max(
+        85,
+        96 - lengthDifference
+      );
+
+      bestScore = Math.max(
+        bestScore,
+        prefixScore
+      );
+
+      continue;
+    }
+
+    /*
+      Sorgu kelimenin içinde geçiyorsa.
+    */
+    if (word.includes(q)) {
+      bestScore = Math.max(
+        bestScore,
+        92
+      );
+
+      continue;
+    }
+
+    const maxLength = Math.max(
+      q.length,
+      word.length
+    );
+
+    const distance = levenshtein(
+      q,
+      word
+    );
+
+    const similarity = Math.round(
+      (1 - distance / maxLength) * 100
+    );
+
+    bestScore = Math.max(
+      bestScore,
+      similarity
+    );
   }
 
-  if (primaryResults.length >= maxResults) return primaryResults;
-  if (!areMealsReady()) return primaryResults;
-
-  const remaining = maxResults - primaryResults.length;
-  const exactMealResults = searchMeals(q, remaining);
-
-  if (exactMealResults.length >= remaining) {
-    return [...primaryResults, ...exactMealResults];
-  }
-
-  const seenMeal = new Set(
-    exactMealResults.map(r => `${r.mealName}:${r.suraNum}:${r.verseNum}`)
+  return Math.max(
+    0,
+    Math.min(100, bestScore)
   );
+}
 
-  const fuzzyMealResults = [];
 
-  for (const item of SEARCH_INDEX.meals) {
-    if (fuzzyMealResults.length + exactMealResults.length >= remaining) break;
+function searchKeywordInData(
+  query,
+  maxResults = 16,
+  includeMeals = true
+) {
+  const q = String(query || '').trim();
 
-    if (!isFuzzyMatch(q, item.text)) continue;
+  if (!q || !SEARCH_INDEX.ready) {
+    return [];
+  }
 
-    const key = `${item.mealName}:${item.suraNum}:${item.verseNum}`;
-    if (seenMeal.has(key)) continue;
-    seenMeal.add(key);
+  const allResults = [];
+  const seen = new Set();
 
-    fuzzyMealResults.push({
-      type: 'meal',
-      mealName: item.mealName,
-      suraNum: item.suraNum,
-      verseNum: item.verseNum,
-      page: item.page,
-      text: item.text,
-      snippet: makeSnippet(item.text, q),
+  function addResult({
+    type,
+    source = '',
+    mealName = '',
+    page,
+    suraNum,
+    verseNum,
+    text
+  }) {
+    const score = getSearchMatchScore(
+      q,
+      text
+    );
+
+    /*
+      Yüzde 75'in altındaki eşleşmeleri alma.
+    */
+    if (score < 75) {
+      return;
+    }
+
+    const key = type === 'meal'
+      ? `meal:${mealName}:${suraNum}:${verseNum}`
+      : `quran:${source}:${suraNum}:${verseNum}`;
+
+    if (seen.has(key)) {
+      return;
+    }
+
+    seen.add(key);
+
+    allResults.push({
+      type,
+      source,
+      mealName,
+      page:
+        page ||
+        getVersePage(
+          String(suraNum),
+          String(verseNum)
+        ),
+      suraNum: String(suraNum),
+      verseNum: String(verseNum),
+      text: String(text || ''),
+      snippet: makeSnippet(
+        String(text || ''),
+        q
+      ),
       query: q,
-      fuzzy: true
+      score,
+      fuzzy: score < 100
     });
   }
 
-  return [...primaryResults, ...exactMealResults, ...fuzzyMealResults];
+  /*
+    Ana Türkçe, İngilizce, okunuş
+    ve AI çeviri sonuçları.
+  */
+  for (const item of SEARCH_INDEX.quran) {
+    addResult({
+      type: 'quran',
+      source: item.source,
+      page: item.page,
+      suraNum: item.suraNum,
+      verseNum: item.verseNum,
+      text: item.text
+    });
+  }
+
+  /*
+    Mealler yüklenmişse onları da ekle.
+  */
+  if (
+  includeMeals &&
+  areMealsReady()
+) {
+  for (const item of SEARCH_INDEX.meals) {
+      addResult({
+        type: 'meal',
+        mealName: item.mealName,
+        page: item.page,
+        suraNum: item.suraNum,
+        verseNum: item.verseNum,
+        text: item.text
+      });
+    }
+  }
+
+  /*
+    Önce eşleşme yüzdesine göre sırala.
+    Eşitlikte sure ve ayet sırasını kullan.
+  */
+  allResults.sort((a, b) => {
+    if (b.score !== a.score) {
+      return b.score - a.score;
+    }
+
+    const suraDifference =
+      Number(a.suraNum) -
+      Number(b.suraNum);
+
+    if (suraDifference !== 0) {
+      return suraDifference;
+    }
+
+    return (
+      Number(a.verseNum) -
+      Number(b.verseNum)
+    );
+  });
+
+  return allResults.slice(
+    0,
+    maxResults
+  );
 }
 
 function navigateToSearchResult(result, inputElement) {
@@ -3486,204 +4894,563 @@ function navigateToSearchResult(result, inputElement) {
 }
 
 function setupSearch() {
-  const searchInput = DOM.searchInput;
-  const autocomplete = DOM.autocomplete;
+  const searchInput =
+    DOM.searchInput;
+
+  const autocomplete =
+    DOM.autocomplete;
+
+  if (
+    !searchInput ||
+    !autocomplete
+  ) {
+    return;
+  }
 
   let debounceTimer = null;
+
   const DEBOUNCE_MS = 250;
-  const runSearch = async (val) => {
-  autocomplete.innerHTML = '';
 
-  if (val.length < 1) {
-    autocomplete.style.display = 'none';
-    return;
+  function hideAutocomplete() {
+    autocomplete.innerHTML = '';
+    autocomplete.style.display =
+      'none';
   }
 
-  if (!SEARCH_INDEX.ready) {
-    autocomplete.innerHTML = '<div>⏳ Arama hazırlanıyor...</div>';
-    autocomplete.style.display = 'block';
-    return;
-  }
+  function addAutocompleteItem({
+    html,
+    className = '',
+    onClick
+  }) {
+    const item =
+      document.createElement('div');
 
-
-    let found = false;
-    const suggestions = [];
-    const fragment = document.createDocumentFragment();
-
-    for (const suraNum in STATE.metadata.sureNames) {
-      const suraName = STATE.metadata.sureNames[suraNum].toLowerCase();
-      if (suraName.includes(val)) {
-        found = true;
-        suggestions.push({
-          suraNum,
-          suraName: STATE.metadata.sureNames[suraNum],
-          type: 'sura',
-          priority: suraName.startsWith(val) ? 1 : 2
-        });
-      }
+    if (className) {
+      item.className = className;
     }
 
-    const verseMatch = val.match(/^(\d+)(?:[:\/\s])(\d+)$/);
-    if (verseMatch) {
-      const [, suraNum, verseNum] = verseMatch;
-      const page = getVersePage(suraNum, verseNum);
+    item.innerHTML = html;
+
+    if (typeof onClick === 'function') {
+      item.addEventListener(
+        'click',
+        onClick
+      );
+    }
+
+    autocomplete.appendChild(item);
+
+    return item;
+  }
+
+  async function runSearch(rawValue) {
+    const value =
+      String(rawValue || '').trim();
+
+    autocomplete.innerHTML = '';
+
+    if (!value) {
+      hideAutocomplete();
+      return;
+    }
+
+    if (!SEARCH_INDEX.ready) {
+      addAutocompleteItem({
+        html:
+          '⏳ Arama hazırlanıyor...'
+      });
+
+      autocomplete.style.display =
+        'block';
+
+      return;
+    }
+
+    let itemCount = 0;
+
+    /*
+      17:36, 17 36, 17/36, 17-36
+      yazılırken yalnızca öneri gösterilir.
+      Enter olmadan otomatik gidilmez.
+    */
+    const verseReference =
+      parseVerseReference(value);
+
+    if (verseReference) {
+      if (verseReference.exists) {
+        const verseData =
+          findVerseData(
+            verseReference.suraNum,
+            verseReference.verseNum
+          );
+
+        addAutocompleteItem({
+          className:
+            'autocomplete-verse-reference',
+
+          html: `
+            <strong>
+              📖 ${escapeHtml(
+                verseReference.suraNum
+              )}:${escapeHtml(
+                verseReference.verseNum
+              )} ayetine git
+            </strong>
+
+            <br>
+
+            <small>
+              ${escapeHtml(
+                String(
+                  verseData.turkish || ''
+                ).slice(0, 130)
+              )}
+            </small>
+          `,
+
+          onClick: () => {
+            activeSearchQuery = '';
+
+            pendingHighlight = {
+              suraNum:
+                verseReference.suraNum,
+              verseNum:
+                verseReference.verseNum,
+              query: '',
+              openMeal: false,
+              mealName: ''
+            };
+
+            searchInput.value = '';
+
+            hideAutocomplete();
+
+            goToPage(
+              verseReference.page
+            );
+          }
+        });
+      } else {
+        addAutocompleteItem({
+          className:
+            'autocomplete-warning',
+
+          html: `
+            ⚠️
+            ${escapeHtml(
+              verseReference.suraNum
+            )}:${escapeHtml(
+              verseReference.verseNum
+            )}
+            ayeti bulunamadı.
+          `
+        });
+      }
+
+      itemCount++;
+    }
+
+    /*
+      Sure adları
+    */
+    const normalizedValue =
+      normalizeTurkishText(value);
+
+    const suraSuggestions = [];
+
+    for (
+      const suraNum in
+      STATE.metadata.sureNames
+    ) {
+      const suraName =
+        STATE.metadata.sureNames[
+          suraNum
+        ];
+
+      const normalizedSuraName =
+        normalizeTurkishText(
+          suraName
+        );
 
       if (
-        STATE.data.en[page]?.sura?.[suraNum]?.verses?.[verseNum]
+        !normalizedSuraName.includes(
+          normalizedValue
+        )
       ) {
-        found = true;
-        const trVerseText = STATE.data.tr[page]?.sura?.[suraNum]?.verses?.[verseNum] || '';
-        suggestions.push({
-          suraNum,
-          verseNum,
-          page,
-          text: `${suraNum}:${verseNum} - ${trVerseText.substring(0, 100)}...`,
-          type: 'verse',
-          priority: 0
-        });
-      }
-    }
-
-    if (suggestions.length < 16) {
-      const keywordResults = searchKeywordInData(val, 16 - suggestions.length);
-
-      if (keywordResults.length > 0) {
-        found = true;
-        keywordResults.forEach((result) => {
-          const div = document.createElement('div');
-
-          if (result.type === 'quran') {
-              div.innerHTML = `<strong>${escapeHtml(result.suraNum)}:${escapeHtml(
-                    result.verseNum
-                    )}</strong> (${escapeHtml(result.source)}) ${result.fuzzy ? '<em style="color:#f59e0b;">yaklaşık eşleşme</em> ' : ''}- ${result.snippet}`;
-                  } else if (result.type === 'meal') {
-                      div.innerHTML = `<strong>${escapeHtml(result.mealName)}</strong> ${escapeHtml(
-                            result.suraNum
-                            )}:${escapeHtml(result.verseNum)} ${result.fuzzy ? '<em style="color:#f59e0b;">yaklaşık eşleşme</em> ' : ''}- ${result.snippet}`;
-                          }
-
-          div.onclick = () => navigateToSearchResult(result, searchInput);
-          fragment.appendChild(div);
-        });
+        continue;
       }
 
-      if (!areMealsReady() && MEALS_STATE.status !== 'loading') {
-        found = true;
-        const infoDiv = document.createElement('div');
-        infoDiv.className = 'meal-loading-hint';
-        infoDiv.innerHTML = `⏳ <em>Mealler yükleniyor, meal sonuçları birazdan görünecek...</em>`;
-        fragment.appendChild(infoDiv);
-
-        loadMeals().then(() => {
-          const currentVal = searchInput.value.toLowerCase().trim();
-          if (currentVal === val) runSearch(val);
-        });
-      }
-    }
-
-    if (suggestions.length > 0) {
-      suggestions.sort((a, b) => a.priority - b.priority);
-
-      suggestions.slice(0, 8).forEach((suggestion) => {
-        const div = document.createElement('div');
-
-        if (suggestion.type === 'verse') {
-          div.innerHTML = `<strong>${escapeHtml(suggestion.suraNum)}:${escapeHtml(
-            suggestion.verseNum
-          )}</strong> - ${escapeHtml(
-            suggestion.text.replace(suggestion.text.split(' - ')[0] + ' - ', '')
-          )}`;
-        } else {
-          div.innerHTML = `<strong>${escapeHtml(suggestion.suraNum)}:</strong> ${escapeHtml(
-            suggestion.suraName
-          )}`;
-        }
-
-        div.onclick = () => navigateToSearchResult(suggestion, searchInput);
-        fragment.appendChild(div);
+      suraSuggestions.push({
+        type: 'sura',
+        suraNum,
+        suraName,
+        page:
+          STATE.metadata
+            .sureToPageMap[suraNum],
+        priority:
+          normalizedSuraName.startsWith(
+            normalizedValue
+          )
+            ? 0
+            : 1
       });
     }
 
-    if (found) {
-      autocomplete.appendChild(fragment);
-      autocomplete.style.display = 'block';
-    } else {
-      autocomplete.style.display = 'none';
-    }
-  };
+    suraSuggestions
+      .sort(
+        (a, b) =>
+          a.priority -
+          b.priority
+      )
+      .slice(0, 4)
+      .forEach((suggestion) => {
+        addAutocompleteItem({
+          html: `
+            <strong>
+              ${escapeHtml(
+                suggestion.suraNum
+              )}:
+            </strong>
 
-  searchInput.addEventListener('input', (e) => {
-    const val = e.target.value.toLowerCase().trim();
+            ${escapeHtml(
+              suggestion.suraName
+            )}
+          `,
 
-    if (val.length < 1) {
-      clearTimeout(debounceTimer);
-      autocomplete.innerHTML = '';
-      autocomplete.style.display = 'none';
-      return;
-    }
+          onClick: () => {
+            searchInput.value = '';
+            hideAutocomplete();
 
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => runSearch(val), DEBOUNCE_MS);
-  });
+            goToSura(
+              suggestion.suraNum
+            );
+          }
+        });
 
-  searchInput.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter') return;
+        itemCount++;
+      });
 
-    e.preventDefault();
-    const val = e.target.value.trim();
+    /*
+      Lütuf → Lütufkâr gibi
+      kelime tamamlama önerileri.
+    */
+    const wordSuggestions =
+      getSearchWordSuggestions(
+        value,
+        4
+      );
 
-    const verseMatch = val.match(/^(\d+)(?:[:\/\s])(\d+)$/);
-    if (verseMatch) {
-      const [, suraNum, verseNum] = verseMatch;
-      const page = getVersePage(suraNum, verseNum);
+    wordSuggestions.forEach(
+      (suggestion) => {
+        addAutocompleteItem({
+          className:
+            'autocomplete-word-suggestion',
 
-      if (STATE.data.en[page]?.sura?.[suraNum]?.verses?.[verseNum]) {
-        goToPage(page);
-        searchInput.value = '';
-        autocomplete.style.display = 'none';
-        setTimeout(() => scrollToVerse(suraNum, verseNum), 300);
+          html: `
+            <span>
+              “<strong>
+                ${escapeHtml(value)}
+              </strong>”
+              yerine
+            </span>
+
+            <strong>
+              ${escapeHtml(
+                suggestion.text
+              )}
+            </strong>
+            mı demek istediniz?
+          `,
+
+          onClick: () => {
+            searchInput.value =
+              suggestion.text;
+
+            searchInput.focus();
+
+            runSearch(
+              suggestion.text
+            );
+          }
+        });
+
+        itemCount++;
+      }
+    );
+
+    /*
+      Yazarken yalnızca birkaç hızlı
+      ayet sonucu gösterilir.
+    */
+    const quickResults =
+      value.length < 3
+       ? []
+       : searchKeywordInData(
+        value,
+        6,
+        false
+      );
+
+    quickResults.forEach(
+      (result) => {
+        let html = '';
+
+        if (result.type === 'meal') {
+          html = `
+            <strong>
+              ${escapeHtml(
+                result.mealName
+              )}
+            </strong>
+
+            ${escapeHtml(
+              result.suraNum
+            )}:${escapeHtml(
+              result.verseNum
+            )}
+
+            ${
+              result.fuzzy
+                ? `
+                  <em class="autocomplete-fuzzy">
+                    yaklaşık eşleşme
+                  </em>
+                `
+                : ''
+            }
+
+            <br>
+
+            ${result.snippet}
+          `;
+        } else {
+          html = `
+            <strong>
+              ${escapeHtml(
+                result.suraNum
+              )}:${escapeHtml(
+                result.verseNum
+              )}
+            </strong>
+
+            <span>
+              (${escapeHtml(
+                getSearchSourceLabel(
+                  result.source
+                )
+              )})
+            </span>
+
+            ${
+              result.fuzzy
+                ? `
+                  <em class="autocomplete-fuzzy">
+                    yaklaşık eşleşme
+                  </em>
+                `
+                : ''
+            }
+
+            <br>
+
+            ${result.snippet}
+          `;
+        }
+
+        addAutocompleteItem({
+          html,
+
+          onClick: () => {
+            navigateToSearchResult(
+              result,
+              searchInput
+            );
+          }
+        });
+
+        itemCount++;
+      }
+    );
+
+    /*
+      Büyük sonuç panelini açan satır.
+    */
+    addAutocompleteItem({
+      className:
+        'autocomplete-all-results',
+
+      html: `
+        <strong>
+          🔎 “${escapeHtml(value)}”
+          için tüm sonuçları göster
+        </strong>
+
+        <br>
+
+        <small>
+          Enter tuşuna da basabilirsiniz.
+        </small>
+      `,
+
+      onClick: () => {
+        hideAutocomplete();
+
+        openSearchResultsPanel(
+          value
+        );
+      }
+    });
+
+    itemCount++;
+
+    autocomplete.style.display =
+      itemCount > 0
+        ? 'block'
+        : 'none';
+  }
+
+  searchInput.addEventListener(
+    'input',
+    (event) => {
+      const value =
+        event.target.value.trim();
+
+      clearTimeout(
+        debounceTimer
+      );
+
+      if (!value) {
+        hideAutocomplete();
         return;
       }
 
-      showNotification(`${suraNum}:${verseNum} ayeti bulunamadı!`, 'warning');
-      return;
+      /*
+        Enter olmadan yalnızca öneri üretir.
+        Ayete otomatik gitmez.
+      */
+      debounceTimer =
+        setTimeout(
+          () => {
+            runSearch(value);
+          },
+          DEBOUNCE_MS
+        );
     }
+  );
 
-    for (const suraNum in STATE.metadata.sureNames) {
-      const suraName = STATE.metadata.sureNames[suraNum].toLowerCase();
-      if (suraName.includes(val.toLowerCase())) {
-        goToPage(STATE.metadata.sureToPageMap[suraNum]);
-        searchInput.value = '';
-        autocomplete.style.display = 'none';
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+  searchInput.addEventListener(
+    'keydown',
+    (event) => {
+      if (event.key !== 'Enter') {
         return;
       }
-    }
 
-    const keywordResults = searchKeywordInData(val, 1);
-    if (keywordResults.length > 0) {
-      navigateToSearchResult(keywordResults[0], searchInput);
-      return;
-    }
+      event.preventDefault();
 
-    if (val) {
-      showNotification(
-        'Aradığınız sure veya ayet bulunamadı! Format: "2:209", "2/209" veya "2 209" veya sure ismi',
-        'warning'
+      const value =
+        searchInput.value.trim();
+
+      if (!value) {
+        return;
+      }
+
+      /*
+        17:36, 17 36, 17/36, 17-36
+        Enter ile doğrudan ayete gider.
+      */
+      const verseReference =
+        parseVerseReference(value);
+
+      if (verseReference) {
+        if (!verseReference.exists) {
+          showNotification(
+            `${verseReference.suraNum}:${verseReference.verseNum} ayeti bulunamadı.`,
+            'warning'
+          );
+
+          return;
+        }
+
+        activeSearchQuery = '';
+
+        pendingHighlight = {
+          suraNum:
+            verseReference.suraNum,
+          verseNum:
+            verseReference.verseNum,
+          query: '',
+          openMeal: false,
+          mealName: ''
+        };
+
+        searchInput.value = '';
+
+        hideAutocomplete();
+
+        goToPage(
+          verseReference.page
+        );
+
+        return;
+      }
+
+      /*
+        Tam sure adı yazılmışsa
+        doğrudan sureye gider.
+        Örnek: Bakara + Enter
+      */
+      const exactSura =
+        findExactSura(value);
+
+      if (exactSura) {
+        searchInput.value = '';
+
+        hideAutocomplete();
+
+        goToSura(
+          exactSura.suraNum
+        );
+
+        return;
+      }
+
+      /*
+        Kelime araması Enter ile
+        artık ilk sonuca gitmez.
+        Büyük sonuç panelini açar.
+      */
+      hideAutocomplete();
+
+      openSearchResultsPanel(
+        value
       );
     }
-  });
+  );
 
-  searchInput.addEventListener('blur', () => {
-    setTimeout(() => {
-      autocomplete.style.display = 'none';
-    }, 200);
-  });
+  searchInput.addEventListener(
+    'blur',
+    () => {
+      setTimeout(
+        () => {
+          autocomplete.style.display =
+            'none';
+        },
+        200
+      );
+    }
+  );
 
-  searchInput.addEventListener('focus', () => {
-    const val = searchInput.value.toLowerCase().trim();
-    if (val.length >= 1) autocomplete.style.display = 'block';
-  });
+  searchInput.addEventListener(
+    'focus',
+    () => {
+      const value =
+        searchInput.value.trim();
+
+      if (value) {
+        runSearch(value);
+      }
+    }
+  );
 }
 
 /* =========================
@@ -3987,7 +5754,7 @@ yedeklenebilir.
 
 <blockquote>
 <strong>[17:36]</strong><br>
-"Hiçbir bilgiyi, kendiniz için teyit etmediğiniz sürece, kabul etmeyin. Ben size işitmeyi, görmeyi ve beyni verdim ve siz onları kullanmaktan sorumlusunuz."
+"Kendin için teyit etmediğin sürece, hiçbir bilgiyi kabul etme. Ben sana işitmeyi, görmeyi ve beyni verdim ve sen onları kullanmaktan sorumlusun."
 </blockquote>
 
 <h2>🙏 Teşekkür ve Veri Kaynakları</h2>
@@ -4456,4 +6223,7 @@ window.removeLocalNote = removeLocalNote;
 window.removeLocalNoteFromList = removeLocalNoteFromList;
 window.exportLocalNotes = exportLocalNotes;
 window.openNotesImportDialog = openNotesImportDialog;
-window.toggleNotePreview = toggleNotePreview;
+window.updateLocalNoteUI = updateLocalNoteUI;
+window.goToVerse = goToVerse;
+window.goToVerseFromNotes =
+  goToVerseFromNotes;

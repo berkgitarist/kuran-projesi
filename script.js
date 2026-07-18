@@ -1,3 +1,7 @@
+/* =========================================================
+   GÜNCELLEME: İngilizce kelime yardım alanları genişletildi.
+   .verse-text + .passage-title + İngilizce dipnot metinleri
+========================================================= */
 const CONFIG = {
   batchSize: 3,
   initialLoad: 5,
@@ -37,31 +41,38 @@ const CONFIG = {
   }
 };
 
+const FIRST_QURAN_DATA_PAGE = 23;
+const LAST_QURAN_DATA_PAGE = 604;
+const TOTAL_QURAN_PAGES = 604;
+
 const STATE = {
-  currentPage: 1,
-  totalPages: 604,
+  currentPage: FIRST_QURAN_DATA_PAGE,
+  totalPages: LAST_QURAN_DATA_PAGE,
   loadedPages: new Set(),
+
   data: {
-  en: {},
-  tr: {},
-  translit: {},
-  ai: {},
-  meals: {},
-  dictionary: {},
-  arabic2: {},
-  erhanArabic: {},
-  wordTranslations: {},
-  mapTr: {},
-  mapEn: {},
-  appendicesTr: {},
-  appendicesEn: {}
-},
+    en: {},
+    tr: {},
+    translit: {},
+    ai: {},
+    meals: {},
+    dictionary: {},
+    arabic2: {},
+    erhanArabic: {},
+    wordTranslations: {},
+    mapTr: {},
+    mapEn: {},
+    appendicesTr: {},
+    appendicesEn: {}
+  },
+
   metadata: {
     sureNames: {},
     sureToPageMap: {},
     pageToSuraMap: {},
     verseToPageMap: {}
   },
+
   settings: {
     theme: 'dark',
     fontSize: 'medium',
@@ -125,7 +136,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       processMetadata();
       buildSuraMenu();
       setupEventListeners();
-      STATE.currentPage = 23;
+      STATE.currentPage = FIRST_QURAN_DATA_PAGE;
       dataLoaded = true;
       console.log('Veri yükleme tamamlandı.');
     })
@@ -306,7 +317,6 @@ function showIntroVerse() {
       return;
     }
 
-    // Her açılışta 5 sn göster
     intro.classList.remove('hidden');
     intro.classList.remove('fade-out');
     intro.style.display = 'flex';
@@ -319,9 +329,10 @@ function showIntroVerse() {
         intro.classList.add('hidden');
         intro.style.display = 'none';
         intro.setAttribute('aria-hidden', 'true');
+
         resolve();
-      }, 1000); // fade süresi
-    }, 5000); // ekranda kalma süresi
+      }, 1000);
+    }, 5000);
   });
 }
 
@@ -403,8 +414,10 @@ function applySettings() {
    Görünüm
 ========================= */
 function ensureQuranView() {
-  DOM.quranContent.classList.remove('hidden');
-  DOM.quranContent.style.display = 'block';
+  if (DOM.quranContent) {
+    DOM.quranContent.classList.remove('hidden');
+    DOM.quranContent.style.display = 'block';
+  }
 
   const contentArea = document.querySelector('.content-area');
 
@@ -413,8 +426,10 @@ function ensureQuranView() {
   }
 
   if (DOM.introVerse) {
-    DOM.introVerse.style.display = 'none';
     DOM.introVerse.classList.add('hidden');
+    DOM.introVerse.classList.remove('fade-out');
+    DOM.introVerse.style.display = 'none';
+    DOM.introVerse.setAttribute('aria-hidden', 'true');
   }
 }
 
@@ -448,17 +463,27 @@ function updateLoadingProgress(percent) {
    Eventler
 ========================= */
 function setupEventListeners() {
-  document.getElementById('prevPage')?.addEventListener('click', () => {
-    if (STATE.currentPage > 1) {
-      goToPage(STATE.currentPage - 1);
-    }
-  });
+  document
+    .getElementById('prevPage')
+    ?.addEventListener('click', () => {
+      const previousPage =
+        STATE.currentPage <= FIRST_QURAN_DATA_PAGE
+          ? LAST_QURAN_DATA_PAGE
+          : STATE.currentPage - 1;
 
-  document.getElementById('nextPage')?.addEventListener('click', () => {
-    if (STATE.currentPage < STATE.totalPages) {
-      goToPage(STATE.currentPage + 1);
-    }
-  });
+      goToPage(previousPage);
+    });
+
+  document
+    .getElementById('nextPage')
+    ?.addEventListener('click', () => {
+      const nextPage =
+        STATE.currentPage >= LAST_QURAN_DATA_PAGE
+          ? FIRST_QURAN_DATA_PAGE
+          : STATE.currentPage + 1;
+
+      goToPage(nextPage);
+    });
 
   document
     .getElementById('menuToggle')
@@ -945,11 +970,20 @@ function buildSuraMenu() {
    Sayfa geçişi
 ========================= */
 function loadPagesAround(pageNum) {
-  const startPage = Math.max(1, pageNum - CONFIG.initialLoad);
-  const endPage = Math.min(STATE.totalPages, pageNum + CONFIG.initialLoad);
+  const startPage = Math.max(
+    FIRST_QURAN_DATA_PAGE,
+    pageNum - CONFIG.initialLoad
+  );
+
+  const endPage = Math.min(
+    LAST_QURAN_DATA_PAGE,
+    pageNum + CONFIG.initialLoad
+  );
 
   for (let i = startPage; i <= endPage; i++) {
-    if (!STATE.loadedPages.has(i)) STATE.loadedPages.add(i);
+    if (!STATE.loadedPages.has(i)) {
+      STATE.loadedPages.add(i);
+    }
   }
 
   displayPage(pageNum);
@@ -958,7 +992,112 @@ function loadPagesAround(pageNum) {
 function goToPage(pageNum) {
   ensureQuranView();
 
-  if (pageNum < 1 || pageNum > STATE.totalPages) return;
+  pageNum = Number(pageNum);
+
+  if (!Number.isInteger(pageNum)) {
+    console.warn('Geçersiz sayfa numarası:', pageNum);
+    return;
+  }
+
+  if (pageNum > LAST_QURAN_DATA_PAGE) {
+    pageNum = FIRST_QURAN_DATA_PAGE;
+  }
+
+  if (pageNum < FIRST_QURAN_DATA_PAGE) {
+    pageNum = LAST_QURAN_DATA_PAGE;
+  }
+
+  if (!STATE.data.en[pageNum] || !STATE.data.tr[pageNum]) {
+    console.error(
+      `Sayfa verisi bulunamadı. Veri anahtarı: ${pageNum}`
+    );
+
+    DOM.content.innerHTML = `
+      <div style="text-align:center;padding:60px 20px;">
+
+          <h2 style="color:white;margin-bottom:20px;">
+              www.KuranTeyit.com
+          </h2>
+
+          <button onclick="location.href='index.html?sure=1'"
+              style="
+                  padding:10px 22px;
+                  border:none;
+                  border-radius:8px;
+                  cursor:pointer;
+                  font-size:16px;
+                  margin-bottom:40px;
+              ">
+              Fatiha Suresine Dön
+          </button>
+
+          <hr style="
+              width:80%;
+              border:0;
+              border-top:1px solid rgba(255,255,255,.15);
+              margin:40px auto;
+          ">
+
+          <div style="
+              max-width:850px;
+              margin:auto;
+              background:#1b2336;
+              border:1px solid rgba(255,255,255,.08);
+              border-radius:18px;
+              padding:35px;
+          ">
+
+              <div style="
+                  font-size:28px;
+                  font-weight:700;
+                  color:#fff;
+                  margin-bottom:25px;
+              ">
+                  İlk İnen Ayet
+              </div>
+
+              <div style="
+                  direction:rtl;
+                  font-size:44px;
+                  line-height:2;
+                  color:#fff;
+                  font-family:'Amiri','Scheherazade New',serif;
+                  margin-bottom:25px;
+              ">
+                  اقْرَأْ بِاسْمِ رَبِّكَ الَّذِي خَلَقَ
+              </div>
+
+              <div style="
+                  color:#d8d8d8;
+                  font-size:20px;
+                  margin-bottom:18px;
+              ">
+                  İkra' bismi rabbikellezî halak.
+              </div>
+
+              <div style="
+                  color:#fff;
+                  font-size:22px;
+                  font-weight:600;
+              ">
+                  Oku, yaratan Rabbinin adıyla.
+              </div>
+
+              <div style="
+                  margin-top:22px;
+                  color:#9aa4b8;
+                  font-size:16px;
+              ">
+                  Alak Suresi • 1. Ayet
+              </div>
+
+          </div>
+
+      </div>
+    `;
+
+    return;
+  }
 
   STATE.currentPage = pageNum;
 
@@ -969,7 +1108,10 @@ function goToPage(pageNum) {
   }
 
   if (!pendingHighlight) {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
   }
 }
 
@@ -1550,17 +1692,24 @@ function buildPageHtml(pageNum) {
   const trPage = STATE.data.tr[pageNum];
 
   let pageTitle = 'Bilinmeyen';
-  const suraNums = Object.keys(enPage.sura).sort((a, b) => Number(a) - Number(b));
+
+  const suraNums = Object
+    .keys(enPage.sura)
+    .sort((a, b) => Number(a) - Number(b));
 
   if (suraNums.length > 0) {
-    const suraTitles = suraNums.map((num) => STATE.metadata.sureNames[num] || `Sure ${num}`);
+    const suraTitles = suraNums.map((num) => {
+      return STATE.metadata.sureNames[num] || `Sure ${num}`;
+    });
+
     pageTitle = suraTitles.join(' | ');
   }
 
   let html = `
     <div class="page-header">
       <h1>📖 ${escapeHtml(pageTitle)}</h1>
-    </div>`;
+    </div>
+  `;
 
   const enNotesMap = mapNotesToVerses(enPage.notes?.data);
   const trNotesMap = mapNotesToVerses(trPage.notes?.data);
@@ -1569,53 +1718,112 @@ function buildPageHtml(pageNum) {
     const enSura = enPage.sura[suraNum];
     const trSura = trPage.sura[suraNum];
 
-    html += `<div class="sura">`;
+    html += `
+      <div class="sura">
+    `;
 
-    const verseKeys = Object.keys(enSura.verses).sort((a, b) => Number(a) - Number(b));
+    const verseKeys = Object
+      .keys(enSura.verses)
+      .sort((a, b) => Number(a) - Number(b));
 
     for (const verseNum of verseKeys) {
       if (enSura.titles && enSura.titles[verseNum]) {
-        html += `<div class="passage-title">${escapeHtml(enSura.titles[verseNum])}</div>`;
+        html += `
+          <div class="passage-title">
+            ${escapeHtml(enSura.titles[verseNum])}
+          </div>
+        `;
 
         if (trSura.titles && trSura.titles[verseNum]) {
-          html += `<div class="passage-title-tr">${escapeHtml(trSura.titles[verseNum])}</div>`;
+          html += `
+            <div class="passage-title-tr">
+              ${escapeHtml(trSura.titles[verseNum])}
+            </div>
+          `;
         }
       }
 
       const verseKey = `${suraNum}:${verseNum}`;
+
       const hasNotes =
         (enNotesMap[verseKey]?.length > 0) ||
         (trNotesMap[verseKey]?.length > 0);
 
-      const arabic2Text = getArabic2Text(suraNum, verseNum);
-      const erhanArabicText = getErhanArabicText(suraNum, verseNum);
+      const arabic2Text = getArabic2Text(
+        suraNum,
+        verseNum
+      );
+
+      const erhanArabicText = getErhanArabicText(
+        suraNum,
+        verseNum
+      );
 
       html += `
         <div class="verse">
+
           <div class="verse-header">
             <div></div>
-            <div class="verse-number">${suraNum} : ${verseNum}</div>
-            <details class="arabic-section" ontoggle="if(this.open) toggleArabicWords(${suraNum}, ${verseNum})">
-              <summary>📖 Arapça</summary>
+
+            <div class="verse-number">
+              ${suraNum} : ${verseNum}
+            </div>
+
+            <details
+              class="arabic-section"
+              ontoggle="if(this.open) toggleArabicWords(${suraNum}, ${verseNum})"
+            >
+              <summary>
+                📖 Arapça
+              </summary>
+
               <div class="arabic-dropdown-content">
-                <div class="arabic-label">Standart Arapça - qurantft.json</div>
-                <div class="verse-arabic">${enSura.encrypted?.[verseNum] || ''}</div>
+
+                <div class="arabic-label">
+                  Standart Arapça - qurantft.json
+                </div>
+
+                <div class="verse-arabic">
+                  ${enSura.encrypted?.[verseNum] || ''}
+                </div>
+
                 ${
                   arabic2Text
-                    ? `<div class="arabic-label">İkinci Arapça - quran_arapca2.json</div>
-                       <div class="verse-arabic verse-arabic-2">${arabic2Text}</div>`
+                    ? `
+                      <div class="arabic-label">
+                        İkinci Arapça - quran_arapca2.json
+                      </div>
+
+                      <div class="verse-arabic verse-arabic-2">
+                        ${arabic2Text}
+                      </div>
+                    `
                     : ''
                 }
+
                 ${
                   erhanArabicText
-                    ? `<div class="arabic-label">Erhan Aktaş Arapçası - kuran_erhan_aktas.json</div>
-                       <div class="verse-arabic verse-arabic-2">${erhanArabicText}</div>`
+                    ? `
+                      <div class="arabic-label">
+                        Erhan Aktaş Arapçası - kuran_erhan_aktas.json
+                      </div>
+
+                      <div class="verse-arabic verse-arabic-2">
+                        ${erhanArabicText}
+                      </div>
+                    `
                     : ''
                 }
-                <div id="word-translation-${suraNum}-${verseNum}" class="word-translation-container"></div>
+
+                <div
+                  id="word-translation-${suraNum}-${verseNum}"
+                  class="word-translation-container"
+                ></div>
+
               </div>
             </details>
-          </div>`;
+          </div>
+      `;
 
       if (STATE.settings.showTransliteration) {
         const transliterationText =
@@ -1623,132 +1831,293 @@ function buildPageHtml(pageNum) {
 
         html += `
           <div class="verse-transliteration">
-            <span>${escapeHtml(transliterationText)}</span>
+
+            <span>
+              ${escapeHtml(transliterationText)}
+            </span>
+
             ${
               transliterationText
-                ? `<button class="speak-btn" onclick="speakVerse(${suraNum}, ${verseNum})" title="Okunuşu seslendir">🔊</button>
-                   <button class="speak-btn stop-speak-btn" onclick="stopSpeech()" title="Sesi durdur">⏹</button>`
+                ? `
+                  <button
+                    class="speak-btn"
+                    onclick="speakVerse(${suraNum}, ${verseNum})"
+                    title="Okunuşu seslendir"
+                  >
+                    🔊
+                  </button>
+
+                  <button
+                    class="speak-btn stop-speak-btn"
+                    onclick="stopSpeech()"
+                    title="Sesi durdur"
+                  >
+                    ⏹
+                  </button>
+                `
                 : ''
             }
-          </div>`;
+
+          </div>
+        `;
       }
 
       html += `
-          <div class="verse-text">
-            ${escapeHtml(enSura.verses[verseNum])}
-            <button class="inline-speak-btn" onclick="speakEnglishVerse(${suraNum}, ${verseNum})" title="İngilizce oku">🔈</button>
-          </div>
+        <div class="verse-text">
+          ${escapeHtml(enSura.verses[verseNum])}
 
-          <div class="verse-text-tr">
-            <strong>${escapeHtml(trSura.verses[verseNum])}</strong>
-          </div>
+          <button
+            class="inline-speak-btn"
+            onclick="speakEnglishVerse(${suraNum}, ${verseNum})"
+            title="İngilizce oku"
+          >
+            🔈
+          </button>
+        </div>
 
-          <div class="buttons">`;
+        <div class="verse-text-tr">
+          <strong>
+            ${escapeHtml(trSura.verses[verseNum])}
+          </strong>
+        </div>
+
+        <div class="buttons">
+      `;
 
       if (hasNotes) {
         html += `
-  <button 
-    class="toggle-btn dipnot-btn" 
-    data-target="note-${suraNum}-${verseNum}"
-    onclick="toggleNote('note-${suraNum}-${verseNum}')">
-    📌 Dipnot
-  </button>`;
+          <button
+            class="toggle-btn dipnot-btn"
+            data-target="note-${suraNum}-${verseNum}"
+            onclick="toggleNote('note-${suraNum}-${verseNum}')"
+          >
+            📌 Dipnot
+          </button>
+        `;
       }
 
       if (STATE.settings.showMeals) {
-        html += `<button class="toggle-btn" id="meal-btn-${suraNum}-${verseNum}" onclick="toggleMeal('meal-${suraNum}-${verseNum}', ${suraNum}, ${verseNum})">📚 Mealler</button>`;
+        html += `
+          <button
+            class="toggle-btn"
+            id="meal-btn-${suraNum}-${verseNum}"
+            onclick="toggleMeal('meal-${suraNum}-${verseNum}', ${suraNum}, ${verseNum})"
+          >
+            📚 Mealler
+          </button>
+        `;
       }
 
-      html += `<button class="toggle-btn analysis-btn" onclick="openAnalysisPanel(${suraNum}, ${verseNum})">🔎 Analiz</button>`;
-      const hasUserNote = getLocalNote(suraNum, verseNum);
+      html += `
+        <button
+          class="toggle-btn analysis-btn"
+          onclick="openAnalysisPanel(${suraNum}, ${verseNum})"
+        >
+          🔎 Analiz
+        </button>
+      `;
 
-html += `
-<button
-    id="noteBtn-${suraNum}-${verseNum}"
-    class="toggle-btn note-btn ${hasUserNote ? "has-note" : ""}"
-    onclick="toggleNoteInput(
-        'note-input-box-${suraNum}-${verseNum}',
-        ${suraNum},
-        ${verseNum}
-    )">
+      const hasUserNote = getLocalNote(
+        suraNum,
+        verseNum
+      );
 
-    ${hasUserNote ? "📝 Notlu" : "✍️ Not Al"}
+      html += `
+        <button
+          id="noteBtn-${suraNum}-${verseNum}"
+          class="toggle-btn note-btn ${hasUserNote ? 'has-note' : ''}"
+          onclick="toggleNoteInput(
+            'note-input-box-${suraNum}-${verseNum}',
+            ${suraNum},
+            ${verseNum}
+          )"
+        >
+          ${hasUserNote ? '📝 Notlu' : '✍️ Not Al'}
+        </button>
+      `;
 
-</button>`;
-      html += `</div>`;
+      html += `
+        </div>
+      `;
 
       if (STATE.settings.showAiTranslation) {
-        html += `<div id="ai-translation-${suraNum}-${verseNum}" class="ai-translation">`;
+        html += `
+          <div
+            id="ai-translation-${suraNum}-${verseNum}"
+            class="ai-translation"
+          >
+        `;
 
         if (STATE.data.ai[suraNum]?.verses?.[verseNum]) {
-          html += `<strong>AI ÇEVİRİ:</strong> ${escapeHtml(STATE.data.ai[suraNum].verses[verseNum])}`;
+          html += `
+            <strong>
+              AI ÇEVİRİ:
+            </strong>
+
+            ${escapeHtml(
+              STATE.data.ai[suraNum].verses[verseNum]
+            )}
+          `;
         } else {
-          html += `<strong>AI ÇEVİRİ:</strong> Çeviri bulunamadı.`;
+          html += `
+            <strong>
+              AI ÇEVİRİ:
+            </strong>
+
+            Çeviri bulunamadı.
+          `;
         }
 
-        html += `</div>`;
+        html += `
+          </div>
+        `;
       }
 
       if (hasNotes) {
-        html += `<div id="note-${suraNum}-${verseNum}" class="note-box footnote-box hidden">`;
+        html += `
+          <div
+            id="note-${suraNum}-${verseNum}"
+            class="note-box footnote-box hidden"
+          >
+        `;
 
         if (enNotesMap[verseKey]) {
           enNotesMap[verseKey].forEach((note) => {
             html += `
               <div class="footnote-line footnote-en">
-                <strong class="footnote-name">EN:</strong>
-                <span class="footnote-text">${escapeHtml(note)}</span>
-              </div>`;
+
+                <strong class="footnote-name">
+                  EN:
+                </strong>
+
+                <span class="footnote-text">
+                  ${escapeHtml(note)}
+                </span>
+
+              </div>
+            `;
           });
         }
 
-        if (enNotesMap[verseKey] && trNotesMap[verseKey]) {
-          html += `<div class="note-separator"></div>`;
+        if (
+          enNotesMap[verseKey] &&
+          trNotesMap[verseKey]
+        ) {
+          html += `
+            <div class="note-separator"></div>
+          `;
         }
 
         if (trNotesMap[verseKey]) {
           trNotesMap[verseKey].forEach((note) => {
             html += `
               <div class="footnote-line footnote-tr">
-                <strong class="footnote-name">TR:</strong>
-                <span class="footnote-text">${escapeHtml(note)}</span>
-              </div>`;
+
+                <strong class="footnote-name">
+                  TR:
+                </strong>
+
+                <span class="footnote-text">
+                  ${escapeHtml(note)}
+                </span>
+
+              </div>
+            `;
           });
         }
 
-        html += `</div>`;
+        html += `
+          </div>
+        `;
       }
 
       html += `
-          <div id="user-note-${suraNum}-${verseNum}" class="note-box hidden"></div>
-          <div id="meal-${suraNum}-${verseNum}" class="note-box hidden"></div>
+        <div
+          id="user-note-${suraNum}-${verseNum}"
+          class="note-box hidden"
+        ></div>
 
-          <div id="note-input-box-${suraNum}-${verseNum}" class="note-input-box hidden">
-            <textarea id="note-input-${suraNum}-${verseNum}" placeholder="Notunuzu buraya yazın..." rows="4"></textarea>
-            <div class="note-actions">
-              <button class="save-note-btn" onclick="saveNote(${suraNum}, ${verseNum})">💾 Kaydet</button>
-              <button class="cancel-note-btn" onclick="cancelNote(${suraNum}, ${verseNum})">❌ İptal</button>
-            </div>
+        <div
+          id="meal-${suraNum}-${verseNum}"
+          class="note-box hidden"
+        ></div>
+
+        <div
+          id="note-input-box-${suraNum}-${verseNum}"
+          class="note-input-box hidden"
+        >
+
+          <textarea
+            id="note-input-${suraNum}-${verseNum}"
+            placeholder="Notunuzu buraya yazın..."
+            rows="4"
+          ></textarea>
+
+          <div class="note-actions">
+
+            <button
+              class="save-note-btn"
+              onclick="saveNote(${suraNum}, ${verseNum})"
+            >
+              💾 Kaydet
+            </button>
+
+            <button
+              class="cancel-note-btn"
+              onclick="cancelNote(${suraNum}, ${verseNum})"
+            >
+              ❌ İptal
+            </button>
+
           </div>
-        </div>`;
+        </div>
+
+      </div>
+      `;
     }
 
-    html += `</div>`;
+    html += `
+      </div>
+    `;
   }
 
-  html += `<div class="page-footer">`;
+  const visiblePageNumber = STATE.currentPage;
 
-  if (STATE.currentPage > 1) {
-    html += `<button class="header-btn" onclick="goToPage(${STATE.currentPage - 1})">⟵ Önceki Sayfa</button>`;
-  }
+  const previousPage =
+    STATE.currentPage <= FIRST_QURAN_DATA_PAGE
+      ? LAST_QURAN_DATA_PAGE
+      : STATE.currentPage - 1;
 
-  html += `<span class="page-info">Sayfa ${STATE.currentPage} / ${STATE.totalPages}</span>`;
+  const nextPage =
+    STATE.currentPage >= LAST_QURAN_DATA_PAGE
+      ? FIRST_QURAN_DATA_PAGE
+      : STATE.currentPage + 1;
 
-  if (STATE.currentPage < STATE.totalPages) {
-    html += `<button class="header-btn" onclick="goToPage(${STATE.currentPage + 1})">Sonraki Sayfa ⟶</button>`;
-  }
+  html += `
+    <div class="page-footer">
 
-  html += `</div>`;
+      <button
+        type="button"
+        class="header-btn"
+        onclick="goToPage(${previousPage})"
+      >
+        ⟵ Önceki Sayfa
+      </button>
+
+      <span class="page-info">
+        Sayfa ${visiblePageNumber} / ${TOTAL_QURAN_PAGES}
+      </span>
+
+      <button
+        type="button"
+        class="header-btn"
+        onclick="goToPage(${nextPage})"
+      >
+        Sonraki Sayfa ⟶
+      </button>
+
+    </div>
+  `;
 
   return html;
 }
@@ -1774,9 +2143,90 @@ function afterPageRender() {
 
 function displayPage(pageNum) {
   if (!STATE.data.en[pageNum] || !STATE.data.tr[pageNum]) {
-    DOM.content.innerHTML = '<p>Sayfa yükleniyor...</p>';
-    return;
-  }
+  console.error(
+    `Sayfa verisi bulunamadı. Veri anahtarı: ${pageNum}`
+  );
+
+  DOM.content.innerHTML = `
+    <div
+      class="error-message"
+      style="
+        text-align:center;
+        padding:40px 20px;
+        max-width:900px;
+        margin:0 auto;
+      "
+    >
+      <h2>
+        Sayfa verisi bulunamadı
+      </h2>
+
+      <p>
+        Bu sayfa mevcut veri dosyalarında yer almıyor.
+      </p>
+
+      <div
+        style="
+          margin:30px auto;
+          padding:24px;
+          border-radius:14px;
+          background:rgba(255,255,255,0.06);
+          max-width:700px;
+        "
+      >
+        <div
+          style="
+            font-size:18px;
+            font-weight:700;
+            margin-bottom:16px;
+          "
+        >
+          Alak Suresi 1. Ayet
+        </div>
+
+        <div
+          dir="rtl"
+          style="
+            font-family:'Scheherazade New', serif;
+            font-size:36px;
+            line-height:1.8;
+            margin-bottom:16px;
+          "
+        >
+          اقْرَأْ بِاسْمِ رَبِّكَ الَّذِي خَلَقَ
+        </div>
+
+        <div
+          style="
+            font-size:18px;
+            margin-bottom:10px;
+          "
+        >
+          İkra' bismi rabbikellezî halak.
+        </div>
+
+        <div
+          style="
+            font-size:17px;
+            font-weight:600;
+          "
+        >
+          Yaratan Rabbinin adıyla oku.
+        </div>
+      </div>
+
+      <button
+        type="button"
+        class="header-btn"
+        onclick="goToPage(${FIRST_QURAN_DATA_PAGE})"
+      >
+        Fatiha Suresine Dön
+      </button>
+    </div>
+  `;
+
+  return;
+}
 
   if (PAGE_CACHE.has(pageNum)) {
     DOM.content.innerHTML = PAGE_CACHE.get(pageNum);
@@ -1916,56 +2366,91 @@ function getDictionaryCandidates(rawWord) {
 
 
 function decorateVerseWords() {
-  document.querySelectorAll('.verse-text').forEach((el) => {
-    if (el.dataset.decorated === 'true') return;
+  /*
+    İngilizce sözlük yardımının çalışacağı alanlar:
+    - Ana İngilizce ayet metni
+    - İngilizce sure / bölüm başlıkları
+    - İngilizce dipnot metinleri
+  */
+  const englishTextSelectors = [
+    '.verse-text',
+    '.passage-title',
+    '.footnote-en .footnote-text'
+  ];
 
-    const button = el.querySelector('.inline-speak-btn');
+  document
+    .querySelectorAll(englishTextSelectors.join(', '))
+    .forEach((element) => {
+      if (element.dataset.decorated === 'true') {
+        return;
+      }
 
-    // Ses butonu hariç ayet metnini al
-    const text = Array.from(el.childNodes)
-      .filter(
-        (node) =>
-          !(
-            node.nodeType === 1 &&
-            node.classList.contains('inline-speak-btn')
-          )
-      )
-      .map((node) => node.textContent)
-      .join('')
-      .trim();
+      const preservedButtons = Array.from(
+        element.querySelectorAll(
+          ':scope > .inline-speak-btn'
+        )
+      );
 
-    const words = text.split(/\s+/);
+      const text = Array.from(element.childNodes)
+        .filter((node) => {
+          return !(
+            node.nodeType === Node.ELEMENT_NODE &&
+            node.classList?.contains(
+              'inline-speak-btn'
+            )
+          );
+        })
+        .map((node) => node.textContent || '')
+        .join('')
+        .replace(/\s+/g, ' ')
+        .trim();
 
-    el.innerHTML = words
-      .map((word) => {
-        const candidates = getDictionaryCandidates(word);
-        const cleanWord = candidates[0] || '';
+      if (!text) {
+        element.dataset.decorated = 'true';
+        return;
+      }
 
+      const words = text.split(/\s+/);
 
-        if (!cleanWord) {
-          return escapeHtml(word);
-        }
+      element.innerHTML = words
+        .map((word) => {
+          const candidates =
+            getDictionaryCandidates(word);
 
-        return `
-          <span
-            class="word-token"
-            data-word="${escapeHtml(cleanWord)}"
-            data-candidates="${escapeHtml(JSON.stringify(candidates))}"
-            data-original="${escapeHtml(normalizeDictionaryWord(word))}"
-            style="cursor:help;"
-          >${escapeHtml(word)}</span>
-        `;
-      })
-      .join(' ');
+          const cleanWord =
+            candidates[0] || '';
 
-    // Ses butonunu yeniden ekle
-    if (button) {
-      el.appendChild(document.createTextNode(' '));
-      el.appendChild(button);
-    }
+          if (!cleanWord) {
+            return escapeHtml(word);
+          }
 
-    el.dataset.decorated = 'true';
-  });
+          return `
+            <span
+              class="word-token"
+              data-word="${escapeHtml(cleanWord)}"
+              data-candidates="${escapeHtml(
+                JSON.stringify(candidates)
+              )}"
+              data-original="${escapeHtml(
+                normalizeDictionaryWord(word)
+              )}"
+              tabindex="0"
+              style="cursor:help;"
+            >${escapeHtml(word)}</span>
+          `;
+        })
+        .join(' ');
+
+      preservedButtons.forEach((button) => {
+        element.appendChild(
+          document.createTextNode(' ')
+        );
+
+        element.appendChild(button);
+      });
+
+      element.dataset.decorated = 'true';
+    });
 }
 
 function setupWordTooltipDelegation() {

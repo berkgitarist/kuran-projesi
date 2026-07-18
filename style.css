@@ -3570,3 +3570,163 @@ body.search-results-open {
         padding: 5px 6px;
     }
 }
+
+/* === Mealler butonu: Tüm temalarda Sure Başlığı rengi === */
+/* Mealler butonu = Sure başlığı ile aynı renk */
+button[id^="meal-btn-"],
+[id^="meal-btn-"].toggle-btn {
+    background: var(--transliteration-bg) !important;
+    color: var(--transliteration-text) !important;
+    border: 1px solid var(--verse-border) !important;
+}
+
+button[id^="meal-btn-"]:hover,
+[id^="meal-btn-"].toggle-btn:hover {
+    background: var(--transliteration-bg) !important;
+    color: var(--transliteration-text) !important;
+    filter: brightness(1.08);
+}
+.note-box {
+    padding: 4px 8px !important;
+    margin: 4px 0 !important;
+}
+
+.footnote-line {
+    margin: 2px 0 !important;
+    padding: 4px 8px !important;
+    line-height: 1.45 !important;
+}
+
+.footnote-line + .footnote-line {
+    margin-top: 2px !important;
+}
+
+.note-separator {
+    margin: 4px 0 !important;
+}
+
+
+/* =========================================================
+   DİPNOT ALANI - MEALLER GİBİ SIKI, SATIR TABANLI GÖRÜNÜM
+   Bu bölüm dosyanın sonunda bulunduğu için eski dipnot
+   kurallarını güvenli biçimde geçersiz kılar.
+========================================================= */
+
+.footnote-box {
+    display: block;
+    width: 100%;
+    padding: 0 !important;
+    margin: 4px 0 !important;
+    overflow: hidden;
+
+    background: var(--note-bg) !important;
+    color: var(--note-text) !important;
+
+    border: 1px solid var(--dipnot-border) !important;
+    border-left: 4px solid var(--dipnot-border) !important;
+    border-radius: var(--radius) !important;
+
+    box-shadow: none !important;
+}
+
+.footnote-box.hidden {
+    display: none !important;
+}
+
+/* Her dipnot, Mealler satırı gibi iki sütunlu tek satırdır. */
+.footnote-box .footnote-line {
+    display: grid !important;
+    grid-template-columns: 48px minmax(0, 1fr);
+    align-items: start;
+    gap: 10px;
+
+    width: 100%;
+    margin: 0 !important;
+    padding: 8px 12px !important;
+
+    background: var(--note-bg) !important;
+    color: var(--note-text) !important;
+
+    border: 0 !important;
+    border-bottom: 1px solid var(--border-color) !important;
+    border-radius: 0 !important;
+
+    line-height: 1.5 !important;
+}
+
+/* Son dipnot satırında alt çizgi olmasın. */
+.footnote-box .footnote-line:last-child {
+    border-bottom: 0 !important;
+}
+
+/* EN: / TR: etiketi metnin yanında, ayrı boşluk oluşturmadan görünür. */
+.footnote-box .footnote-name {
+    display: block !important;
+    margin: 0 !important;
+    padding: 0 !important;
+
+    color: var(--light-text) !important;
+
+    font-size: 0.9rem !important;
+    font-weight: 700 !important;
+    line-height: 1.5 !important;
+    letter-spacing: 0 !important;
+    white-space: nowrap;
+}
+
+/* Dipnot metnindeki eski kutu, iç padding ve yüksek satır aralığı kaldırılır. */
+.footnote-box .footnote-text {
+    display: block !important;
+    min-width: 0;
+
+    margin: 0 !important;
+    padding: 0 !important;
+
+    background: transparent !important;
+    color: var(--note-text) !important;
+
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+
+    font-size: 1rem;
+    line-height: 1.5 !important;
+
+    overflow-wrap: anywhere;
+    word-break: normal;
+}
+
+/* EN ve TR arasında fazladan boşluk oluşturan ayırıcı kaldırılır. */
+.footnote-box .note-separator {
+    display: none !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+}
+
+/* Eski tema kurallarının dipnot metnine yeniden kutu vermesini engeller. */
+body.blackyellow-theme .footnote-box .footnote-text,
+body.light-theme .footnote-box .footnote-text,
+body.sky-theme .footnote-box .footnote-text {
+    background: transparent !important;
+    border: 0 !important;
+}
+
+/* Küçük ekranlarda da Mealler gibi etiket ve metin alt alta geçer. */
+@media (max-width: 768px) {
+    .footnote-box .footnote-line {
+        grid-template-columns: 1fr;
+        gap: 2px;
+        padding: 8px 10px !important;
+    }
+
+    .footnote-box .footnote-name {
+        color: var(--link-color) !important;
+    }
+
+    .footnote-box .footnote-text {
+        font-size: 0.96rem;
+        line-height: 1.5 !important;
+    }
+}

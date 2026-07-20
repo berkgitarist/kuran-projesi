@@ -1,7 +1,35 @@
 /* =========================================================
-   GÜNCELLEME: İngilizce kelime yardım alanları genişletildi.
-   .verse-text + .passage-title + İngilizce dipnot metinleri
+   KURAN TEYİT — VERİ KAYNAĞI VE HAK BİLDİRİMİ
+
+   Bu uygulamadaki üçüncü taraf metin/veri dosyalarının kaynak kökeni:
+
+   1) QuranTFT / SubmitterTech
+      - https://github.com/SubmitterTech/quran-tft/tree/main/app/src/assets/translations/tr
+      - https://github.com/SubmitterTech/quran-tft/tree/main/app/src
+      - https://qurantft.com/
+      Kullanılan veri grupları: ana İngilizce/Türkçe çeviri verileri,
+      Arapça karşılaştırma verilerinin bir bölümü, konu haritaları ve ekler.
+
+   2) Açık Kuran
+      - https://github.com/acik-kuran
+      - https://acikkuran.com/
+      Kullanılan veri grupları: Erhan Aktaş Türkçe/Arapça çeviri verileri
+      ve kelime çevirisi/kök verileri.
+
+   3) Kuran Rehberi
+      - https://github.com/eyupipler/Kuran-Rehberi/tree/main/data/translations
+      Kullanılan veri grupları: uygulamadaki çeşitli karşılaştırmalı meal
+      dosyalarının kaynaklandığı veri koleksiyonu.
+
+   ÖNEMLİ:
+   Bu yorum yalnızca veri kökenini ve atfı belgeler. Bir içeriğin GitHub'da
+   herkese açık olması veya burada kaynak gösterilmesi, tek başına yeniden
+   dağıtım lisansı ya da yazılı kullanım izni oluşturmaz. Her çeviri/veri
+   dosyası için kaynak depodaki LICENSE/NOTICE/README koşulları ile çevirmen,
+   yayıncı ve veri sahibinin hakları ayrıca doğrulanmalıdır.
 ========================================================= */
+
+/* GÜNCELLEME: İngilizce kelime yardım alanları genişletildi. */
 const CONFIG = {
   batchSize: 3,
   initialLoad: 5,
@@ -21,7 +49,6 @@ const CONFIG = {
     "Tefhim-ul Kur'an.json",
     'Yaşar Nuri Öztürk.json',
     'Yusuf Ali (İngilizce).json',
-    '2baski_quran_tr.json',
     'kuran_erhan_aktas.json'
   ],
 
@@ -75,7 +102,7 @@ const STATE = {
 
   settings: {
     theme: 'dark',
-    fontSize: 'medium',
+    fontSize: 'small',
     translation: 'Diyanet İşleri',
     showTransliteration: true,
     showMeals: true,
@@ -87,7 +114,6 @@ const DOM = {
   quranContent: document.getElementById('quranContent'),
   content: document.getElementById('quranContent'),
   loadingOverlay: document.getElementById('loadingOverlay'),
-  currentPageDisplay: document.getElementById('currentPageDisplay'),
   searchInput: document.getElementById('searchInput'),
   autocomplete: document.getElementById('autocomplete'),
   suraMenu: document.getElementById('suraMenu'),
@@ -103,6 +129,12 @@ const SEARCH_INDEX = {
   meals: [],
   ready: false,
   mealsReady: false
+};
+
+const SURA_SEARCH_CACHE = {
+  exact: new Map(),
+  items: [],
+  queryResults: new Map()
 };
 
 const PAGE_CACHE = new Map();
@@ -133,13 +165,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const dataPromise = loadInitialData()
     .then(() => {
-      processMetadata();
-      buildSuraMenu();
-      setupEventListeners();
-      STATE.currentPage = FIRST_QURAN_DATA_PAGE;
-      dataLoaded = true;
-      console.log('Veri yükleme tamamlandı.');
-    })
+  processMetadata();
+  buildSuraSearchCache();
+  buildSuraMenu();
+  setupEventListeners();
+
+  STATE.currentPage =
+    FIRST_QURAN_DATA_PAGE;
+
+  dataLoaded = true;
+
+  console.log(
+    'Veri yükleme tamamlandı.'
+  );
+})
     .catch((err) => {
       console.error('Veri yükleme başarısız:', err);
       throw err;
@@ -220,15 +259,31 @@ function getGlobalAyahNumber(suraNum, verseNum) {
 function speakVerse(suraNum, verseNum) {
   stopSpeech();
 
-  const ayahNumber = getGlobalAyahNumber(suraNum, verseNum);
-  const audioUrl = `https://cdn.islamic.network/quran/audio/128/ar.alafasy/${ayahNumber}.mp3`;
+  const ayahNumber = getGlobalAyahNumber(
+    suraNum,
+    verseNum
+  );
+
+  const audioUrl =
+    `https://cdn.islamic.network/quran/audio/128/ar.alafasy/${ayahNumber}.mp3`;
 
   currentVerseAudio = new Audio(audioUrl);
-  currentVerseAudio.play().catch((err) => {
-    console.error('Ses oynatılamadı:', err);
-    showNotification('Ses oynatılamadı. İnternet bağlantısını veya tarayıcı iznini kontrol edin.', 'warning');
-  });
+
+  currentVerseAudio
+    .play()
+    .catch((error) => {
+      console.error(
+        'Arapça ses oynatılamadı:',
+        error
+      );
+
+      showNotification(
+        'Arapça ses oynatılamadı. İnternet bağlantısını kontrol edin.',
+        'warning'
+      );
+    });
 }
+
 
 function stopSpeech() {
   if (currentVerseAudio) {
@@ -237,35 +292,95 @@ function stopSpeech() {
     currentVerseAudio = null;
   }
 
+  const nativeTextToSpeech =
+    window.Capacitor?.Plugins?.TextToSpeech;
+
+  if (nativeTextToSpeech) {
+    nativeTextToSpeech
+      .stop()
+      .catch((error) => {
+        console.warn(
+          'Yerel ses durdurulamadı:',
+          error
+        );
+      });
+  }
+
   if ('speechSynthesis' in window) {
-    speechSynthesis.cancel();
+    window.speechSynthesis.cancel();
   }
 }
+
 
 function speakEnglishVerse(suraNum, verseNum) {
   stopSpeech();
 
-  const page = getVersePage(String(suraNum), String(verseNum));
+  const page = getVersePage(
+    String(suraNum),
+    String(verseNum)
+  );
+
   const text =
-    STATE.data.en?.[page]?.sura?.[String(suraNum)]?.verses?.[String(verseNum)] || '';
+    STATE.data.en?.[page]
+      ?.sura?.[String(suraNum)]
+      ?.verses?.[String(verseNum)] || '';
 
   if (!text) {
-    showNotification('Bu ayet için İngilizce metin bulunamadı.', 'warning');
+    showNotification(
+      'Bu ayet için İngilizce metin bulunamadı.',
+      'warning'
+    );
+
     return;
   }
 
-  if (!('speechSynthesis' in window)) {
-    showNotification('Tarayıcınız sesli okuma özelliğini desteklemiyor.', 'warning');
+  const nativeTextToSpeech =
+    window.Capacitor?.Plugins?.TextToSpeech;
+
+  if (nativeTextToSpeech) {
+    nativeTextToSpeech
+      .speak({
+        text: text,
+        lang: 'en-US',
+        rate: 0.9,
+        pitch: 1.0,
+        volume: 1.0
+      })
+      .catch((error) => {
+        console.error(
+          'Yerel İngilizce sesli okuma hatası:',
+          error
+        );
+
+        showNotification(
+          'İngilizce sesli okuma başlatılamadı. Telefonun metin okuma ayarlarını kontrol edin.',
+          'warning'
+        );
+      });
+
     return;
   }
 
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = 'en-US';
-  utterance.rate = 0.9;
-  utterance.pitch = 1;
-  utterance.volume = 1;
+  if ('speechSynthesis' in window) {
+    const utterance =
+      new SpeechSynthesisUtterance(text);
 
-  speechSynthesis.speak(utterance);
+    utterance.lang = 'en-US';
+    utterance.rate = 0.9;
+    utterance.pitch = 1;
+    utterance.volume = 1;
+
+    window.speechSynthesis.speak(
+      utterance
+    );
+
+    return;
+  }
+
+  showNotification(
+    'Bu cihazda İngilizce sesli okuma kullanılamıyor.',
+    'warning'
+  );
 }
 
 function escapeRegExp(string) {
@@ -515,6 +630,21 @@ function setupEventListeners() {
     .getElementById('guidePage')
     ?.addEventListener('click', () => {
       displayGuidePage();
+      closeSidebar();
+    });
+
+
+  document
+    .getElementById('privacyPage')
+    ?.addEventListener('click', () => {
+      displayPrivacyPage();
+      closeSidebar();
+    });
+
+  document
+    .getElementById('licensesPage')
+    ?.addEventListener('click', () => {
+      displayLicensesPage();
       closeSidebar();
     });
 
@@ -906,10 +1036,7 @@ async function loadMeals() {
               }
 
               const json = await response.json();
-              const mealName =
-                file === '2baski_quran_tr.json'
-                  ? 'İD-Soner Tahsinoğlu 2.Baskı'
-                  : file.replace('.json', '');
+              const mealName = file.replace('.json', '');
 
               STATE.data.meals[mealName] = json;
               MEALS_STATE.loadedCount++;
@@ -989,6 +1116,64 @@ function loadPagesAround(pageNum) {
   displayPage(pageNum);
 }
 
+function showFirstRevealedVersePage() {
+  DOM.content.innerHTML = `
+    <div class="first-revelation-page">
+      <div class="first-revelation-card">
+
+        <img
+          src="assets/images/logo-main.png"
+          alt="Kuran Teyit logosu"
+          class="first-revelation-logo"
+          width="1024"
+          height="1024"
+        >
+
+        <div class="first-revelation-site">
+          KURAN TEYİT
+        </div>
+
+        <h2 class="first-revelation-title">
+          İlk İnen Ayet
+        </h2>
+
+        <button
+          type="button"
+          class="first-revelation-back-btn"
+          onclick="goToPage(${FIRST_QURAN_DATA_PAGE})"
+        >
+          Fatiha Suresine Dön
+        </button>
+
+        <div
+          class="first-revelation-arabic"
+          dir="rtl"
+        >
+          اقْرَأْ بِاسْمِ رَبِّكَ الَّذِي خَلَقَ
+        </div>
+
+        <div class="first-revelation-reading">
+          İkra' bismi rabbikellezî halak.
+        </div>
+
+        <div class="first-revelation-translation">
+          Oku, yaratan Rabbinin adıyla.
+        </div>
+
+        <div class="first-revelation-reference">
+          Alak Suresi • 1. Ayet
+        </div>
+
+      </div>
+    </div>
+  `;
+
+  window.scrollTo({
+    top: 0,
+    behavior: 'auto'
+  });
+}
+
 function goToPage(pageNum) {
   ensureQuranView();
 
@@ -1007,99 +1192,16 @@ function goToPage(pageNum) {
     pageNum = LAST_QURAN_DATA_PAGE;
   }
 
+  STATE.currentPage = pageNum;
+
   if (!STATE.data.en[pageNum] || !STATE.data.tr[pageNum]) {
     console.error(
       `Sayfa verisi bulunamadı. Veri anahtarı: ${pageNum}`
     );
 
-    DOM.content.innerHTML = `
-      <div style="text-align:center;padding:60px 20px;">
-
-          <h2 style="color:white;margin-bottom:20px;">
-              www.KuranTeyit.com
-          </h2>
-
-          <button onclick="location.href='index.html?sure=1'"
-              style="
-                  padding:10px 22px;
-                  border:none;
-                  border-radius:8px;
-                  cursor:pointer;
-                  font-size:16px;
-                  margin-bottom:40px;
-              ">
-              Fatiha Suresine Dön
-          </button>
-
-          <hr style="
-              width:80%;
-              border:0;
-              border-top:1px solid rgba(255,255,255,.15);
-              margin:40px auto;
-          ">
-
-          <div style="
-              max-width:850px;
-              margin:auto;
-              background:#1b2336;
-              border:1px solid rgba(255,255,255,.08);
-              border-radius:18px;
-              padding:35px;
-          ">
-
-              <div style="
-                  font-size:28px;
-                  font-weight:700;
-                  color:#fff;
-                  margin-bottom:25px;
-              ">
-                  İlk İnen Ayet
-              </div>
-
-              <div style="
-                  direction:rtl;
-                  font-size:44px;
-                  line-height:2;
-                  color:#fff;
-                  font-family:'Amiri','Scheherazade New',serif;
-                  margin-bottom:25px;
-              ">
-                  اقْرَأْ بِاسْمِ رَبِّكَ الَّذِي خَلَقَ
-              </div>
-
-              <div style="
-                  color:#d8d8d8;
-                  font-size:20px;
-                  margin-bottom:18px;
-              ">
-                  İkra' bismi rabbikellezî halak.
-              </div>
-
-              <div style="
-                  color:#fff;
-                  font-size:22px;
-                  font-weight:600;
-              ">
-                  Oku, yaratan Rabbinin adıyla.
-              </div>
-
-              <div style="
-                  margin-top:22px;
-                  color:#9aa4b8;
-                  font-size:16px;
-              ">
-                  Alak Suresi • 1. Ayet
-              </div>
-
-          </div>
-
-      </div>
-    `;
-
+    showFirstRevealedVersePage();
     return;
   }
-
-  STATE.currentPage = pageNum;
 
   if (STATE.loadedPages.has(pageNum)) {
     displayPage(pageNum);
@@ -1707,7 +1809,7 @@ function buildPageHtml(pageNum) {
 
   let html = `
     <div class="page-header">
-      <h1>📖 ${escapeHtml(pageTitle)}</h1>
+      <h1>${escapeHtml(pageTitle)}</h1>
     </div>
   `;
 
@@ -1774,7 +1876,7 @@ function buildPageHtml(pageNum) {
               ontoggle="if(this.open) toggleArabicWords(${suraNum}, ${verseNum})"
             >
               <summary>
-                📖 Arapça
+                Arapça
               </summary>
 
               <div class="arabic-dropdown-content">
@@ -1829,49 +1931,68 @@ function buildPageHtml(pageNum) {
         const transliterationText =
           STATE.data.translit?.[String(suraNum)]?.verses?.[String(verseNum)] || '';
 
+        let audioControlsHtml = '';
+
+        if (transliterationText) {
+          audioControlsHtml = `
+            <span class="audio-control-group">
+              <button
+                type="button"
+                class="audio-control-btn audio-play-btn"
+                onclick="speakVerse(${suraNum}, ${verseNum})"
+                title="Sesi oynat"
+                aria-label="Sesi oynat"
+              >
+                <span
+                  class="audio-play-icon"
+                  aria-hidden="true"
+                ></span>
+              </button>
+
+              <button
+                type="button"
+                class="audio-control-btn audio-stop-btn"
+                onclick="stopSpeech()"
+                title="Sesi durdur"
+                aria-label="Sesi durdur"
+              >
+                <span
+                  class="audio-stop-icon"
+                  aria-hidden="true"
+                ></span>
+              </button>
+            </span>
+          `;
+        }
+
         html += `
           <div class="verse-transliteration">
+            ${audioControlsHtml}
 
-            <span>
+            <span class="transliteration-text">
               ${escapeHtml(transliterationText)}
             </span>
-
-            ${
-              transliterationText
-                ? `
-                  <button
-                    class="speak-btn"
-                    onclick="speakVerse(${suraNum}, ${verseNum})"
-                    title="Okunuşu seslendir"
-                  >
-                    🔊
-                  </button>
-
-                  <button
-                    class="speak-btn stop-speak-btn"
-                    onclick="stopSpeech()"
-                    title="Sesi durdur"
-                  >
-                    ⏹
-                  </button>
-                `
-                : ''
-            }
-
           </div>
         `;
       }
 
       html += `
-        <div class="verse-text">
-          ${escapeHtml(enSura.verses[verseNum])}
+        <div class="verse-text verse-text-with-audio">
+          <span class="verse-text-content">
+            ${escapeHtml(enSura.verses[verseNum])}
+          </span>
 
           <button
-            class="inline-speak-btn"
+            type="button"
+            class="inline-speak-btn audio-control-btn audio-play-btn"
             onclick="speakEnglishVerse(${suraNum}, ${verseNum})"
             title="İngilizce oku"
+            aria-label="İngilizce oku"
           >
-            🔈
+            <span
+              class="audio-play-icon"
+              aria-hidden="true"
+            ></span>
           </button>
         </div>
 
@@ -1891,7 +2012,7 @@ function buildPageHtml(pageNum) {
             data-target="note-${suraNum}-${verseNum}"
             onclick="toggleNote('note-${suraNum}-${verseNum}')"
           >
-            📌 Dipnot
+            Dipnot
           </button>
         `;
       }
@@ -1903,7 +2024,7 @@ function buildPageHtml(pageNum) {
             id="meal-btn-${suraNum}-${verseNum}"
             onclick="toggleMeal('meal-${suraNum}-${verseNum}', ${suraNum}, ${verseNum})"
           >
-            📚 Mealler
+            Mealler
           </button>
         `;
       }
@@ -1913,7 +2034,7 @@ function buildPageHtml(pageNum) {
           class="toggle-btn analysis-btn"
           onclick="openAnalysisPanel(${suraNum}, ${verseNum})"
         >
-          🔎 Analiz
+          Analiz
         </button>
       `;
 
@@ -1932,7 +2053,7 @@ function buildPageHtml(pageNum) {
             ${verseNum}
           )"
         >
-          ${hasUserNote ? '📝 Notlu' : '✍️ Not Al'}
+          ${hasUserNote ? 'Notlu' : 'Not Al'}
         </button>
       `;
 
@@ -2081,45 +2202,37 @@ function buildPageHtml(pageNum) {
     `;
   }
 
-  const visiblePageNumber = STATE.currentPage;
+const previousPage =
+STATE.currentPage <= FIRST_QURAN_DATA_PAGE
+? LAST_QURAN_DATA_PAGE
+: STATE.currentPage - 1;
 
-  const previousPage =
-    STATE.currentPage <= FIRST_QURAN_DATA_PAGE
-      ? LAST_QURAN_DATA_PAGE
-      : STATE.currentPage - 1;
+const nextPage =
+STATE.currentPage >= LAST_QURAN_DATA_PAGE
+? FIRST_QURAN_DATA_PAGE
+: STATE.currentPage + 1;
 
-  const nextPage =
-    STATE.currentPage >= LAST_QURAN_DATA_PAGE
-      ? FIRST_QURAN_DATA_PAGE
-      : STATE.currentPage + 1;
+html += `
+<div class="page-footer">
+<button
+type="button"
+class="header-btn page-footer-btn"
+onclick="goToPage(${previousPage})"
+>
+← Önceki Sayfa
+</button>
 
-  html += `
-    <div class="page-footer">
+<button
+type="button"
+class="header-btn page-footer-btn"
+onclick="goToPage(${nextPage})"
+>
+Sonraki Sayfa →
+</button>
+</div>
+`;
 
-      <button
-        type="button"
-        class="header-btn"
-        onclick="goToPage(${previousPage})"
-      >
-        ⟵ Önceki Sayfa
-      </button>
-
-      <span class="page-info">
-        Sayfa ${visiblePageNumber} / ${TOTAL_QURAN_PAGES}
-      </span>
-
-      <button
-        type="button"
-        class="header-btn"
-        onclick="goToPage(${nextPage})"
-      >
-        Sonraki Sayfa ⟶
-      </button>
-
-    </div>
-  `;
-
-  return html;
+return html;
 }
 
 function afterPageRender() {
@@ -2135,98 +2248,28 @@ function afterPageRender() {
   if (pendingHighlight) {
     const ph = pendingHighlight;
     pendingHighlight = null;
+
     requestAnimationFrame(() => {
-      _applyHighlightAndScroll(ph.suraNum, ph.verseNum, ph.query, ph.openMeal, ph.mealName);
+      _applyHighlightAndScroll(
+        ph.suraNum,
+        ph.verseNum,
+        ph.query,
+        ph.openMeal,
+        ph.mealName
+      );
     });
   }
 }
 
 function displayPage(pageNum) {
   if (!STATE.data.en[pageNum] || !STATE.data.tr[pageNum]) {
-  console.error(
-    `Sayfa verisi bulunamadı. Veri anahtarı: ${pageNum}`
-  );
+    console.error(
+      `Sayfa verisi bulunamadı. Veri anahtarı: ${pageNum}`
+    );
 
-  DOM.content.innerHTML = `
-    <div
-      class="error-message"
-      style="
-        text-align:center;
-        padding:40px 20px;
-        max-width:900px;
-        margin:0 auto;
-      "
-    >
-      <h2>
-        Sayfa verisi bulunamadı
-      </h2>
-
-      <p>
-        Bu sayfa mevcut veri dosyalarında yer almıyor.
-      </p>
-
-      <div
-        style="
-          margin:30px auto;
-          padding:24px;
-          border-radius:14px;
-          background:rgba(255,255,255,0.06);
-          max-width:700px;
-        "
-      >
-        <div
-          style="
-            font-size:18px;
-            font-weight:700;
-            margin-bottom:16px;
-          "
-        >
-          Alak Suresi 1. Ayet
-        </div>
-
-        <div
-          dir="rtl"
-          style="
-            font-family:'Scheherazade New', serif;
-            font-size:36px;
-            line-height:1.8;
-            margin-bottom:16px;
-          "
-        >
-          اقْرَأْ بِاسْمِ رَبِّكَ الَّذِي خَلَقَ
-        </div>
-
-        <div
-          style="
-            font-size:18px;
-            margin-bottom:10px;
-          "
-        >
-          İkra' bismi rabbikellezî halak.
-        </div>
-
-        <div
-          style="
-            font-size:17px;
-            font-weight:600;
-          "
-        >
-          Yaratan Rabbinin adıyla oku.
-        </div>
-      </div>
-
-      <button
-        type="button"
-        class="header-btn"
-        onclick="goToPage(${FIRST_QURAN_DATA_PAGE})"
-      >
-        Fatiha Suresine Dön
-      </button>
-    </div>
-  `;
-
-  return;
-}
+    showFirstRevealedVersePage();
+    return;
+  }
 
   if (PAGE_CACHE.has(pageNum)) {
     DOM.content.innerHTML = PAGE_CACHE.get(pageNum);
@@ -2239,6 +2282,7 @@ function displayPage(pageNum) {
   setPageCache(pageNum, html);
   afterPageRender();
 }
+
 
 /* =========================
    Tooltip - delegation
@@ -3202,48 +3246,51 @@ function displayLoadedNote(sura, verse, content) {
 ========================= */
 
 function updateLocalNoteUI(sura, verse) {
-    const note = getLocalNote(
-        sura,
-        verse
+  const note =
+    getLocalNote(
+      sura,
+      verse
     );
 
-    const noteButton = document.getElementById(
-        `noteBtn-${sura}-${verse}`
+  const noteButton =
+    document.getElementById(
+      `noteBtn-${sura}-${verse}`
     );
 
-    const noteBox = document.getElementById(
-        `user-note-${sura}-${verse}`
+  const noteBox =
+    document.getElementById(
+      `user-note-${sura}-${verse}`
     );
 
-    if (note?.content) {
-        if (noteButton) {
-            noteButton.classList.add(
-                'has-note'
-            );
-
-            noteButton.textContent =
-                '📝 Notlu';
-        }
-
-        return;
-    }
-
+  if (note?.content) {
     if (noteButton) {
-        noteButton.classList.remove(
-            'has-note'
-        );
+      noteButton.classList.add(
+        'has-note'
+      );
 
-        noteButton.textContent =
-            '✍️ Not Al';
+      noteButton.textContent =
+        'Notlu';
     }
 
-    if (noteBox) {
-        noteBox.innerHTML = '';
+    return;
+  }
 
-        noteBox.classList.add(
-            'hidden'
-        );
-    }
+  if (noteButton) {
+    noteButton.classList.remove(
+      'has-note'
+    );
+
+    noteButton.textContent =
+      'Not Al';
+  }
+
+  if (noteBox) {
+    noteBox.innerHTML = '';
+
+    noteBox.classList.add(
+      'hidden'
+    );
+  }
 }
 
 /* =========================
@@ -4255,33 +4302,63 @@ function getOtherTranslations(
   `;
 }
 
-async function toggleMeal(id, suraNum, verseNum, query = '', focusedMealName = '') {
-  const element = document.getElementById(id);
-  if (!element) return;
+async function toggleMeal(
+  id,
+  suraNum,
+  verseNum,
+  query = '',
+  focusedMealName = ''
+) {
+  const element =
+    document.getElementById(id);
+
+  if (!element) {
+    return;
+  }
 
   if (!areMealsReady()) {
-    const btn = document.getElementById(`meal-btn-${suraNum}-${verseNum}`);
+    const btn =
+      document.getElementById(
+        `meal-btn-${suraNum}-${verseNum}`
+      );
+
     if (btn) {
-      btn.textContent = '⏳ Yükleniyor...';
+      btn.textContent = 'Yükleniyor...';
       btn.disabled = true;
     }
 
     await loadMeals();
 
     if (btn) {
-      btn.textContent = '📚 Mealler';
+      btn.textContent = 'Mealler';
       btn.disabled = false;
     }
   }
 
-  if (!element.innerHTML.trim() || query || focusedMealName) {
-    element.innerHTML = getOtherTranslations(suraNum, verseNum, query, focusedMealName);
+  if (
+    !element.innerHTML.trim() ||
+    query ||
+    focusedMealName
+  ) {
+    element.innerHTML =
+      getOtherTranslations(
+        suraNum,
+        verseNum,
+        query,
+        focusedMealName
+      );
   }
 
   element.classList.toggle('hidden');
 
-  if (!element.classList.contains('hidden') && query) {
-    highlightMealMatch(element, query);
+  if (
+    !element.classList.contains('hidden') &&
+    query
+  ) {
+    highlightMealMatch(
+      element,
+      query
+    );
   }
 }
 
@@ -4317,15 +4394,26 @@ async function ensureMealOpen(suraNum, verseNum, query = '', focusedMealName = '
 ========================= */
 function toggleNote(id) {
   const element = document.getElementById(id);
-  if (!element) return;
 
-  element.classList.toggle('hidden');
+  if (!element) {
+    return;
+  }
 
-  const btn = document.querySelector(`[data-target="${id}"]`);
+  const isHidden =
+    element.classList.toggle('hidden');
+
+  const btn =
+    document.querySelector(
+      `[data-target="${id}"]`
+    );
+
   if (btn) {
-    btn.textContent = element.classList.contains('hidden')
-      ? '📌 Dipnot'
-      : '📌 Dipnotu Kapat';
+    btn.textContent = 'Dipnot';
+
+    btn.setAttribute(
+      'aria-expanded',
+      String(!isHidden)
+    );
   }
 }
 
@@ -4350,14 +4438,20 @@ function parseVerseReference(value) {
   const suraNum = Number(match[1]);
   const verseNum = Number(match[2]);
 
-  if (
-    !Number.isInteger(suraNum) ||
-    !Number.isInteger(verseNum) ||
-    suraNum < 1 ||
-    suraNum > 114 ||
-    verseNum < 1
-  ) {
-    return null;
+  const numbersAreValid =
+    Number.isInteger(suraNum) &&
+    Number.isInteger(verseNum) &&
+    suraNum >= 1 &&
+    suraNum <= 114 &&
+    verseNum >= 1;
+
+  if (!numbersAreValid) {
+    return {
+      suraNum: String(suraNum),
+      verseNum: String(verseNum),
+      page: null,
+      exists: false
+    };
   }
 
   const page = getVersePage(
@@ -4370,61 +4464,203 @@ function parseVerseReference(value) {
       String(verseNum)
     ] !== undefined;
 
-  if (!exists) {
-    return {
-      suraNum: String(suraNum),
-      verseNum: String(verseNum),
-      page,
-      exists: false
-    };
-  }
-
   return {
     suraNum: String(suraNum),
     verseNum: String(verseNum),
     page,
-    exists: true
+    exists
   };
+}
+
+
+function normalizeSuraLookup(value) {
+  return normalizeTurkishText(
+    String(value || '')
+  )
+    .replace(/\b(suresi|sure)\b/g, ' ')
+    .replace(/[^\p{L}\p{N}]+/gu, '')
+    .trim();
+}
+
+function getSuraNameVariants(fullName) {
+  const source = String(fullName || '');
+  const variants = new Set();
+
+  variants.add(
+    normalizeSuraLookup(source)
+  );
+
+  variants.add(
+    normalizeSuraLookup(
+      source.replace(/\([^)]*\)/g, ' ')
+    )
+  );
+
+  const parentheticalMatches =
+    source.matchAll(/\(([^)]*)\)/g);
+
+  for (const match of parentheticalMatches) {
+    variants.add(
+      normalizeSuraLookup(match[1])
+    );
+  }
+
+  return [...variants].filter(Boolean);
+}
+
+function buildSuraSearchCache() {
+  SURA_SEARCH_CACHE.exact.clear();
+  SURA_SEARCH_CACHE.items = [];
+  SURA_SEARCH_CACHE.queryResults.clear();
+
+  for (const suraNum in STATE.metadata.sureNames) {
+    const suraName =
+      STATE.metadata.sureNames[suraNum];
+
+    const item = {
+      type: 'sura',
+      suraNum: String(suraNum),
+      suraName,
+      page:
+        STATE.metadata.sureToPageMap[suraNum],
+      variants:
+        getSuraNameVariants(suraName)
+    };
+
+    SURA_SEARCH_CACHE.items.push(item);
+
+    item.variants.forEach((variant) => {
+      if (
+        variant &&
+        !SURA_SEARCH_CACHE.exact.has(variant)
+      ) {
+        SURA_SEARCH_CACHE.exact.set(
+          variant,
+          item
+        );
+      }
+    });
+  }
+
+  SURA_SEARCH_CACHE.items.sort(
+    (a, b) =>
+      Number(a.suraNum) -
+      Number(b.suraNum)
+  );
 }
 
 function findExactSura(query) {
   const normalizedQuery =
-    normalizeTurkishText(query).trim();
+    normalizeSuraLookup(query);
 
   if (!normalizedQuery) {
     return null;
   }
 
-  for (const suraNum in STATE.metadata.sureNames) {
-    const fullName =
-      STATE.metadata.sureNames[suraNum];
+  return (
+    SURA_SEARCH_CACHE.exact.get(
+      normalizedQuery
+    ) || null
+  );
+}
 
-    const normalizedFullName =
-      normalizeTurkishText(fullName).trim();
 
-    const shortName =
-      fullName
-        .replace(/\([^)]*\)/g, '')
-        .trim();
+function getFastSuraSuggestions(
+  query,
+  limit = 5
+) {
+  const normalizedQuery =
+    normalizeSuraLookup(query);
 
-    const normalizedShortName =
-      normalizeTurkishText(shortName).trim();
-
-    if (
-      normalizedQuery === normalizedFullName ||
-      normalizedQuery === normalizedShortName
-    ) {
-      return {
-        type: 'sura',
-        suraNum,
-        suraName: fullName,
-        page:
-          STATE.metadata.sureToPageMap[suraNum]
-      };
-    }
+  if (!normalizedQuery) {
+    return [];
   }
 
-  return null;
+  const cacheKey =
+    `${normalizedQuery}:${limit}`;
+
+  if (
+    SURA_SEARCH_CACHE.queryResults.has(
+      cacheKey
+    )
+  ) {
+    return SURA_SEARCH_CACHE
+      .queryResults
+      .get(cacheKey);
+  }
+
+  const suggestions = [];
+
+  for (
+    const item of
+    SURA_SEARCH_CACHE.items
+  ) {
+    let priority = 99;
+
+    for (const variant of item.variants) {
+      if (variant === normalizedQuery) {
+        priority = 0;
+        break;
+      }
+
+      if (
+        variant.startsWith(
+          normalizedQuery
+        )
+      ) {
+        priority =
+          Math.min(priority, 1);
+
+        continue;
+      }
+
+      if (
+        variant.includes(
+          normalizedQuery
+        )
+      ) {
+        priority =
+          Math.min(priority, 2);
+      }
+    }
+
+    if (priority === 99) {
+      continue;
+    }
+
+    suggestions.push({
+      type: 'sura',
+      suraNum: item.suraNum,
+      suraName: item.suraName,
+      page: item.page,
+      priority
+    });
+  }
+
+  const results = suggestions
+    .sort((a, b) => {
+      if (a.priority !== b.priority) {
+        return (
+          a.priority -
+          b.priority
+        );
+      }
+
+      return (
+        Number(a.suraNum) -
+        Number(b.suraNum)
+      );
+    })
+    .slice(0, limit);
+
+  SURA_SEARCH_CACHE
+    .queryResults
+    .set(
+      cacheKey,
+      results
+    );
+
+  return results;
 }
 
 function getSearchWordSuggestions(
@@ -4607,12 +4843,10 @@ function groupDetailedSearchResults(results) {
 function createSearchPanelShell(query) {
   closeSearchResultsPanel();
 
-  const panel =
-    document.createElement('section');
+  const panel = document.createElement('section');
 
   panel.id = 'searchResultsPanel';
-  panel.className =
-    'search-results-panel';
+  panel.className = 'search-results-panel';
 
   panel.setAttribute(
     'aria-label',
@@ -4652,15 +4886,14 @@ function createSearchPanelShell(query) {
   `;
 
   panel
-    .querySelector(
-      '.search-results-close'
-    )
+    .querySelector('.search-results-close')
     ?.addEventListener(
       'click',
       closeSearchResultsPanel
     );
 
   document.body.appendChild(panel);
+
   document.body.classList.add(
     'search-results-open'
   );
@@ -4668,25 +4901,20 @@ function createSearchPanelShell(query) {
   return panel;
 }
 
-async function openSearchResultsPanel(
-  query
-) {
-  const cleanQuery =
-    String(query || '').trim();
+async function openSearchResultsPanel(query) {
+  const cleanQuery = String(query || '').trim();
 
   if (!cleanQuery) {
     return;
   }
 
-  const panel =
-    createSearchPanelShell(
-      cleanQuery
-    );
+  const panel = createSearchPanelShell(
+    cleanQuery
+  );
 
-  const body =
-    panel.querySelector(
-      '#searchResultsPanelBody'
-    );
+  const body = panel.querySelector(
+    '#searchResultsPanelBody'
+  );
 
   if (!body) {
     return;
@@ -4706,20 +4934,25 @@ async function openSearchResultsPanel(
   /*
     Önce temel Kuran sonuçlarını hazırlar.
   */
-  let results =
-    searchKeywordInData(
-      cleanQuery,
-      200
-    );
+  let results = searchKeywordInData(
+    cleanQuery,
+    200
+  );
 
   /*
-    Mealler henüz yüklenmediyse panel açıkken yükler.
+    Mealler henüz yüklenmediyse
+    panel açıkken yükler.
   */
   if (!areMealsReady()) {
     body.innerHTML = `
       <div class="search-panel-loading">
-        Kuran sonuçları bulundu.
-        Mealler de aranıyor...
+        <strong>
+          Kuran sonuçları bulundu, mealler aranıyor.
+        </strong>
+
+        <div class="search-panel-wait-message">
+          Lütfen bekleyin, detaylı arama yapılıyor...
+        </div>
       </div>
     `;
 
@@ -4729,17 +4962,14 @@ async function openSearchResultsPanel(
       Meal dizini hazırlandıktan sonra
       aynı aramayı tekrar yap.
     */
-    results =
-      searchKeywordInData(
-        cleanQuery,
-        1000
-      );
+    results = searchKeywordInData(
+      cleanQuery,
+      1000
+    );
   }
 
   const groupedResults =
-    groupDetailedSearchResults(
-      results
-    );
+    groupDetailedSearchResults(results);
 
   const wordSuggestions =
     getSearchWordSuggestions(
@@ -4795,147 +5025,145 @@ async function openSearchResultsPanel(
     `;
   }
 
-const resultCards = groupedResults
-  .map((group) => {
-    const suraName =
-      STATE.metadata.sureNames[group.suraNum] ||
-      `Sure ${group.suraNum}`;
+  const resultCards = groupedResults
+    .map((group) => {
+      const suraName =
+        STATE.metadata.sureNames[group.suraNum] ||
+        `Sure ${group.suraNum}`;
 
-    const sources = [
-      ...group.sources
-    ];
+      const sources = [...group.sources];
 
-    if (group.meals.size > 0) {
-      sources.push(
-        `${group.meals.size} meal`
-      );
-    }
+      if (group.meals.size > 0) {
+        sources.push(
+          `${group.meals.size} meal`
+        );
+      }
 
-    const sourceText =
-      sources.length > 0
-        ? sources.join(', ')
-        : 'Ayet';
+      const sourceText =
+        sources.length > 0
+          ? sources.join(', ')
+          : 'Ayet';
 
-    const scoreClass =
-      group.score === 100
-        ? 'search-result-exact'
-        : '';
+      const scoreClass =
+        group.score === 100
+          ? 'search-result-exact'
+          : '';
 
-    return `
-      <article class="search-result-card">
-        <div class="search-result-card-header">
-          <div>
-            <strong class="search-result-reference">
-              ${escapeHtml(group.key)}
-            </strong>
+      return `
+        <article class="search-result-card">
+          <div class="search-result-card-header">
+            <div>
+              <strong class="search-result-reference">
+                ${escapeHtml(group.key)}
+              </strong>
 
-            <span class="search-result-sura-name">
-              ${escapeHtml(suraName)}
+              <span class="search-result-sura-name">
+                ${escapeHtml(suraName)}
+              </span>
+            </div>
+
+            <span
+              class="search-result-fuzzy ${scoreClass}"
+            >
+              %${group.score} eşleşme
             </span>
           </div>
 
-          <span
-            class="search-result-fuzzy ${scoreClass}"
-          >
-            %${group.score} eşleşme
-          </span>
-        </div>
+          <div class="search-result-source">
+            Eşleşen alan:
+            ${escapeHtml(sourceText)}
+          </div>
 
-        <div class="search-result-source">
-          Eşleşen alan:
-          ${escapeHtml(sourceText)}
-        </div>
+          ${
+            group.verseData.turkish
+              ? `
+                <div class="search-result-language">
+                  <strong>TR:</strong>
 
-        ${
-          group.verseData.turkish
-            ? `
-              <div class="search-result-language">
-                <strong>TR:</strong>
+                  <span>
+                    ${highlightSearchResultText(
+                      group.verseData.turkish,
+                      cleanQuery
+                    )}
+                  </span>
+                </div>
+              `
+              : ''
+          }
 
-                <span>
-                  ${highlightSearchResultText(
-                    group.verseData.turkish,
-                    cleanQuery
-                  )}
-                </span>
-              </div>
-            `
-            : ''
-        }
+          ${
+            group.verseData.english
+              ? `
+                <div class="search-result-language">
+                  <strong>EN:</strong>
 
-        ${
-          group.verseData.english
-            ? `
-              <div class="search-result-language">
-                <strong>EN:</strong>
+                  <span>
+                    ${highlightSearchResultText(
+                      group.verseData.english,
+                      cleanQuery
+                    )}
+                  </span>
+                </div>
+              `
+              : ''
+          }
 
-                <span>
-                  ${highlightSearchResultText(
-                    group.verseData.english,
-                    cleanQuery
-                  )}
-                </span>
-              </div>
-            `
-            : ''
-        }
+          <div class="search-result-actions">
+            <button
+              type="button"
+              class="search-result-action"
+              data-action="verse"
+              data-sura="${escapeHtml(
+                group.suraNum
+              )}"
+              data-verse="${escapeHtml(
+                group.verseNum
+              )}"
+              data-page="${escapeHtml(
+                group.page
+              )}"
+            >
+              📖 Ayete Git
+            </button>
 
-        <div class="search-result-actions">
-          <button
-            type="button"
-            class="search-result-action"
-            data-action="verse"
-            data-sura="${escapeHtml(
-              group.suraNum
-            )}"
-            data-verse="${escapeHtml(
-              group.verseNum
-            )}"
-            data-page="${escapeHtml(
-              group.page
-            )}"
-          >
-            📖 Ayete Git
-          </button>
+            <button
+              type="button"
+              class="search-result-action"
+              data-action="meal"
+              data-sura="${escapeHtml(
+                group.suraNum
+              )}"
+              data-verse="${escapeHtml(
+                group.verseNum
+              )}"
+              data-page="${escapeHtml(
+                group.page
+              )}"
+            >
+              📚 Mealler
+            </button>
 
-          <button
-            type="button"
-            class="search-result-action"
-            data-action="meal"
-            data-sura="${escapeHtml(
-              group.suraNum
-            )}"
-            data-verse="${escapeHtml(
-              group.verseNum
-            )}"
-            data-page="${escapeHtml(
-              group.page
-            )}"
-          >
-            📚 Mealler
-          </button>
-
-          <button
-            type="button"
-            class="search-result-action"
-            data-action="analysis"
-            data-sura="${escapeHtml(
-              group.suraNum
-            )}"
-            data-verse="${escapeHtml(
-              group.verseNum
-            )}"
-            data-page="${escapeHtml(
-              group.page
-            )}"
-          >
-            🔎 Analiz
-          </button>
-        </div>
-      </article>
-    `;
-  })
-      .join('');
+            <button
+              type="button"
+              class="search-result-action"
+              data-action="analysis"
+              data-sura="${escapeHtml(
+                group.suraNum
+              )}"
+              data-verse="${escapeHtml(
+                group.verseNum
+              )}"
+              data-page="${escapeHtml(
+                group.page
+              )}"
+            >
+              🔎 Analiz
+            </button>
+          </div>
+        </article>
+      `;
+    })
+    .join('');
 
   body.innerHTML = `
     ${suggestionHtml}
@@ -4976,10 +5204,9 @@ const resultCards = groupedResults
   body.addEventListener(
     'click',
     (event) => {
-      const button =
-        event.target.closest(
-          '.search-result-action'
-        );
+      const button = event.target.closest(
+        '.search-result-action'
+      );
 
       if (!button) {
         return;
@@ -5012,15 +5239,13 @@ const resultCards = groupedResults
         return;
       }
 
-      activeSearchQuery =
-        cleanQuery;
+      activeSearchQuery = cleanQuery;
 
       pendingHighlight = {
         suraNum,
         verseNum,
         query: cleanQuery,
-        openMeal:
-          action === 'meal',
+        openMeal: action === 'meal',
         mealName: ''
       };
 
@@ -5035,7 +5260,6 @@ const resultCards = groupedResults
     }
   );
 }
-
 function closeSearchResultsPanel() {
   document
     .getElementById(
@@ -5379,27 +5603,23 @@ function navigateToSearchResult(result, inputElement) {
 }
 
 function setupSearch() {
-  const searchInput =
-    DOM.searchInput;
+  const searchInput = DOM.searchInput;
+  const autocomplete = DOM.autocomplete;
 
-  const autocomplete =
-    DOM.autocomplete;
-
-  if (
-    !searchInput ||
-    !autocomplete
-  ) {
+  if (!searchInput || !autocomplete) {
     return;
   }
 
   let debounceTimer = null;
-
-  const DEBOUNCE_MS = 250;
+  const DEBOUNCE_MS = 40;
 
   function hideAutocomplete() {
     autocomplete.innerHTML = '';
-    autocomplete.style.display =
-      'none';
+    autocomplete.style.display = 'none';
+  }
+
+  function showAutocomplete() {
+    autocomplete.style.display = 'block';
   }
 
   function addAutocompleteItem({
@@ -5407,8 +5627,7 @@ function setupSearch() {
     className = '',
     onClick
   }) {
-    const item =
-      document.createElement('div');
+    const item = document.createElement('div');
 
     if (className) {
       item.className = className;
@@ -5428,7 +5647,54 @@ function setupSearch() {
     return item;
   }
 
-  async function runSearch(rawValue) {
+  function showReferenceWarning(reference) {
+    autocomplete.innerHTML = '';
+
+    addAutocompleteItem({
+      className: 'autocomplete-warning',
+
+      html: `
+        <strong>
+          ${escapeHtml(reference.suraNum)}:${escapeHtml(reference.verseNum)}
+          ayeti bulunamadı.
+        </strong>
+      `
+    });
+
+    showAutocomplete();
+  }
+
+  function goDirectlyToReference(reference) {
+    activeSearchQuery = '';
+
+    pendingHighlight = {
+      suraNum: reference.suraNum,
+      verseNum: reference.verseNum,
+      query: '',
+      openMeal: false,
+      mealName: ''
+    };
+
+    searchInput.value = '';
+
+    hideAutocomplete();
+
+    goToPage(
+      reference.page
+    );
+  }
+
+  function goDirectlyToSura(sura) {
+    searchInput.value = '';
+
+    hideAutocomplete();
+
+    goToSura(
+      sura.suraNum
+    );
+  }
+
+  function runLightSearch(rawValue) {
     const value =
       String(rawValue || '').trim();
 
@@ -5439,341 +5705,99 @@ function setupSearch() {
       return;
     }
 
-    if (!SEARCH_INDEX.ready) {
-      addAutocompleteItem({
-        html:
-          '⏳ Arama hazırlanıyor...'
-      });
-
-      autocomplete.style.display =
-        'block';
-
-      return;
-    }
-
-    let itemCount = 0;
-
-    /*
-      17:36, 17 36, 17/36, 17-36
-      yazılırken yalnızca öneri gösterilir.
-      Enter olmadan otomatik gidilmez.
-    */
     const verseReference =
       parseVerseReference(value);
 
     if (verseReference) {
-      if (verseReference.exists) {
-        const verseData =
-          findVerseData(
-            verseReference.suraNum,
-            verseReference.verseNum
-          );
-
-        addAutocompleteItem({
-          className:
-            'autocomplete-verse-reference',
-
-          html: `
-            <strong>
-              📖 ${escapeHtml(
-                verseReference.suraNum
-              )}:${escapeHtml(
-                verseReference.verseNum
-              )} ayetine git
-            </strong>
-
-            <br>
-
-            <small>
-              ${escapeHtml(
-                String(
-                  verseData.turkish || ''
-                ).slice(0, 130)
-              )}
-            </small>
-          `,
-
-          onClick: () => {
-            activeSearchQuery = '';
-
-            pendingHighlight = {
-              suraNum:
-                verseReference.suraNum,
-              verseNum:
-                verseReference.verseNum,
-              query: '',
-              openMeal: false,
-              mealName: ''
-            };
-
-            searchInput.value = '';
-
-            hideAutocomplete();
-
-            goToPage(
-              verseReference.page
-            );
-          }
-        });
-      } else {
-        addAutocompleteItem({
-          className:
-            'autocomplete-warning',
-
-          html: `
-            ⚠️
-            ${escapeHtml(
-              verseReference.suraNum
-            )}:${escapeHtml(
-              verseReference.verseNum
-            )}
-            ayeti bulunamadı.
-          `
-        });
-      }
-
-      itemCount++;
-    }
-
-    /*
-      Sure adları
-    */
-    const normalizedValue =
-      normalizeTurkishText(value);
-
-    const suraSuggestions = [];
-
-    for (
-      const suraNum in
-      STATE.metadata.sureNames
-    ) {
-      const suraName =
-        STATE.metadata.sureNames[
-          suraNum
-        ];
-
-      const normalizedSuraName =
-        normalizeTurkishText(
-          suraName
+      if (!verseReference.exists) {
+        showReferenceWarning(
+          verseReference
         );
 
-      if (
-        !normalizedSuraName.includes(
-          normalizedValue
-        )
-      ) {
-        continue;
+        return;
       }
 
-      suraSuggestions.push({
-        type: 'sura',
-        suraNum,
-        suraName,
-        page:
-          STATE.metadata
-            .sureToPageMap[suraNum],
-        priority:
-          normalizedSuraName.startsWith(
-            normalizedValue
-          )
-            ? 0
-            : 1
+      const verseData =
+        findVerseData(
+          verseReference.suraNum,
+          verseReference.verseNum
+        );
+
+      addAutocompleteItem({
+        className:
+          'autocomplete-verse-reference',
+
+        html: `
+          <strong>
+            ${escapeHtml(verseReference.suraNum)}:${escapeHtml(verseReference.verseNum)}
+            ayetine git
+          </strong>
+
+          <br>
+
+          <small>
+            ${escapeHtml(
+              String(
+                verseData.turkish || ''
+              ).slice(0, 130)
+            )}
+          </small>
+        `,
+
+        onClick: () => {
+          goDirectlyToReference(
+            verseReference
+          );
+        }
       });
+
+      showAutocomplete();
+
+      return;
     }
 
-    suraSuggestions
-      .sort(
-        (a, b) =>
-          a.priority -
-          b.priority
-      )
-      .slice(0, 4)
-      .forEach((suggestion) => {
-        addAutocompleteItem({
-          html: `
-            <strong>
-              ${escapeHtml(
-                suggestion.suraNum
-              )}:
-            </strong>
-
-            ${escapeHtml(
-              suggestion.suraName
-            )}
-          `,
-
-          onClick: () => {
-            searchInput.value = '';
-            hideAutocomplete();
-
-            goToSura(
-              suggestion.suraNum
-            );
-          }
-        });
-
-        itemCount++;
-      });
-
-    /*
-      Lütuf → Lütufkâr gibi
-      kelime tamamlama önerileri.
-    */
-    const wordSuggestions =
-      getSearchWordSuggestions(
+    const suraSuggestions =
+      getFastSuraSuggestions(
         value,
-        4
+        5
       );
 
-    wordSuggestions.forEach(
+    suraSuggestions.forEach(
       (suggestion) => {
         addAutocompleteItem({
           className:
-            'autocomplete-word-suggestion',
+            'autocomplete-sura-result',
 
           html: `
-            <span>
-              “<strong>
-                ${escapeHtml(value)}
-              </strong>”
-              yerine
-            </span>
-
             <strong>
-              ${escapeHtml(
-                suggestion.text
-              )}
+              ${escapeHtml(suggestion.suraNum)}:
             </strong>
-            mı demek istediniz?
+
+            ${escapeHtml(suggestion.suraName)}
           `,
 
           onClick: () => {
-            searchInput.value =
-              suggestion.text;
-
-            searchInput.focus();
-
-            runSearch(
-              suggestion.text
+            goDirectlyToSura(
+              suggestion
             );
           }
         });
-
-        itemCount++;
       }
     );
 
-    /*
-      Yazarken yalnızca birkaç hızlı
-      ayet sonucu gösterilir.
-    */
-    const quickResults =
-      value.length < 3
-       ? []
-       : searchKeywordInData(
-        value,
-        6,
-        false
-      );
-
-    quickResults.forEach(
-      (result) => {
-        let html = '';
-
-        if (result.type === 'meal') {
-          html = `
-            <strong>
-              ${escapeHtml(
-                result.mealName
-              )}
-            </strong>
-
-            ${escapeHtml(
-              result.suraNum
-            )}:${escapeHtml(
-              result.verseNum
-            )}
-
-            ${
-              result.fuzzy
-                ? `
-                  <em class="autocomplete-fuzzy">
-                    yaklaşık eşleşme
-                  </em>
-                `
-                : ''
-            }
-
-            <br>
-
-            ${result.snippet}
-          `;
-        } else {
-          html = `
-            <strong>
-              ${escapeHtml(
-                result.suraNum
-              )}:${escapeHtml(
-                result.verseNum
-              )}
-            </strong>
-
-            <span>
-              (${escapeHtml(
-                getSearchSourceLabel(
-                  result.source
-                )
-              )})
-            </span>
-
-            ${
-              result.fuzzy
-                ? `
-                  <em class="autocomplete-fuzzy">
-                    yaklaşık eşleşme
-                  </em>
-                `
-                : ''
-            }
-
-            <br>
-
-            ${result.snippet}
-          `;
-        }
-
-        addAutocompleteItem({
-          html,
-
-          onClick: () => {
-            navigateToSearchResult(
-              result,
-              searchInput
-            );
-          }
-        });
-
-        itemCount++;
-      }
-    );
-
-    /*
-      Büyük sonuç panelini açan satır.
-    */
     addAutocompleteItem({
       className:
         'autocomplete-all-results',
 
       html: `
         <strong>
-          🔎 “${escapeHtml(value)}”
-          için tüm sonuçları göster
+          “${escapeHtml(value)}” için yaklaşık eşleşmeleri ve tüm sonuçları göster
         </strong>
 
         <br>
 
         <small>
-          Enter tuşuna da basabilirsiniz.
+          Ayrıntılı aramayı başlatmak için buraya dokunun.
         </small>
       `,
 
@@ -5786,12 +5810,7 @@ function setupSearch() {
       }
     });
 
-    itemCount++;
-
-    autocomplete.style.display =
-      itemCount > 0
-        ? 'block'
-        : 'none';
+    showAutocomplete();
   }
 
   searchInput.addEventListener(
@@ -5809,14 +5828,10 @@ function setupSearch() {
         return;
       }
 
-      /*
-        Enter olmadan yalnızca öneri üretir.
-        Ayete otomatik gitmez.
-      */
       debounceTimer =
         setTimeout(
           () => {
-            runSearch(value);
+            runLightSearch(value);
           },
           DEBOUNCE_MS
         );
@@ -5832,6 +5847,10 @@ function setupSearch() {
 
       event.preventDefault();
 
+      clearTimeout(
+        debounceTimer
+      );
+
       const value =
         searchInput.value.trim();
 
@@ -5839,76 +5858,37 @@ function setupSearch() {
         return;
       }
 
-      /*
-        17:36, 17 36, 17/36, 17-36
-        Enter ile doğrudan ayete gider.
-      */
       const verseReference =
         parseVerseReference(value);
 
       if (verseReference) {
         if (!verseReference.exists) {
-          showNotification(
-            `${verseReference.suraNum}:${verseReference.verseNum} ayeti bulunamadı.`,
-            'warning'
+          showReferenceWarning(
+            verseReference
           );
 
           return;
         }
 
-        activeSearchQuery = '';
-
-        pendingHighlight = {
-          suraNum:
-            verseReference.suraNum,
-          verseNum:
-            verseReference.verseNum,
-          query: '',
-          openMeal: false,
-          mealName: ''
-        };
-
-        searchInput.value = '';
-
-        hideAutocomplete();
-
-        goToPage(
-          verseReference.page
+        goDirectlyToReference(
+          verseReference
         );
 
         return;
       }
 
-      /*
-        Tam sure adı yazılmışsa
-        doğrudan sureye gider.
-        Örnek: Bakara + Enter
-      */
       const exactSura =
         findExactSura(value);
 
       if (exactSura) {
-        searchInput.value = '';
-
-        hideAutocomplete();
-
-        goToSura(
-          exactSura.suraNum
+        goDirectlyToSura(
+          exactSura
         );
 
         return;
       }
 
-      /*
-        Kelime araması Enter ile
-        artık ilk sonuca gitmez.
-        Büyük sonuç panelini açar.
-      */
-      hideAutocomplete();
-
-      openSearchResultsPanel(
-        value
-      );
+      runLightSearch(value);
     }
   );
 
@@ -5932,7 +5912,7 @@ function setupSearch() {
         searchInput.value.trim();
 
       if (value) {
-        runSearch(value);
+        runLightSearch(value);
       }
     }
   );
@@ -6024,7 +6004,7 @@ function displaySettingsPage() {
         <div class="settings-section">
           <h2>Yerel Not Sistemi</h2>
 
-          <div class="drive-status">
+          <div class="local-storage-status">
             <p>
               <strong>Durum:</strong>
               🟢 Yerel kayıt aktif
@@ -6043,18 +6023,54 @@ function displaySettingsPage() {
 
       <div class="settings-section">
         <h2>Yazılım Hakkında</h2>
+
         <div class="about-section">
-<ul>
-  <li>
-    <strong>Kodlama, Tasarım:</strong><br>
-    Berk KÖKSAL<br>
-    <a href="https://www.berkkoksal.com" target="_blank" rel="noopener noreferrer">
-      www.berkkoksal.com
-    </a>
-  </li>
-        <li><strong>Arama:</strong> (örn: "2:255") 2 255 veya 2/255 yazabilirsiniz.</li>
-            <li><strong>Yerel Notlar:</strong> Notlarınız otomatik olarak kullandığınız tarayıcıda saklanır.</li>
+          <p>
+            <strong>Kuran Teyit</strong>, Android için geliştirilmiş bağımsız
+            bir Kuran araştırma uygulamasıdır.
+          </p>
+
+          <p class="independence-notice">
+            Kuran Teyit bağımsız bir araştırma uygulamasıdır. QuranTFT,
+            SubmitterTech, International Community of Submitters,
+            Masjid Tucson veya uygulamada adı geçen diğer kaynak
+            sağlayıcılarının resmî uygulaması değildir ve bu kuruluşlar
+            tarafından yayımlanmamaktadır.
+          </p>
+
+          <ul>
+            <li><strong>Geliştirme ve tasarım:</strong>
+  Berk KÖKSAL —
+  <a
+    href="https://www.berkkoksal.com/"
+    target="_blank"
+    rel="noopener noreferrer"
+  >
+    www.berkkoksal.com
+  </a>
+</li>
+            <li><strong>Destek:</strong> berkgitarist@gmail.com</li>
+            <li><strong>Yerel notlar:</strong> Notlar cihazda saklanır.</li>
+            <li><strong>Arapça ses:</strong> İnternet üzerinden Islamic Network CDN'den oynatılır.</li>
           </ul>
+        </div>
+
+        <div class="legal-action-row">
+          <button
+            type="button"
+            class="toggle-btn"
+            onclick="displayPrivacyPage()"
+          >
+            Gizlilik Politikası
+          </button>
+
+          <button
+            type="button"
+            class="toggle-btn"
+            onclick="displayLicensesPage()"
+          >
+            Lisanslar ve Kaynaklar
+          </button>
         </div>
       </div>
 
@@ -6197,492 +6213,544 @@ function toggleNotesVisibility() {
   );
 }
 
+const INDEPENDENCE_NOTICE = `
+  <p class="independence-notice">
+    <strong>Bağımsızlık bildirimi:</strong>
+    Kuran Teyit bağımsız bir araştırma uygulamasıdır. QuranTFT,
+    SubmitterTech, International Community of Submitters, Masjid Tucson
+    veya uygulamada adı geçen diğer kaynak sağlayıcılarının resmî
+    uygulaması değildir ve bu kuruluşlar tarafından yayımlanmamaktadır.
+  </p>
+`;
+
 const GUIDE_CONTENT = `
-    <h1>Kuran Teyit Yazılımı: Tanıtım ve Kullanım Kılavuzu</h1>
-    
-    <h2>Tanıtım: Kuran Teyit Yazılımı Nedir?</h2>
-    <p>[1:1] En Lütufkâr, En Merhametli TANRI’nın adıyla.</p>
-    <p>Bu, Tanrı’nın insanlığa son mesajıdır. Tanrı’nın tüm peygamberleri bu dünyaya geldi ve tüm kutsal yazılar iletildi. Tanrı’nın peygamberleri tarafından iletilen tüm mesajların arındırılıp tek bir mesajda birleştirilmesinin ve bundan böyle Tanrı’nın kabul ettiği tek dinin “Teslimiyet” (3:19, 3:85) olduğunun duyurulmasının zamanı geldi. “Teslimiyet,” Tanrı’nın mutlak otoritesini tanıdığımız ve tüm güce sahip olanın YALNIZCA Tanrı olduğuna; O’ndan bağımsız başka hiçbir varlığın herhangi bir güce sahip olmadığına dair sarsılmaz bir kanaate ulaştığımız dindir. Böyle bir farkındalığın doğal sonucu, yaşamlarımızı ve tapınmamızı mutlak bir şekilde YALNIZCA Tanrı’ya adamaktır. Bu, Eski Ahit, Yeni Ahit ve bu Son Ahit de dâhil olmak üzere tüm kutsal yazılardaki İlk Buyruktur.</p>
-    <p>
-Kuran Teyit Yazılımı, Tanrı’nın antlaşma elçisi Reşat Halife’nin
-Yetkilendirilmiş İngilizce Çevirisi üzerine geliştirilmiş modern bir
-web uygulamasıdır. Kuran'ı Arapça, Türkçe ve İngilizce metinlerle
-inceleme, farklı mealleri karşılaştırma, ayet analizi, not alma ve
-kelime yardımı gibi özellikler sunar. Kişisel notlar kullanıcının
-kendi tarayıcısında yerel olarak saklanır ve JSON dosyası olarak
-yedeklenebilir.
-</p>
-    <p>Uygulama, [17:36] ayetinden ilhamla, "Kendiniz için teyit etmediğiniz sürece hiçbir bilgiyi kabul etmeyin" mesajıyla eleştirel düşünmeyi teşvik eder. Tema seçenekleri ve özelleştirilebilir arayüzü ile her cihazda kolayca kullanılabilir. Yetkilendirilmiş Çeviri’nin teyide ihtiyacı olmadığını vurgulayarak, İngilizce bilmeyen kullanıcıların Authorized English Translation'ı daha rahat inceleyebilmesini amaçlar.</p>
+  <h1>Kuran Teyit: Tanıtım ve Kullanım Kılavuzu</h1>
 
-<h2>📖 Temel Referans ve Çalışma Yaklaşımı</h2>
+  ${INDEPENDENCE_NOTICE}
 
-<p><strong>Kuran Teyit Yazılımı</strong>, temel referans olarak <strong>Rashad Khalifa'nın Authorized English Translation (Yetkilendirilmiş İngilizce Çevirisi)</strong> üzerine geliştirilmiştir.</p>
+  <h2>Uygulama Hakkında</h2>
 
-<p>Bu uygulamanın çalışma yöntemi, Yetkilendirilmiş Çeviri'yi esas alır. Analizler, dipnotlar, referans bağlantıları ve diğer araştırma araçları bu temel referans doğrultusunda hazırlanmıştır.</p>
+  <p>
+    Kuran Teyit, Android için geliştirilmiş bağımsız bir Kuran araştırma
+    uygulamasıdır. Arapça, Türkçe ve İngilizce ayet metinlerini inceleme,
+    farklı mealleri karşılaştırma, ayet analizi, kelime yardımı, sesli
+    okuma ve cihazda yerel not tutma araçları sunar.
+  </p>
 
-<p>Türkçe mealler, Arapça metinler, Arapça okunuşlar ve diğer yardımcı kaynaklar; Yetkilendirilmiş Çeviri'yi değiştirmek veya doğrulamak amacıyla değil, ayetlerin daha kapsamlı incelenebilmesi, kavramların karşılaştırılabilmesi ve araştırmanın derinleştirilebilmesi amacıyla sunulmaktadır.</p>
+  <p>
+    Uygulama, kullanıcı adına dinî hüküm veya kesin yorum üretmez.
+    Amaç; ayetleri, kaynakları ve araştırma araçlarını bir araya getirerek
+    kullanıcının kendi incelemesini yapmasını kolaylaştırmaktır.
+  </p>
 
-<p>Bu nedenle uygulama aşağıdaki öncelik sırasını benimser:</p>
+  <h2>Temel Referans ve Veri Kaynakları</h2>
 
-<ol>
-    <li><strong>Authorized English Translation (Ana Referans)</strong></li>
-    <li><strong>Rashad Khalifa'nın dipnotları</strong></li>
-    <li><strong>Arapça metin ve Arapça okunuş</strong></li>
-    <li><strong>Türkçe çeviriler ve diğer mealler</strong></li>
-    <li><strong>Karşılaştırmalı analiz araçları</strong></li>
-    <li><strong>Kullanıcı notları ve kişisel araştırmalar</strong></li>
-</ol>
+  <p>
+    İngilizce ana metin ve ilgili dipnotlarda Rashad Khalifa'nın
+    <strong>Authorized English Translation</strong> çalışması temel
+    referanslardan biridir. Ana Türkçe/İngilizce veri yapısı, Arapça
+    karşılaştırma verilerinin bir bölümü, konu haritaları ve eklerde
+    QuranTFT / SubmitterTech kaynaklarından yararlanılmıştır.
+  </p>
 
-<p>Bu yazılımın amacı herhangi bir meali veya yorumu mutlak doğru ilan etmek değildir. Amacı; Kuran ayetlerini, farklı kaynakları ve yardımcı araçları bir araya getirerek kullanıcının bilinçli bir araştırma yapmasına ve kendi değerlendirmesine ulaşmasına katkı sağlamaktır.</p>
+  <ul>
+    <li>
+      <a href="https://github.com/SubmitterTech/quran-tft/tree/main/app/src/assets/translations/tr" target="_blank" rel="noopener noreferrer">
+        SubmitterTech — Türkçe çeviri verileri
+      </a>
+    </li>
+    <li>
+      <a href="https://github.com/SubmitterTech/quran-tft/tree/main/app/src" target="_blank" rel="noopener noreferrer">
+        SubmitterTech — QuranTFT uygulama kaynakları
+      </a>
+    </li>
+    <li>
+      <a href="https://github.com/acik-kuran" target="_blank" rel="noopener noreferrer">
+        Açık Kuran — Erhan Aktaş çevirileri ve kelime/kök verileri
+      </a>
+    </li>
+    <li>
+      <a href="https://github.com/eyupipler/Kuran-Rehberi/tree/main/data/translations" target="_blank" rel="noopener noreferrer">
+        Kuran Rehberi — karşılaştırmalı meal veri koleksiyonu
+      </a>
+    </li>
+  </ul>
 
-<p>Bu yaklaşımın ilham kaynağı Kuran'ın şu uyarısıdır:</p>
+  <p>
+    Ayrıntılı dosya eşleştirmeleri, hak bildirimleri ve bağlantılar için
+    uygulamadaki <strong>Lisanslar ve Kaynaklar</strong> sayfası incelenmelidir.
+    Kaynak göstermek tek başına yeniden dağıtım izni yerine geçmez.
+  </p>
 
-<blockquote>
-<strong>[17:36]</strong><br>
-"Kendin için teyit etmediğin sürece, hiçbir bilgiyi kabul etme. Ben sana işitmeyi, görmeyi ve beyni verdim ve sen onları kullanmaktan sorumlusun."
-</blockquote>
+  <h2>Sesli Okuma</h2>
 
-<h2>🙏 Teşekkür ve Veri Kaynakları</h2>
+  <p>
+    İngilizce sesli okuma cihazın metinden sese motoru üzerinden çalışır.
+    Arapça kıraat, kullanıcı oynat düğmesine bastığında internet üzerinden
+    Al Quran Cloud / Islamic Network CDN hizmetinden yüklenir. Arapça ses
+    için internet bağlantısı gerekir.
+  </p>
 
-<p>
-Bu yazılım geliştirilirken birçok açık kaynak çalışmadan yararlanılmıştır.
-Bu nedenle emeği geçen herkese teşekkür etmeyi bir borç bilirim.
-</p>
+  <p>
+    Arapça kıraat okuyucusu: <strong>Mishary Rashid Alafasy</strong>.
+    Ses kayıtlarının hakları ilgili okuyucuya ve hak sahiplerine aittir.
+  </p>
 
-<p>
-Özellikle uygulamanın temel veri yapısının hazırlanmasında ve Kuran metinlerinin
-düzenlenmesinde <strong>QuranTFT (Authorized English Translation)</strong> projesinden
-yararlanılmıştır.
-</p>
+  <h2>Kullanım Kılavuzu</h2>
 
-<p>
-İngilizce çeviri, Rashad Khalifa'nın
-<strong>Authorized English Translation</strong> çalışmasını temel alan
-<strong>QuranTFT</strong> projesinden alınmıştır.
-Uygulamadaki dipnotlar, sayfa yapısı ve birçok veri de yine bu açık kaynak proje
-sayesinde kullanılabilmektedir.
-</p>
+  <h3>1. Menü ve Sayfa Geçişleri</h3>
+  <ul>
+    <li>Sol üstteki logo, sure listesi ve uygulama menüsünü açar.</li>
+    <li>Sol ve sağ oklar Kuran sayfaları arasında geçiş yapar.</li>
+    <li>Sure listesinden seçilen surenin ilk ayetine gidilir.</li>
+  </ul>
 
-<p>
-Türkçe çeviri (İngilizce çevirinin altında gösterilen ana Türkçe meal)
-de yine <strong>QuranTFT</strong> projesinin sunduğu açık veri dosyalarından
-yararlanılarak hazırlanmıştır.
-</p>
+  <h3>2. Arama</h3>
+  <ul>
+    <li><code>17:36</code>, <code>17/36</code> veya <code>17 36</code> doğrudan ayete gider.</li>
+    <li>Sure adı tam yazılırsa surenin ilk ayeti açılır.</li>
+    <li>Kelime aramalarında yaklaşık eşleşmeler ve ayrıntılı sonuçlar ayrı panelde gösterilir.</li>
+    <li>Geçersiz ayet numarasında yeni sonuç paneli açılmaz ve kullanıcı bilgilendirilir.</li>
+  </ul>
 
-<p>
-Bu vesileyle <strong>QuranTFT</strong> geliştiricilerine emekleri ve açık kaynak
-yaklaşımları için teşekkür ederiz.
-</p>
+  <h3>3. Ayet Görünümü</h3>
+  <ul>
+    <li>Arapça, İngilizce, Türkçe ve açık olduğunda okunuş birlikte gösterilir.</li>
+    <li>Arapça karşılaştırma alanında mevcut veri kaynakları yan yana incelenebilir.</li>
+    <li>İngilizce kelimelere dokunarak kelime yardımı görüntülenebilir.</li>
+  </ul>
 
-<p>
-QuranTFT projesini incelemek ve doğrudan Kuran okumak isteyen kullanıcılar için
-resmî web sitesi:
-</p>
+  <h3>4. Mealler</h3>
+  <ul>
+    <li>Mealler düğmesi farklı çevirileri aynı ayet altında listeler.</li>
+    <li>Meal dosyaları yalnızca ihtiyaç olduğunda yüklenir.</li>
+    <li>Ayarlar bölümünden meal düğmelerinin görünürlüğü değiştirilebilir.</li>
+  </ul>
 
-<p style="text-align:center;">
-  <a href="https://qurantft.com/" target="_blank" rel="noopener noreferrer">
-    https://qurantft.com/
+  <h3>5. Analiz</h3>
+  <ul>
+    <li>Analiz düğmesi ayet metnini, konu haritalarını ve bağlantılı ayetleri gösterir.</li>
+    <li>Analiz içeriği araştırmaya yardımcı bir araçtır; dinî hüküm veya fetva değildir.</li>
+  </ul>
+
+  <h3>6. Yerel Notlar</h3>
+  <ul>
+    <li>Notlar uygulamanın yerel depolama alanında cihazda saklanır.</li>
+    <li>Notlar JSON dosyası olarak dışa aktarılabilir ve yeniden içe alınabilir.</li>
+    <li>Uygulama verileri silinirse veya uygulama kaldırılırsa yerel notlar kaybolabilir.</li>
+  </ul>
+
+  <h3>7. Ayarlar</h3>
+  <ul>
+    <li>Tema ve yazı boyutu değiştirilebilir.</li>
+    <li>Okunuş, mealler ve AI çevirisi görünürlük seçenekleri düzenlenebilir.</li>
+    <li>Ayarlar cihazda yerel olarak saklanır.</li>
+  </ul>
+
+  <h2>Gizlilik ve Lisanslar</h2>
+
+  <p>
+    Veri işleme ayrıntıları için uygulamadaki <strong>Gizlilik Politikası</strong>,
+    kaynak ve hak bildirimleri için <strong>Lisanslar ve Kaynaklar</strong>
+    sayfası incelenmelidir.
+  </p>
+
+  <p>
+  <strong>Geliştirme, tasarım ve kodlama:</strong><br>
+
+  Berk KÖKSAL —
+  <a
+    href="https://www.berkkoksal.com/"
+    target="_blank"
+    rel="noopener noreferrer"
+  >
+    www.berkkoksal.com
   </a>
   <br>
-  <a href="https://kuransonahit.tr/" target="_blank" rel="noopener noreferrer">
-    https://kuransonahit.tr/
+
+  Destek: berkgitarist@gmail.com
+</p>
+`;
+
+const PRIVACY_CONTENT = `
+  <h1>Gizlilik Politikası</h1>
+
+  <p><strong>Son güncelleme:</strong> 19 Temmuz 2026</p>
+
+  ${INDEPENDENCE_NOTICE}
+
+  <h2>1. Uygulama ve geliştirici</h2>
+  <p>
+    Bu politika, <strong>Kuran Teyit</strong> Android uygulaması için
+  geçerlidir. Geliştirici ve gizlilik iletişimi:
+
+  <strong>Berk KÖKSAL</strong> —
+
+  <a
+    href="https://www.berkkoksal.com/"
+    target="_blank"
+    rel="noopener noreferrer"
+  >
+    www.berkkoksal.com
+  </a>
+
+  — berkgitarist@gmail.com.
+</p>
+
+  <h2>2. Hesap, reklam ve analiz</h2>
+  <p>
+    Uygulama kullanıcı hesabı oluşturmaz. Mevcut sürümde reklam,
+    reklam kimliği kullanan reklam SDK'sı veya geliştiriciye ait kullanıcı
+    davranışı analiz sistemi bulunmaz.
+  </p>
+
+  <h2>3. Yerel olarak saklanan bilgiler</h2>
+  <ul>
+    <li>Tema, yazı boyutu ve görünüm tercihleri cihazda yerel olarak saklanır.</li>
+    <li>Kullanıcının yazdığı ayet notları cihazın uygulama depolama alanında saklanır.</li>
+    <li>Bu veriler geliştiriciye ait bir sunucuya gönderilmez.</li>
+    <li>Notların JSON olarak dışa aktarılması veya içe alınması yalnızca kullanıcının başlattığı işlemle gerçekleşir.</li>
+  </ul>
+
+  <h2>4. Paket içindeki metin ve kaynak verileri</h2>
+  <p>
+    Kuran metinleri, çeviri dosyaları, konu haritaları, ekler, sözlük ve
+    kelime verileri uygulama paketinde yerel dosyalar olarak bulunur.
+    Kullanıcının bu içerikleri okuması sırasında kaynak sağlayıcıların
+    sitelerine otomatik bir istek gönderilmez.
+  </p>
+
+  <h2>5. Ses hizmetleri ve ağ bağlantısı</h2>
+  <p>
+    İngilizce sesli okuma, cihazın metinden sese altyapısı üzerinden
+    çalışır. Arapça kıraat düğmesine basıldığında ses dosyası doğrudan
+    <strong>cdn.islamic.network</strong> adresinden HTTPS bağlantısıyla
+    yüklenir.
+  </p>
+
+  <p>
+    Bir internet isteğinin iletilebilmesi için IP adresi, tarayıcı/cihaz
+    bilgisi, istek zamanı ve istenen dosya gibi teknik bağlantı bilgileri
+    üçüncü taraf hizmet sağlayıcı tarafından işlenebilir. Bu hizmetin
+    sunucu kayıtları geliştiricinin kontrolünde değildir ve geliştiriciye
+    aktarılmaz.
+  </p>
+
+  <h2>6. Üçüncü taraf kaynak bağlantıları</h2>
+  <p>
+    Uygulamadaki GitHub, QuranTFT, Açık Kuran ve diğer kaynak bağlantıları
+    yalnızca kullanıcı bağlantıya dokunduğunda açılır. Açılan sitelerin
+    kendi gizlilik politikaları ve kullanım koşulları geçerlidir.
+  </p>
+
+  <h2>7. Saklama ve silme</h2>
+  <p>
+    Yerel notlar ve ayarlar kullanıcı silene, uygulama verileri temizlenene
+    veya uygulama kaldırılana kadar cihazda kalabilir. Kullanıcı notları
+    uygulama içinden tek tek silebilir. Android ayarlarından uygulama
+    verilerinin temizlenmesi tüm yerel kayıtları kaldırır.
+  </p>
+
+  <h2>8. Çocukların gizliliği</h2>
+  <p>
+    Uygulama özellikle çocuklara yönelik olarak tasarlanmamıştır ve
+    bilerek çocuklardan kişisel bilgi toplamayı amaçlamaz.
+  </p>
+
+  <h2>9. Güvenlik</h2>
+  <p>
+    Harici ses bağlantısı HTTPS üzerinden kurulur. Kullanıcıların JSON
+    not yedeklerini güvenli bir yerde saklaması ve herkese açık alanlarda
+    paylaşmaması önerilir.
+  </p>
+
+  <h2>10. Politika değişiklikleri</h2>
+  <p>
+    Uygulamanın veri işleme biçimi değişirse bu politika ve Google Play
+    Veri Güvenliği beyanı güncellenir.
+  </p>
+
+  <h2>11. İletişim</h2>
+  <p>
+  <strong>Geliştirme, tasarım ve kodlama:</strong><br>
+
+  Berk KÖKSAL —
+  <a
+    href="https://www.berkkoksal.com/"
+    target="_blank"
+    rel="noopener noreferrer"
+  >
+    www.berkkoksal.com
+  </a>
+  <br>
+
+  Destek: berkgitarist@gmail.com
+</p>
+`;
+
+const LICENSES_CONTENT = `
+  <h1>Lisanslar, Kaynaklar ve Veri Kökeni</h1>
+
+  <p><strong>Son güncelleme:</strong> 19 Temmuz 2026</p>
+
+  ${INDEPENDENCE_NOTICE}
+
+  <p class="independence-notice">
+    <strong>Önemli hak notu:</strong>
+    Bu sayfa kullanılan içeriklerin kaynak kökenini ve atıflarını belgeler.
+    Bir kaynağın herkese açık bir GitHub deposunda bulunması veya burada
+    bağlantısının verilmesi, tek başına yeniden dağıtım lisansı ya da yazılı
+    kullanım izni anlamına gelmez. Çeviri, dipnot, sözlük, ses ve veri
+    düzenlemelerinin hakları ilgili çevirmen, yazar, yayıncı, okuyucu ve veri
+    sağlayıcılarına ait olabilir.
+  </p>
+
+  <h2>1. QuranTFT / SubmitterTech</h2>
+  <p>
+    Uygulamadaki ana İngilizce ve Türkçe çeviri verileri, Arapça
+    karşılaştırma verilerinin bir bölümü, konu haritaları ve ek içeriklerde
+    QuranTFT / SubmitterTech proje yapısından yararlanılmıştır.
+  </p>
+  <ul>
+    <li>
+      <a href="https://github.com/SubmitterTech/quran-tft/tree/main/app/src/assets/translations/tr" target="_blank" rel="noopener noreferrer">
+        Türkçe çeviri veri klasörü
+      </a>
+    </li>
+    <li>
+      <a href="https://github.com/SubmitterTech/quran-tft/tree/main/app/src" target="_blank" rel="noopener noreferrer">
+        QuranTFT uygulama kaynak klasörü
+      </a>
+    </li>
+    <li>
+      <a href="https://qurantft.com/" target="_blank" rel="noopener noreferrer">
+        qurantft.com
+      </a>
+    </li>
+  </ul>
+  <p><strong>Uygulamadaki ilgili dosya grupları:</strong></p>
+  <ul>
+    <li><code>data/qurantft.json</code></li>
+    <li><code>data/quran_tr.json</code></li>
+    <li><code>data/mealler/quran_arapca2.json</code></li>
+    <li><code>data/map.json</code> ve <code>data/map_tr.json</code></li>
+    <li><code>data/appendices.json</code> ve <code>data/appendices_tr.json</code></li>
+  </ul>
+
+  <h2>2. Authorized English Translation</h2>
+  <p>
+    İngilizce ana referans ve ilişkili dipnotlarda Rashad Khalifa'nın
+    <strong>Authorized English Translation</strong> çalışması temel
+    referanslardan biridir. Eser adı, yazar/çevirmen bilgisi ve kaynak
+    bağlantıları atıf amacıyla belirtilmektedir; eserin yayın ve yeniden
+    dağıtım koşulları ayrıca doğrulanmalıdır.
+  </p>
+
+  <h2>3. Açık Kuran</h2>
+  <p>
+    Erhan Aktaş Türkçe/Arapça çeviri verileri ile kelime çevirisi ve kök
+    verilerinde Açık Kuran çalışmalarından yararlanılmıştır.
+  </p>
+  <ul>
+    <li>
+      <a href="https://github.com/acik-kuran" target="_blank" rel="noopener noreferrer">
+        Açık Kuran GitHub organizasyonu
+      </a>
+    </li>
+    <li>
+      <a href="https://acikkuran.com/" target="_blank" rel="noopener noreferrer">
+        acikkuran.com
+      </a>
+    </li>
+  </ul>
+  <p><strong>Uygulamadaki ilgili dosya grupları:</strong></p>
+  <ul>
+    <li><code>data/mealler/kuran_erhan_aktas.json</code></li>
+    <li><code>data/word-translations.json</code></li>
+  </ul>
+
+  <h2>4. Kuran Rehberi çeviri koleksiyonu</h2>
+  <p>
+    Uygulamada karşılaştırma amacıyla gösterilen çeşitli meal dosyaları
+    aşağıdaki çeviri veri koleksiyonundan alınmış veya bu koleksiyon
+    üzerinden düzenlenmiştir:
+  </p>
+  <p>
+    <a href="https://github.com/eyupipler/Kuran-Rehberi/tree/main/data/translations" target="_blank" rel="noopener noreferrer">
+      eyupipler/Kuran-Rehberi — data/translations
+    </a>
+  </p>
+  <p>
+    Kaynak deponun proje kodu için belirttiği lisans ile deponun içerdiği
+    üçüncü taraf çeviri metinlerinin hakları aynı olmayabilir. Her mealin
+    çevirmen/yayıncı hakkı ve yeniden dağıtım izni ayrı değerlendirilmelidir.
+  </p>
+  <p><strong>Uygulamadaki ilgili dosya grubu:</strong></p>
+  <ul>
+    <li><code>data/mealler/*.json</code> içindeki karşılaştırmalı meal dosyaları</li>
+  </ul>
+
+  <h2>5. Yapay zekâ destekli çeviri alanı</h2>
+  <p>
+    <code>data/yapayzekaceviri.json</code> içeriği deneysel, yapay zekâ
+    destekli bir çalışma alanıdır. Resmî meal, dinî hüküm veya fetva olarak
+    sunulmaz. Kullanıcıların ana metni ve güvenilir çeviri kaynaklarını
+    ayrıca karşılaştırması önerilir.
+  </p>
+
+  <h2>6. Mealler ve çevirmen hakları</h2>
+  <p>
+    Uygulamada görüntülenen meal metinlerinin hakları ilgili çevirmenlere,
+    mirasçılarına ve/veya yayıncılara ait olabilir. Uygulama paketine bir
+    meal eklenmeden önce yeniden dağıtım lisansı, açık lisans koşulları veya
+    yazılı kullanım izni proje kayıtlarında doğrulanmalıdır. Kaynak
+    gösterimi, gerekli iznin yerine geçmez.
+  </p>
+
+  <h2>7. Arapça kıraat</h2>
+  <ul>
+    <li><strong>Okuyucu:</strong> Mishary Rashid Alafasy</li>
+    <li><strong>Hizmet:</strong> Al Quran Cloud / Islamic Network CDN</li>
+    <li><strong>İstek adresi:</strong> <code>https://cdn.islamic.network/</code></li>
+    <li>Ses kayıtlarının hakları ilgili okuyucu, yayıncı ve hak sahiplerine aittir.</li>
+  </ul>
+
+  <h2>8. Sürüm kayıtlarında tutulması önerilen bilgiler</h2>
+  <ul>
+    <li>Kaynak depo ve tam dosya yolu</li>
+    <li>İndirilen commit kimliği veya sürüm etiketi</li>
+    <li>İndirme tarihi</li>
+    <li>Kaynak LICENSE, NOTICE ve README dosyalarının kopyası</li>
+    <li>Uygulamada yapılan değişikliklerin kısa açıklaması</li>
+    <li>Gerekliyse çevirmen veya yayıncıdan alınan yazılı izin</li>
+  </ul>
+
+  <h2>9. Bağımsızlık ve marka kullanımı</h2>
+  <p>
+    Kuran Teyit; QuranTFT, SubmitterTech, Açık Kuran, Kuran Rehberi,
+    International Community of Submitters, Masjid Tucson veya adı geçen
+    başka bir kaynak sağlayıcısının resmî uygulaması değildir. Kaynak ve
+    eser adları yalnızca açıklama ve atıf amacıyla kullanılmaktadır.
+  </p>
+
+  <h2>10. Yazı tipleri ve uygulama kodu</h2>
+  <p>
+    Uygulama uzak Google Fonts bağlantısı kullanmaz. Arayüz ve Arapça
+    metinler cihazda bulunan sistem yazı tipleriyle gösterilir.
+  </p>
+  <p>
+    Kuran Teyit uygulamasının özgün arayüz, yerel not sistemi, arama,
+    analiz ve uygulama kodu geliştirmeleri: <strong>Berk KÖKSAL</strong>.
+  </p>
+
+  <h2>11. Hak ve lisans iletişimi</h2>
+  <p>
+    Bir hak, kaynak düzeltmesi veya lisans bildirimi için:
+    <strong>berkgitarist@gmail.com</strong> —
+
+  <a
+    href="https://www.berkkoksal.com/"
+    target="_blank"
+    rel="noopener noreferrer"
+  >
+    www.berkkoksal.com
   </a>
 </p>
-
-<p>
-Özellikle sadece Kuran okumak isteyen kullanıcılar için
-<strong>QuranTFT web sitesi</strong> daha sade ve bu amaç için hazırlanmış
-kapsamlı bir okuma deneyimi sunmaktadır. Bu nedenle uygulamanın üst menüsünde yer alan
-<strong>"Kuran Oku"</strong> bölümü de doğrudan QuranTFT web sitesini açmaktadır.
-</p>
-
-<p>
-QuranTFT'nin hem <strong>Android</strong> hem de
-<strong>iOS</strong> mobil uygulamaları bulunmaktadır.
-</p>
-
-<p style="text-align:center;">
-<a href="https://play.google.com/store/apps/details?id=com.submittertech.quran&hl=tr"
-target="_blank" rel="noopener noreferrer">
-📱 Google Play - Kuran Son Ahit
-</a>
-
-<br><br>
-
-<a href="https://apps.apple.com/tr/app/kuran-son-ahit/id6478772891?l=tr"
-target="_blank" rel="noopener noreferrer">
-🍎 App Store - Kuran Son Ahit
-</a>
-</p>
-
-<p>
-Bu uygulama ise QuranTFT'nin yerine geçmeyi amaçlamaz.
-Tam tersine, onun üzerine araştırma odaklı ek araçlar geliştirmeyi hedefleyen
-bağımsız bir çalışmadır.
-</p>
-
-<p>
-Arapça kelime karşılıkları, kelime kökleri ve bazı sözlük çalışmalarının hazırlanmasında
-<strong>Açık Kuran</strong> projesinden de yararlanılmıştır.
-Bu değerli çalışmayı hazırlayan geliştiricilere ve katkı sağlayan herkese teşekkür ederiz.
-</p>
-
-<p style="text-align:center;">
-<a href="https://acikkuran.com/" target="_blank" rel="noopener noreferrer">
-https://acikkuran.com/
-</a>
-</p>
-
-<p>
-Açık Kuran projesi özellikle Arapça kelimelerin anlamlarını, kök yapılarını ve ayet içerisindeki kullanımlarını incelemek isteyen araştırmacılar için oldukça değerli bir kaynaktır.
-Bu yazılımda kullanılan kelime çevirileri hazırlanırken bu açık kaynaktan da
-yararlanılmıştır.
-</p>
-
-<ul>
-<li>📖 Authorized English Translation temel alınmıştır.</li>
-<li>🇹🇷 Ana Türkçe çeviri QuranTFT veri dosyalarından alınmıştır.</li>
-<li>📚 Rashad Khalifa dipnotları kullanılmaktadır.</li>
-<li>📝 Sayfa yapısı ve referans sistemi QuranTFT veri yapısından yararlanmaktadır.</li>
-<li>
-🔍 Bu yazılıma ek olarak analiz ekranları, kelime çevirileri,
-karşılaştırmalı mealler, yerel not ve JSON yedekleme sistemi,
-konu haritaları (MAP) ve birçok yeni özellik tarafımızdan geliştirilmiştir.
-</li>
-</ul>
-
-<p>
-Bu çalışma tamamen açık kaynak çalışmaların üzerine geliştirilmiş bağımsız bir
-araştırma yazılımıdır ve emeği geçen tüm geliştiricilere teşekkür ederiz.
-</p>
-
-<p><strong>Kuran Teyit Yazılımı</strong>, kullanıcı adına karar veren bir uygulama değildir. Araştırmayı kolaylaştıran, karşılaştırmayı mümkün kılan ve Kuran merkezli incelemeyi destekleyen bir çalışma ortamı sunmayı amaçlamaktadır.</p>
-
-    <h2>Kullanım Kılavuzu</h2>
-
-    <h3>1. Genel Yapı ve Navigasyon</h3>
-    <ul>
-        <li><strong>Menü Butonu (☰):</strong> Sure listesi, notlar ve ayarlara ulaşmanızı sağlar.</li>
-        <li><strong>Önceki/Sonraki Sayfa:</strong> Kuran sayfaları arasında geçiş yapar.</li>
-        <li><strong>Arama Alanı:</strong> Sure, ayet veya kelime aramak için kullanılır.</li>
-        <li>
-  <strong>Kuran Oku:</strong>
-  QuranTFT Kuran okuma sayfasını yeni sekmede açar.
-</li>
-    </ul>
-
-    <h3>2. Arapça Karşılaştırma Alanı</h3>
-    <p>Her ayetin sağ üstünde <strong>📖 Arapça</strong> bağlantısı bulunur. Bu bağlantıya tıklayınca ayetin üç farklı Arapça metni açılır.</p>
-    <ul>
-        <li><strong>Standart Arapça - qurantft.json:</strong> Ana Arapça kaynak.</li>
-        <li><strong>İkinci Arapça - quran_arapca2.json:</strong> Eklenen ikinci Arapça veri dosyası.</li>
-        <li><strong>Erhan Aktaş Arapçası - kuran_erhan_aktas.json:</strong> Erhan Aktaş veri dosyasındaki Arapça metin.</li>
-    </ul>
-    <p>Bu alan özellikle ayet kayması, eksik kelime, fazla kelime veya farklı Arapça yazım kontrolü için kullanışlıdır. İleride bu bölüme kelime farklarını renkli gösterme özelliği eklenebilir.</p>
-<p>Ayrıca açılan bölümde her Arapça kelimenin Türkçe anlamı, okunuşu ve kök bilgisi de görüntülenebilir.</p>
-
-    <h3>3. Arama Alanının Kullanımı</h3>
-    <p>Arama çubuğuna sure adı, ayet numarası veya kelime yazabilirsiniz.</p>
-    <ul>
-        <li><code>2:255</code> → Bakara 255. ayete gider.</li>
-        <li><code>2/255</code> → Aynı şekilde çalışır.</li>
-        <li><code>2 255</code> → Boşluklu format da desteklenir.</li>
-        <li><code>Bakara</code>, <code>Fatiha</code>, <code>Yasin</code> gibi sure isimleriyle arama yapılabilir.</li>
-    </ul>
-
-    <h3>4. Kuran Okuma ve Çeviriler</h3>
-    <ul>
-        <li>Ayet numarası ortada gösterilir.</li>
-        <li>📖 Arapça alanı açılır/kapanır yapıdadır; kapalıyken sayfayı kalabalıklaştırmaz.</li>
-        <li>Okunuş satırı açıksa Arapça-Türkçe okunuş gösterilir.</li>
-<li>
-İngilizce çeviri, Rashad Khalifa'nın Authorized English Translation
-(QuranTFT) çalışmasıdır ve uygulamanın temel referansıdır.
-</li>
-
-<li>
-İngilizce metnin altında gösterilen ana Türkçe çeviri de
-QuranTFT projesinin açık veri dosyalarından alınmıştır.
-</li>
-
-<li>
-Daha sade ve doğrudan Kuran okumak isteyen kullanıcılar için
-QuranTFT web sitesi ve resmi mobil uygulamaları tavsiye edilir.
-</li>
-    </ul>
-
-    <h3>5. Mealler</h3>
-    <ul>
-        <li>Ayarlar bölümünden <strong>Mealler’i Göster</strong> seçeneği açılırsa her ayette <strong>📚 Mealler</strong> butonu görünür.</li>
-        <li>Butona tıklayınca farklı çevirmenlerin mealleri aynı ayet altında listelenir.</li>
-        <li>Mealler ilk ihtiyaç olduğunda yüklenir; bu sayede uygulama ilk açılışta daha hızlı çalışır.</li>
-    </ul>
-
-<h3>6. Ayet Analizi</h3>
-
-<p>Her ayetin altında bulunan <strong>🔎 Analiz</strong> butonu ile o ayete ait kapsamlı analiz ekranı açılır.</p>
-
-<ul>
-    <li>Seçilen ayetin Arapçası, Türkçe ve İngilizce çevirisi birlikte gösterilir.</li>
-
-    <li>MAP dosyalarındaki ilgili konu başlıkları otomatik listelenir.</li>
-
-    <li>Konu başlıkları, uygulamada kullanılan MAP (Konu Haritaları) veri dosyalarından otomatik olarak oluşturulmaktadır.</li>
-
-    <li>Her konu altında o konuyla ilişkili ayetlerin Türkçe mealleri görüntülenir.</li>
-
-    <li>Konuyla bağlantılı referans ayetler Arapça, Türkçe ve İngilizce olarak ayrı bölümde gösterilir.</li>
-
-    <li>Mobil cihazlarda analiz ekranı tam ekran açılır ve kapatma butonu ekranın üst kısmında sabit kalır.</li>
-
-    <li>Panel kapatıldığında normal okuma ekranına geri dönülür.</li>
-</ul>
-
-<h3>7. Yerel Not Alma ve Yedekleme</h3>
-
-<ul>
-  <li>
-    <strong>✍️ Not Al</strong> butonuyla ayete özel not
-    yazabilirsiniz.
-  </li>
-
-  <li>
-    Notlarınız kullandığınız tarayıcıda ve cihazda yerel olarak
-    saklanır.
-  </li>
-
-  <li>
-    <strong>📝 Notlarım</strong> sayfasında notlar sure ve ayet
-    numarasına göre sıralanır.
-  </li>
-
-  <li>
-    Uzun notlar ilk aşamada üç satır gösterilir. Notun üzerine veya
-    <strong>Devamını göster</strong> düğmesine tıklanınca tamamı açılır.
-  </li>
-
-  <li>
-    <strong>💾 Notları Yedekle</strong> düğmesiyle bütün notlar
-    JSON dosyası olarak indirilebilir.
-  </li>
-
-  <li>
-    <strong>📂 Not Dosyası Yükle</strong> düğmesiyle daha önce
-    alınan yedek geri yüklenebilir.
-  </li>
-</ul>
-
-    <h3>8. Kelime Yardımı</h3>
-
-<ul>
-<li>İngilizce çeviri üzerindeki kelimelerin üzerine gelerek Türkçe anlamlarını görebilirsiniz.</li>
-
-<li>Mobil cihazlarda kelimeye dokunarak aynı bilgi açılır.</li>
-
-<li>📖 Arapça bölümünü açtığınızda ise her Arapça kelimenin okunuşu, Türkçe anlamı ve kök bilgisi tablo halinde gösterilir.</li>
-</ul>
-
-    <h3>9. Ayarlar</h3>
-    <ul>
-        <li><strong>Tema:</strong> Açık, koyu, yeşil, mavi ve diğer tema seçenekleri kullanılabilir.</li>
-        <li><strong>Yazı Boyutu:</strong> Küçük, orta veya büyük yazı boyutu seçilebilir.</li>
-        <li><strong>Mealler’i Göster:</strong> Meal butonlarını açar/kapatır.</li>
-        <li><strong>Arapça-Türkçe Göster:</strong> Okunuş satırını açar/kapatır.</li>
-        <li><strong>AI Çeviriyi Göster:</strong> Yapay zeka çevirisi varsa gösterir.</li>
-    </ul>
-
-    <h3>10. Performans ve Kod İyileştirmeleri</h3>
-    <ul>
-        <li>Sayfalar önbelleğe alınarak daha hızlı geçiş sağlanır.</li>
-        <li>Mealler ihtiyaç oldukça yüklenir.</li>
-        <li>Arama indexi uygulama açıldıktan sonra hazırlanır.</li>
-        <li>Üç Arapça veri kaynağı ayrı ayrı yüklenir ve aynı ayet altında karşılaştırmalı gösterilir.</li>
-        <li>Arapça alanı kapalı geldiği için sayfa daha sade ve hızlı okunabilir hale getirilmiştir.</li>
-        <li>Kelime çevirileri ilk ihtiyaç duyulduğunda yüklenir. Böylece uygulamanın açılış hızı korunur.</li>
-    </ul>
-
-    <h3>11. Gelecek Geliştirme Fikirleri</h3>
-    <ul>
-        <li>Yapay Zeka ile Referans Ayetleri listeleyen yeni bir ekran.</li>
-        <li>Yapay zeka destekli bağlantılı kelime arama özelliği</li>
-        <li>Üç Arapça metin arasındaki kelime farklarını renkli vurgulama.</li>
-        <li>Ayet bazında “Arapça kaynaklarda fark var” uyarısı.</li>
-        <li>Sadece farklı kelimeleri gösterme modu.</li>
-        <li>Arapça karşılaştırma raporu oluşturma.</li>
-        <li>Kullanım kılavuzunu ileride ayrı bir <code>guide.html</code> veya <code>guide.md</code> dosyasına taşıma.</li>
-    </ul>
-
-    <h3>12. Sıkça Sorulan Sorular</h3>
-    <ul>
-        <li><strong>Mealler butonunu göremiyorum, neden?</strong> Ayarlar bölümünden “Mealler’i Göster” seçeneğini açmalısınız.</li>
-        <li><strong>Arapça metinler neden kapalı geliyor?</strong> Sayfanın sade kalması için Arapça karşılaştırma alanı açılır/kapanır yapıdadır.</li>
-        <li><strong>Üç Arapça metin ne işe yarar?</strong> Aynı ayetin farklı veri kaynaklarındaki Arapça karşılıklarını kontrol etmeye yarar.</li>
-        <li>
-  <strong>Notlarım neden görünmüyor?</strong>
-  Aynı tarayıcıyı ve aynı site adresini kullandığınızdan emin olun.
-  Tarayıcı verileri silindiyse daha önce indirdiğiniz JSON not
-  dosyasını yeniden yükleyin.
-</li>
-        <li><strong>Tema değişiklikleri kalıcı mı?</strong> Evet, ayarlar tarayıcıda saklanır.</li>
-    </ul>
-
-<h2>🙏 SubmitterTech'e Teşekkür</h2>
-
-<p>
-Kuran Teyit Yazılımı'nın geliştirilmesi sırasında faydalanılan Kuran araştırma
-uygulamaları, dijital kaynaklar ve teknik çalışmalar için
-<strong>SubmitterTech</strong> ekibine teşekkür ederiz.
-</p>
-
-<p>
-SubmitterTech tarafından geliştirilen uygulamalar; Kuran ayetlerinin okunması,
-dinlenmesi, araştırılması, karşılaştırılması ve matematiksel çalışmaların
-incelenmesi konusunda önemli araçlar sunmaktadır.
-</p>
-
-<h3>🌐 SubmitterTech Kaynakları</h3>
-
-<ul>
-
-<li>
-<a href="https://submittertech.com/" target="_blank" rel="noopener noreferrer">
-SubmitterTech Ana Sayfası
-</a>
-</li>
-
-<li>
-<a href="https://qurantft.com/" target="_blank" rel="noopener noreferrer">
-QuranTFT (Web Uygulaması)
-</a>
-</li>
-
-<li>
-<a href="https://play.google.com/store/apps/details?id=com.submittertech.quran&hl=tr" target="_blank" rel="noopener noreferrer">
-QuranTFT Android Uygulaması (Kuran Son Ahit)
-</a>
-</li>
-
-<li>
-<a href="https://apps.apple.com/tr/app/kuran-son-ahit/id6478772891?l=tr" target="_blank" rel="noopener noreferrer">
-QuranTFT iOS Uygulaması (Kuran Son Ahit)
-</a>
-</li>
-
-<li>
-<a href="https://play.google.com/store/apps/details?id=com.submittertech.quranreciter" target="_blank" rel="noopener noreferrer">
-Quran Reciter Android
-</a>
-</li>
-
-<li>
-<a href="https://apps.apple.com/us/app/quran-reciter-reader/id6766167438" target="_blank" rel="noopener noreferrer">
-Quran Reciter iOS
-</a>
-</li>
-
-<li>
-<a href="https://submittertech.github.io/miracleofquran/" target="_blank" rel="noopener noreferrer">
-Evidence Of Quran
-</a>
-</li>
-
-<li>
-<a href="https://submittertech.github.io/subtitle-searcher-en/" target="_blank" rel="noopener noreferrer">
-Media Search (Reşad Halife ses kayıtlarında arama)
-</a>
-</li>
-
-</ul>
-
-<p>
-Kuran araştırmalarına katkı sağlayan bu değerli uygulamaları ve kaynakları
-hazırlayan SubmitterTech ekibine teşekkür ederiz.
-</p>
-
-<h2>📚 Diğer Kaynaklar</h2>
-
-<ul>
-
-<li>
-<a href="https://kuransonahit.tr/" target="_blank" rel="noopener noreferrer">
-Kuran Son Ahit
-</a>
-</li>
-
-<li>
-<a href="https://acikkuran.com/" target="_blank" rel="noopener noreferrer">
-Açık Kuran
-</a>
-— Arapça kelime çalışmaları ve sözlük verileri
-</li>
-
-<li>
-Authorized English Translation — Rashad Khalifa
-</li>
-
-<li>
-OpenAI — Yapay zekâ destekli geliştirme sürecinde kullanılan araçlardan biri.
-</li>
-
-</ul>
-
-    <h2>Son Söz</h2>
-
-<p>
-Kuran Teyit Yazılımı; Kuran ayetlerini okumak, karşılaştırmak, araştırmak ve teyit etmek amacıyla geliştirilmiş kapsamlı bir araştırma platformudur. Uygulama, Rashad Khalifa'nın Yetkilendirilmiş İngilizce Çevirisi'ni temel referans kabul ederken; Arapça metinler, Türkçe mealler, dipnotlar ve karşılaştırmalı analiz araçlarıyla kullanıcıya çok yönlü bir çalışma ortamı sunmaktadır.
-</p>
-
-<p>
-Uygulama içerisinde; ayet analizi, konu haritaları (MAP), referans
-ayetler, çoklu meal karşılaştırması, üç farklı Arapça metnin eş
-zamanlı incelenmesi, Arapça okunuş, ayetlerin sesli dinlenebilmesi,
-İngilizce kelime yardım sistemi, yerel kişisel not alma ve JSON
-yedekleme gibi birçok araştırma aracı bulunmaktadır.
-</p>
-
-<p>
-Geliştirme süreci devam etmektedir. Yeni analiz araçları, yapay zekâ destekli araştırma özellikleri, gelişmiş karşılaştırma sistemleri ve Kuran merkezli yeni çalışma modülleri ilerleyen sürümlerde uygulamaya eklenmeye devam edecektir.
-</p>
-
-<p>
-Bu proje, kullanıcı adına hüküm vermeyi değil; Kuran'ı doğrudan inceleyebileceğiniz, delilleri karşılaştırabileceğiniz ve kendi araştırmanızı özgürce yapabileceğiniz tarafsız bir çalışma ortamı oluşturmayı amaçlamaktadır.
-</p>
-
-<hr>
-<p><strong>Geliştirme, Tasarım ve Kodlama:</strong><br>
-Berk KÖKSAL</p>
-
-<p>
-<a href="https://www.berkkoksal.com" target="_blank" rel="noopener noreferrer">
-www.berkkoksal.com
-</a>
-</p>
-
-<p>Bu yazılım geliştirilmeye devam edecek olup, katkı ve geri bildirimler her zaman memnuniyetle karşılanmaktadır. Sorularınız, önerileriniz ve katkılarınız için:<br>
-<strong>berkgitarist@gmail.com</strong>
-</p>
-
-<p style="text-align:center;font-size:1.1em;margin-top:30px;">
-<strong>Bu proje tamamen TANRI'ya adanmıştır.</strong> "Oku. Araştır. Karşılaştır. Teyit Et. Kararı Kuran'ın delilleriyle kendin ver."
-</p>
-`;    
-
+`;
 
 function displayGuidePage() {
   ensureQuranView();
 
   DOM.content.innerHTML = `
-    <div class="page-header">
-      <h1>📖 Kullanım Kılavuzu</h1>
+    <div class="page-header guide-page-header">
+      <img
+        src="assets/images/logo-main.png"
+        alt="Kuran Teyit logosu"
+        class="guide-page-logo"
+        width="1024"
+        height="1024"
+      >
+
+      <h1>
+        Kullanım Kılavuzu
+      </h1>
     </div>
+
     <div class="sura">
       <div class="settings-section">
         <div class="about-section">
           ${GUIDE_CONTENT}
         </div>
-        <button class="toggle-btn" onclick="goToPage(${STATE.currentPage})">🔙 Kuran'a Dön</button>
+
+        <button
+          type="button"
+          class="toggle-btn"
+          onclick="goToPage(${STATE.currentPage})"
+        >
+          ← Kuran'a Dön
+        </button>
       </div>
-    </div>`;
+    </div>
+  `;
+
+  window.scrollTo({
+    top: 0,
+    behavior: 'auto'
+  });
+}
+
+
+function displayLegalContent(title, content) {
+  ensureQuranView();
+
+  DOM.content.innerHTML = `
+    <div class="page-header legal-page-header">
+      <img
+        src="assets/images/logo-main.png"
+        alt="Kuran Teyit logosu"
+        class="guide-page-logo"
+        width="1024"
+        height="1024"
+      >
+
+      <h1>${escapeHtml(title)}</h1>
+    </div>
+
+    <div class="sura">
+      <div class="settings-section legal-page-content">
+        <div class="about-section">
+          ${content}
+        </div>
+
+        <button
+          type="button"
+          class="toggle-btn"
+          onclick="goToPage(${STATE.currentPage})"
+        >
+          ← Kuran'a Dön
+        </button>
+      </div>
+    </div>
+  `;
+
+  window.scrollTo({
+    top: 0,
+    behavior: 'auto'
+  });
+}
+
+function displayPrivacyPage() {
+  displayLegalContent(
+    'Gizlilik Politikası',
+    PRIVACY_CONTENT
+  );
+}
+
+function displayLicensesPage() {
+  displayLegalContent(
+    'Lisanslar ve Kaynaklar',
+    LICENSES_CONTENT
+  );
 }
 
 /* =========================
@@ -6697,6 +6765,8 @@ window.toggleNoteInput = toggleNoteInput;
 window.saveNote = saveNote;
 window.cancelNote = cancelNote;
 window.displayGuidePage = displayGuidePage;
+window.displayPrivacyPage = displayPrivacyPage;
+window.displayLicensesPage = displayLicensesPage;
 window.openAnalysisPanel = openAnalysisPanel;
 window.closeAnalysisPanel = closeAnalysisPanel;
 window.speakVerse = speakVerse;

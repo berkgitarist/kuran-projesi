@@ -10,9 +10,12 @@
 
   <title>Kuran Teyit Yazılımı</title>
 
+  <link rel="icon" type="image/png" href="assets/images/logo-main.png">
+  <link rel="apple-touch-icon" href="assets/images/logo-main.png">
+
   <meta
     name="theme-color"
-    content="#0a6847"
+    content="#0b0f19"
   >
 
   <meta
@@ -22,108 +25,81 @@
 
   <link
     rel="stylesheet"
-    href="css/style.css"
-  >
-
-  <link
-    rel="preconnect"
-    href="https://fonts.googleapis.com"
-  >
-
-  <link
-    rel="preconnect"
-    href="https://fonts.gstatic.com"
-    crossorigin
-  >
-
-  <link
-    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
-    rel="stylesheet"
-  >
-
-  <link
-    href="https://fonts.googleapis.com/css2?family=Scheherazade+New:wght@400;700&display=swap"
-    rel="stylesheet"
+    href="css/style.css?v=22"
   >
 </head>
 
 <body>
-  <!-- Üst Menü -->
-  <header class="header-bar">
-    <nav
-      class="nav-controls"
-      aria-label="Ana gezinme"
+<!-- Üst Menü -->
+<header class="header-bar">
+  <nav
+    class="nav-controls"
+    aria-label="Ana gezinme"
+  >
+    <button
+      id="menuToggle"
+      class="nav-btn menu-logo-btn"
+      type="button"
+      aria-label="Menüyü aç"
+      aria-controls="sidebar"
+      aria-expanded="false"
+      title="Menüyü aç"
     >
-      <button
-        id="menuToggle"
-        class="nav-btn"
-        type="button"
-        aria-label="Menüyü aç"
-        aria-controls="sidebar"
-        aria-expanded="false"
-        title="Menüyü aç"
+      <img
+      src="assets/images/logo-icon.png"
+      alt="Kuran Teyit logosu"
+      class="menu-logo"
+      width="42"
+      height="42"
+    >
+    </button>
+
+    <button
+      id="prevPage"
+      class="nav-btn header-arrow-btn"
+      type="button"
+      aria-label="Önceki sayfa"
+      title="Önceki sayfa"
+    >
+      ←
+    </button>
+
+    <div class="search-container">
+      <label
+        for="searchInput"
+        class="visually-hidden"
       >
-        ☰
-      </button>
+        Sure, ayet veya kelime ara
+      </label>
 
-      <button
-        id="prevPage"
-        class="nav-btn"
-        type="button"
-        aria-label="Önceki sayfa"
-        title="Önceki sayfa"
+      <input
+        type="search"
+        id="searchInput"
+        placeholder="Sure, ayet veya kelime ara"
+        aria-label="Sure, ayet veya kelime ara"
+        autocomplete="off"
+        spellcheck="false"
       >
-        ⟵
-      </button>
 
-      <div class="search-container">
-        <label
-          for="searchInput"
-          class="visually-hidden"
-        >
-          Sure, ayet veya kelime ara
-        </label>
+      <div
+        id="autocomplete"
+        class="autocomplete-suggestions"
+        role="listbox"
+        aria-label="Arama önerileri"
+      ></div>
+    </div>
 
-        <input
-          type="search"
-          id="searchInput"
-          placeholder="Sure, ayet ara"
-          aria-label="Sure, ayet veya kelime ara"
-          autocomplete="off"
-          spellcheck="false"
-        >
-
-        <div
-          id="autocomplete"
-          class="autocomplete-suggestions"
-          role="listbox"
-          aria-label="Arama önerileri"
-        ></div>
-      </div>
-
-      <button
-        id="nextPage"
-        class="nav-btn"
-        type="button"
-        aria-label="Sonraki sayfa"
-        title="Sonraki sayfa"
-      >
-        ⟶
-      </button>
-
-      <a
-        id="currentPageDisplay"
-        class="page-toggle"
-        href="https://qurantft.com/"
-        target="_blank"
-        rel="noopener noreferrer"
-        aria-label="QuranTFT sitesini yeni sekmede aç"
-        title="QuranTFT sitesini yeni sekmede aç"
-      >
-        Kuran Oku
-      </a>
-    </nav>
-  </header>
+    <button
+      id="nextPage"
+      class="nav-btn header-arrow-btn"
+      type="button"
+      aria-label="Sonraki sayfa"
+      title="Sonraki sayfa"
+    >
+      →
+    </button>
+  </nav>
+</header>
 
   <!-- Yükleme Göstergesi -->
   <div
@@ -181,6 +157,22 @@
         </button>
 
         <button
+          id="privacyPage"
+          class="menu-item-btn"
+          type="button"
+        >
+          Gizlilik Politikası
+        </button>
+
+        <button
+          id="licensesPage"
+          class="menu-item-btn"
+          type="button"
+        >
+          Lisanslar ve Kaynaklar
+        </button>
+
+        <button
           id="closeMenu"
           class="menu-item-btn"
           type="button"
@@ -224,33 +216,66 @@
     aria-hidden="true"
   ></div>
 
-  <!-- Açılış Metni -->
+  <!-- Modern Açılış Ekranı -->
   <div
     id="introVerse"
     class="intro-verse-screen"
     aria-hidden="false"
   >
     <div class="intro-verse-content">
-      <h2>Çok Önemli Tavsiye</h2>
+      <img
+      src="assets/images/logo-main.png"
+      alt="Kuran Teyit logosu"
+      class="intro-logo"
+      width="1024"
+      height="1024"
+    >
 
-      <p>
-        [17:36] Kendin için teyit etmediğin sürece, hiçbir bilgiyi kabul etme.
-      </p>
+      <div class="intro-text-area">
+        <span class="intro-brand">
+          KURAN TEYİT
+        </span>
 
-      <p>
-        Ben sana işitmeyi, görmeyi ve beyni verdim ve sen onları kullanmaktan sorumlusun.
-      </p>
+        <h2>
+          Çok Önemli Tavsiye
+        </h2>
 
-      <div class="update-note">
-        ✨ Yeni: Yerel not alma sistemi eklendi.
-        Notlarınız yalnızca cihazınızda saklanır.
+        <div class="intro-reference-wrapper">
+          <span class="intro-reference">
+            17:36
+          </span>
+        </div>
+
+        <p class="intro-verse-message">
+          Kendin için teyit etmediğin sürece,
+          hiçbir bilgiyi kabul etme.
+        </p>
+
+        <p class="intro-description">
+          Ben sana işitmeyi, görmeyi ve beyni verdim
+          ve sen onları kullanmaktan sorumlusun.
+        </p>
+
+        <div class="update-note">
+          <span
+            class="update-note-icon"
+            aria-hidden="true"
+          >
+            ✦
+          </span>
+
+          <span>
+            Yerel not alma sistemi eklendi.
+            Notlarınız yalnızca cihazınızda saklanır.
+          </span>
+        </div>
       </div>
     </div>
   </div>
 
   <!-- Uygulama -->
   <script
-    src="js/script.js?v=11"
+    src="js/script.js?v=31"
     defer
   ></script>
 </body>

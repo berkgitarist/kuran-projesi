@@ -1,5 +1,7 @@
 <!DOCTYPE html>
-<html lang="tr" class="dark-theme">
+<html lang="tr">
+<!DOCTYPE html>
+<html lang="tr">
 <head>
   <meta charset="UTF-8">
 
@@ -10,8 +12,21 @@
 
   <title>Kuran Teyit Yazılımı</title>
 
-  <link rel="icon" type="image/png" href="assets/images/logo-main.png">
-  <link rel="apple-touch-icon" href="assets/images/logo-main.png">
+  <link
+    rel="icon"
+    type="image/png"
+    href="./assets/images/logo-main.png"
+  >
+
+  <link
+    rel="apple-touch-icon"
+    href="./assets/images/logo-main.png"
+  >
+
+  <link
+    rel="manifest"
+    href="./manifest.webmanifest"
+  >
 
   <meta
     name="theme-color"
@@ -23,13 +38,74 @@
     content="Kuran Teyit Yazılımı; Authorized English Translation temelinde Arapça, Türkçe ve İngilizce metinleri inceleme, meal karşılaştırma, kelime yardımı, analiz ve cihazda yerel not alma araçları sunar."
   >
 
+  <!-- Yalnızca yerel geliştirmede eski Service Worker'ı temizler -->
+  <script>
+    (() => {
+      const isLocalDevelopment =
+        location.hostname === '127.0.0.1' ||
+        location.hostname === 'localhost';
+
+      if (
+        !isLocalDevelopment ||
+        !('serviceWorker' in navigator)
+      ) {
+        return;
+      }
+
+      const cleanupKey =
+        'kuranTeyitServiceWorkerResetV45';
+
+      if (sessionStorage.getItem(cleanupKey)) {
+        return;
+      }
+
+      Promise.all([
+        navigator.serviceWorker
+          .getRegistrations()
+          .then((registrations) =>
+            Promise.all(
+              registrations.map((registration) =>
+                registration.unregister()
+              )
+            )
+          ),
+
+        'caches' in window
+          ? caches.keys().then((cacheKeys) =>
+              Promise.all(
+                cacheKeys
+                  .filter((key) =>
+                    key.startsWith('kuran-teyit-')
+                  )
+                  .map((key) => caches.delete(key))
+              )
+            )
+          : Promise.resolve()
+      ])
+        .catch((error) => {
+          console.warn(
+            'Yerel önbellek temizlenemedi:',
+            error
+          );
+        })
+        .finally(() => {
+          sessionStorage.setItem(
+            cleanupKey,
+            'true'
+          );
+
+          location.reload();
+        });
+    })();
+  </script>
+
   <link
     rel="stylesheet"
-    href="css/style.css?v=22"
+    href="./css/style.css?v=45"
   >
 </head>
 
-<body>
+<body class="dark-theme">
 <!-- Üst Menü -->
 <header class="header-bar">
   <nav
@@ -256,6 +332,14 @@
           ve sen onları kullanmaktan sorumlusun.
         </p>
 
+        <button
+          id="skipIntroBtn"
+          class="intro-skip-btn"
+          type="button"
+        >
+          Uygulamaya Geç
+        </button>
+
         <div class="update-note">
           <span
             class="update-note-icon"
@@ -265,7 +349,7 @@
           </span>
 
           <span>
-            Yerel not alma sistemi eklendi.
+            Ayrıntılı kullanım kılavuzu ve gelişmiş gezinme eklendi.
             Notlarınız yalnızca cihazınızda saklanır.
           </span>
         </div>
@@ -273,10 +357,17 @@
     </div>
   </div>
 
+  <div
+    id="toastContainer"
+    class="toast-container"
+    aria-live="polite"
+    aria-atomic="true"
+  ></div>
+
   <!-- Uygulama -->
   <script
-    src="js/script.js?v=36"
-    defer
+    type="module"
+    src="./js/script.js?v=45"
   ></script>
 </body>
 </html>

@@ -1,0 +1,25 @@
+{
+  "name": "Kuran Teyit",
+  "short_name": "Kuran Teyit",
+  "description": "Arapça, Türkçe ve İngilizce Kuran metinlerini inceleme, meal karşılaştırma, ayet analizi, sesli okuma, paylaşım ve yerel not araçları.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0b0f19",
+  "lang": "tr",
+  "icons": [
+    {
+      "src": "assets/images/logo-main.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "assets/images/logo-main.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

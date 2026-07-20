@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="tr" class="dark-theme">
+<head>
+  <meta charset="UTF-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+  >
+
+  <title>Kullanım Kılavuzu | Kuran Teyit</title>
+
+  <meta
+    name="description"
+    content="Kuran Teyit uygulamasının arama, ayet inceleme, meal karşılaştırma, analiz, sesli okuma, yerel not ve ayar özelliklerini açıklayan ayrıntılı kullanım kılavuzu."
+  >
+
+  <meta name="theme-color" content="#0b0f19">
+
+  <link rel="icon" type="image/png" href="assets/images/logo-main.png">
+  <link rel="apple-touch-icon" href="assets/images/logo-main.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="css/style.css?v=43">
+</head>
+
+<body class="guide-document dark-theme">
+  <header class="guide-topbar">
+    <button
+      id="guideBackBtn"
+      class="guide-back-btn"
+      type="button"
+      aria-label="Kuran Teyit uygulamasına dön"
+      title="Uygulamaya dön"
+    >
+      ←
+    </button>
+
+    <div class="guide-topbar-brand">
+      <img
+        src="assets/images/logo-icon.png"
+        alt=""
+        aria-hidden="true"
+        width="36"
+        height="36"
+      >
+
+      <div>
+        <strong>Kuran Teyit</strong>
+        <span>Kullanım Kılavuzu</span>
+      </div>
+    </div>
+
+    <button
+      id="guideTopBtn"
+      class="guide-top-btn"
+      type="button"
+      aria-label="Sayfanın başına git"
+      title="Başa dön"
+    >
+      ↑
+    </button>
+  </header>
+
+  <main class="guide-shell" id="mainContent">
+    <section class="guide-hero" aria-labelledby="guideTitle">
+      <img
+        src="assets/images/logo-main.png"
+        alt="Kuran Teyit logosu"
+        class="guide-hero-logo"
+        width="220"
+        height="220"
+      >
+
+      <div class="guide-hero-copy">
+        <span class="guide-version">Sürüm 43 • 20 Temmuz 2026</span>
+
+        <h1 id="guideTitle">
+          Kuran Teyit Ayrıntılı Kullanım Kılavuzu
+        </h1>
+
+        <p>
+          Bu kılavuz; uygulamanın ilk açılışından ayet aramaya, meal
+          karşılaştırmadan analiz ekranına, yerel notlardan çevrimdışı
+          kullanıma kadar mevcut özelliklerin nasıl çalıştığını adım adım
+          açıklar.
+        </p>
+
+        <div class="guide-notice" role="note">
+          <strong>Bağımsızlık ve amaç bildirimi:</strong>
+          Kuran Teyit bağımsız bir araştırma uygulamasıdır. Adı geçen
+          çeviri, veri veya kaynak sağlayıcılarının resmî uygulaması değildir.
+          Uygulama dinî hüküm, fetva ya da kesin yorum üretmez; kullanıcının
+          farklı metinleri ve kaynakları karşılaştırmasına yardımcı olur.
+        </div>
+      </div>
+    </section>
+
+    <section class="guide-quick-start" aria-labelledby="quickStartTitle">
+      <h2 id="quickStartTitle">Hızlı Başlangıç</h2>
+
+      <ol class="guide-step-grid">
+        <li>
+          <span class="guide-step-number">1</span>
+          <strong>Sure veya ayet bulun</strong>
+          <p>Üstteki arama alanına sure adı, ayet numarası ya da kelime yazın.</p>
+        </li>
+        <li>
+          <span class="guide-step-number">2</span>
+          <strong>Ayet araçlarını kullanın</strong>
+          <p>Mealler, Analiz ve Not Al düğmelerinden birini seçin.</p>
+        </li>
+        <li>
+          <span class="guide-step-number">3</span>
+          <strong>Görünümü kişiselleştirin</strong>
+          <p>Menüden tema, yazı boyutu ve çeviri alanlarını ayarlayın.</p>
+        </li>
+        <li>
+          <span class="guide-step-number">4</span>
+          <strong>Notlarınızı yedekleyin</strong>
+          <p>Notlarım bölümünden JSON yedeği oluşturup güvenli bir yerde saklayın.</p>
+        </li>
+      </ol>
+    </section>
+
+    <section class="guide-tools" aria-labelledby="guideToolsTitle">
+      <h2 id="guideToolsTitle">Kılavuz İçinde Bul</h2>
+
+      <div class="guide-search-row">
+        <label for="guideSearch">Özellik veya konu ara</label>
+        <input
+          id="guideSearch"
+          type="search"
+          placeholder="Örnek: ayet analizi, not, ses, çevrimdışı"
+          autocomplete="off"
+          spellcheck="false"
+        >
+      </div>
+
+      <div class="guide-control-row">
+        <button id="expandAllBtn" type="button" class="guide-control-btn">
+          Tüm Bölümleri Aç
+        </button>
+
+        <button id="collapseAllBtn" type="button" class="guide-control-btn">
+          Tüm Bölümleri Kapat
+        </button>
+      </div>
+
+      <p id="guideSearchStatus" class="guide-search-status" aria-live="polite"></p>
+    </section>
+
+    <nav class="guide-toc" aria-label="Kılavuz bölümleri">
+      <h2>İçindekiler</h2>
+      <div class="guide-toc-grid">
+        <a href="#section-start">İlk açılış</a>
+        <a href="#section-navigation">Menü ve gezinme</a>
+        <a href="#section-search">Arama</a>
+        <a href="#section-verse">Ayet görünümü</a>
+        <a href="#section-audio">Sesli okuma</a>
+        <a href="#section-words">Kelime yardımı</a>
+        <a href="#section-meals">Mealler</a>
+        <a href="#section-analysis">Ayet analizi</a>
+        <a href="#section-notes">Yerel notlar</a>
+        <a href="#section-settings">Ayarlar</a>
+        <a href="#section-offline">Çevrimdışı kullanım</a>
+        <a href="#section-privacy">Gizlilik</a>
+        <a href="#section-accessibility">Erişilebilirlik</a>
+        <a href="#section-troubleshooting">Sorun giderme</a>
+      </div>
+    </nav>
+
+    <section class="guide-section-list" id="guideSections">
+      <details class="guide-section" id="section-start" open>
+        <summary>
+          <span>1. İlk Açılış ve Uygulamanın Hazırlanması</span>
+        </summary>
+
+        <div class="guide-section-body">
+          <p>
+            Uygulama açıldığında kısa bir bilgilendirme ekranı gösterilir.
+            Temel Kuran verileri hazırlanırken bu ekran uygulamanın yanlışlıkla
+            boş görünmesini engeller.
+          </p>
+
+          <h3>Adım adım</h3>
+          <ol>
+            <li>Açılış ekranındaki mesajı okuyun.</li>
+            <li>Beklemek istemiyorsanız <strong>Uygulamaya Geç</strong> düğmesine dokunun.</li>
+            <li>Türkçe, İngilizce ve okunuş verileri hazır olduğunda ilk Kuran sayfası açılır.</li>
+            <li>Analiz, alternatif Arapça, AI çeviri ve meal dosyaları yalnızca ihtiyaç duyulduğunda yüklenir.</li>
+          </ol>
+
+          <div class="guide-tip">
+            İlk açılış, uygulama güncellendikten veya Android uygulama verileri
+            temizlendikten sonra biraz daha uzun sürebilir.
+          </div>
+        </div>
+      </details>
+
+      <details class="guide-section" id="section-navigation">
+        <summary>
+          <span>2. Üst Menü, Sure Menüsü ve Sayfa Geçişleri</span>
+        </summary>
+
+        <div class="guide-section-body">
+          <h3>Üst çubuk</h3>
+          <ul>
+            <li><strong>Logo:</strong> Sure listesini ve uygulama menüsünü açar.</li>
+            <li><strong>Sol ok:</strong> Normal durumda önceki Kuran sayfasına gider.</li>
+            <li><strong>Sağ ok:</strong> Sonraki Kuran sayfasına gider.</li>
+            <li><strong>Arama alanı:</strong> Sure, ayet veya kelime arar.</li>
+          </ul>
+
+          <h3>Logo davranışı</h3>
+          <ul>
+            <li>Logoya bir kez dokunmak menüyü açar veya kapatır.</li>
+            <li>Logoya hızlıca iki kez dokunmak Fatiha Suresi 1. ayete gider.</li>
+          </ul>
+
+          <h3>Sure listesini kullanma</h3>
+          <ol>
+            <li>Sol üstteki logoya dokunun.</li>
+            <li>Listeden istediğiniz sureyi seçin.</li>
+            <li>Uygulama surenin başlangıç sayfasını açar ve ilk ayeti vurgular.</li>
+          </ol>
+
+          <h3>Sayfanın altındaki düğmeler</h3>
+          <p>
+            Her Kuran sayfasının sonunda ayrıca <strong>Önceki Sayfa</strong>
+            ve <strong>Sonraki Sayfa</strong> düğmeleri bulunur. Bunlar üstteki
+            oklarla aynı sayfa geçişini gerçekleştirir.
+          </p>
+        </div>
+      </details>
+
+      <details class="guide-section" id="section-search">
+        <summary>
+          <span>3. Arama Sistemi</span>
+        </summary>
+
+        <div class="guide-section-body">
+          <p>
+            Arama sistemi doğrudan ayet numarası, sure adı ve metin içindeki
+            kelimeler için farklı çalışma biçimleri kullanır.
+          </p>
+
+          <h3>Doğrudan ayete gitme</h3>
+          <p>Aşağıdaki yazımlar aynı sonucu verir:</p>
+          <div class="guide-code-examples">
+            <code>17:36</code>
+            <code>17/36</code>
+            <code>17 36</code>
+            <code>17-36</code>
+          </div>
+          <ol>
+            <li>Arama alanına sure ve ayet numarasını yazın.</li>
+            <li>Öneriye dokunun veya Enter tuşuna basın.</li>
+            <li>Ayetin bulunduğu sayfa açılır ve ilgili ayet geçici olarak vurgulanır.</li>
+          </ol>
+
+          <h3>Sure adına göre arama</h3>
+          <p>
+            Sure adını yazdığınızda eşleşen sureler öneri olarak gösterilir.
+            Tam eşleşme seçildiğinde surenin ilk ayetine gidilir.
+          </p>
+
+          <h3>Kelime ve yaklaşık eşleşme</h3>
+          <ul>
+            <li>Türkçe, İngilizce, okunuş ve etkinse meal metinleri aranır.</li>
+            <li>Yazım benzerliği bulunan kelimeler önerilebilir.</li>
+            <li>Sonuçlar eşleşme yüzdesine göre sıralanır.</li>
+            <li>Aynı ayetteki farklı kaynak eşleşmeleri tek sonuç kartında birleştirilir.</li>
+          </ul>
+
+          <h3>Arama sonucu işlemleri</h3>
+          <ul>
+            <li><strong>Ayete Git:</strong> Sonucun ayetine gider.</li>
+            <li><strong>Mealler:</strong> Ayeti açar ve meal bölümünü gösterir.</li>
+            <li><strong>Analiz:</strong> Ayetin analiz ekranını doğrudan açar.</li>
+          </ul>
+
+          <h3>Klavye kullanımı</h3>
+          <ul>
+            <li>Aşağı ve yukarı ok tuşları öneriler arasında hareket eder.</li>
+            <li>Enter seçili sonucu açar.</li>
+            <li>Escape sonuç veya analiz penceresini kapatır.</li>
+          </ul>
+
+          <div class="guide-warning">
+            Arama sonucu bulunamaması, kelimenin hiçbir çeviride bulunmadığı
+            anlamına gelmeyebilir. Yazım, ekler ve seçili veri kaynakları sonucu etkiler.
+          </div>
+        </div>
+      </details>
+
+      <details class="guide-section" id="section-verse">
+        <summary>
+          <span>4. Ayet Kartı ve Metin Alanları</span>
+        </summary>
+
+        <div class="guide-section-body">
+          <p>Her ayet kartında aşağıdaki alanların bir bölümü veya tamamı bulunabilir:</p>
+
+          <ul>
+            <li><strong>Ayet numarası:</strong> Sure ve ayet numarasını <code>17 : 36</code> biçiminde gösterir.</li>
+            <li><strong>Arapça metin:</strong> Sağdan sola gösterilen ana Arapça metindir.</li>
+            <li><strong>Arapça karşılaştırma:</strong> Mevcut alternatif Arapça veri kaynaklarını açar.</li>
+            <li><strong>Okunuş:</strong> Ayetin Latin harfleriyle okunuşunu gösterir.</li>
+            <li><strong>İngilizce metin:</strong> Ana İngilizce çeviri alanıdır.</li>
+            <li><strong>Türkçe metin:</strong> Ana Türkçe çeviri alanıdır.</li>
+            <li><strong>Dipnot:</strong> Kaynak veride dipnot varsa açılır.</li>
+            <li><strong>AI Çeviri:</strong> Ayarlardan etkinleştirildiğinde statik deneysel çeviriyi gösterir.</li>
+          </ul>
+
+          <h3>Ayet üzerindeki işlem düğmeleri</h3>
+          <ul>
+            <li><strong>Dipnot:</strong> Kaynak dipnotlarını açar veya kapatır.</li>
+            <li><strong>Mealler:</strong> Farklı çevirileri aynı ayet altında listeler.</li>
+            <li><strong>Analiz:</strong> Konular ve bağlantılı ayetlerle analiz penceresini açar.</li>
+            <li><strong>Not Al / Notlu:</strong> Cihazda yerel bir not oluşturur veya mevcut notu açar.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="guide-section" id="section-audio">
+        <summary>
+          <span>5. Arapça ve İngilizce Sesli Okuma</span>
+        </summary>
+
+        <div class="guide-section-body">
+          <h3>Arapça kıraat</h3>
+          <ol>
+            <li>Okunuş alanındaki oynat simgesine dokunun.</li>
+            <li>Ayetin Arapça ses dosyası internet üzerinden yüklenir.</li>
+            <li>Durdur simgesi mevcut sesi hemen kapatır.</li>
+          </ol>
+
+          <p>
+            Arapça ses, Al Quran Cloud / Islamic Network CDN üzerinden
+            <strong>Mishary Rashid Alafasy</strong> kıraatiyle oynatılır.
+            Bu özellik internet bağlantısı ve az miktarda veri kullanımı gerektirir.
+          </p>
+
+          <h3>İngilizce sesli okuma</h3>
+          <ol>
+            <li>İngilizce metnin yanındaki oynat simgesine dokunun.</li>
+            <li>Uygulama Android cihazın metinden sese motorunu kullanır.</li>
+            <li>İngilizce ses yoksa Android metinden sese ayarlarını kontrol edin.</li>
+          </ol>
+
+          <div class="guide-tip">
+            Uygulama arka planda otomatik ses başlatmaz. Ses yalnızca kullanıcı
+            oynat düğmesine dokunduğunda çalışır.
+          </div>
+        </div>
+      </details>
+
+      <details class="guide-section" id="section-words">
+        <summary>
+          <span>6. Kelime Yardımı, Okunuş ve Kök Bilgisi</span>
+        </summary>
+
+        <div class="guide-section-body">
+          <h3>İngilizce kelime yardımı</h3>
+          <ul>
+            <li>Masaüstünde İngilizce kelimenin üzerine gelin.</li>
+            <li>Dokunmatik cihazda kelimeye dokunun.</li>
+            <li>Açılan bilgi kutusunda mevcut Türkçe yardım veya sözlük bilgisi gösterilir.</li>
+            <li>Başka bir alana dokunarak kutuyu kapatabilirsiniz.</li>
+          </ul>
+
+          <h3>Arapça kelime çevirisi</h3>
+          <p>
+            Arapça karşılaştırma ayrıntıları açıldığında, mevcut ayet için
+            kelime tablosu ihtiyaç halinde yüklenir. Tablo aşağıdaki bilgileri
+            içerebilir:
+          </p>
+          <ul>
+            <li>Arapça kelime</li>
+            <li>Türkçe okunuş</li>
+            <li>Türkçe anlam</li>
+            <li>Arapça kök</li>
+          </ul>
+
+          <div class="guide-warning">
+            Kelime anlamı bağlama göre değişebilir. Kelime yardımı tek başına
+            ayetin tüm anlamını veya dilbilgisel yapısını açıklamaz.
+          </div>
+        </div>
+      </details>
+
+      <details class="guide-section" id="section-meals">
+        <summary>
+          <span>7. Meal Karşılaştırma</span>
+        </summary>
+
+        <div class="guide-section-body">
+          <p>
+            Meal dosyaları uygulama ilk açıldığında yüklenmez. Kullanıcı ilk kez
+            <strong>Mealler</strong> düğmesine dokunduğunda dosyalar hazırlanır ve
+            ortak ayet dizinine dönüştürülür.
+          </p>
+
+          <h3>Adım adım</h3>
+          <ol>
+            <li>İncelemek istediğiniz ayette <strong>Mealler</strong> düğmesine dokunun.</li>
+            <li>İlk kullanımda yükleme tamamlanana kadar kısa süre bekleyin.</li>
+            <li>Çeviriler meal adına göre satırlar hâlinde görüntülenir.</li>
+            <li>Düğmeye tekrar dokunarak alanı kapatın.</li>
+          </ol>
+
+          <h3>Aramadan meal sonucuna gitme</h3>
+          <p>
+            Arama sonucu bir meal metninden geldiyse uygulama ilgili ayeti açar,
+            meal alanını genişletir ve eşleşen satırı belirginleştirir.
+          </p>
+
+          <div class="guide-warning">
+            Farklı çeviriler farklı dil ve yorum tercihleri içerebilir. Meal
+            karşılaştırma alanı kullanıcıya kaynakları yan yana inceleme imkânı
+            verir; herhangi bir çeviriyi tek ve kesin açıklama olarak ilan etmez.
+          </div>
+        </div>
+      </details>
+
+      <details class="guide-section" id="section-analysis">
+        <summary>
+          <span>8. Ayet Analizi ve Bağlantılı Ayetler</span>
+        </summary>
+
+        <div class="guide-section-body">
+          <p>
+            Analiz ekranı, seçilen ayetin ana metnini, konu haritalarında bulunan
+            başlıkları ve aynı konularla ilişkilendirilmiş referans ayetleri bir
+            araya getirir.
+          </p>
+
+          <h3>Analizi açma</h3>
+          <ol>
+            <li>Bir ayet kartındaki <strong>Analiz</strong> düğmesine dokunun.</li>
+            <li>Konu haritaları ilk kullanımda ihtiyaç halinde yüklenir.</li>
+            <li>Açılan pencerede ana ayet, Türkçe ve İngilizce konular ile referans ayetler gösterilir.</li>
+          </ol>
+
+          <h3>Analizden başka ayete gitme</h3>
+          <ol>
+            <li>Konu altındaki veya Referans Ayetler bölümündeki bir ayete dokunun.</li>
+            <li>Uygulama analiz ekranındaki konumunuzu kaydeder.</li>
+            <li>Seçilen ayetin bulunduğu Kuran sayfasını açar ve ayeti vurgular.</li>
+            <li>Sol üstteki sol oka dokunduğunuzda önceki analiz ekranına ve kaldığınız kaydırma konumuna dönersiniz.</li>
+          </ol>
+
+          <h3>Tarayıcı ve Android geri hareketi</h3>
+          <p>
+            Ayet ve analiz geçişleri uygulama geçmişine kaydedilir. Android geri
+            hareketi veya tarayıcı geri düğmesi, mümkün olduğunda bir önceki ayet
+            ya da analiz görünümünü geri getirir.
+          </p>
+
+          <div class="guide-warning">
+            Konu eşleştirmeleri kaynak veri haritalarından alınır. Bunlar otomatik
+            veya kaynak tabanlı araştırma bağlantılarıdır; dinî hüküm veya fetva değildir.
+          </div>
+        </div>
+      </details>
+
+
+      <details class="guide-section" id="section-notes">
+        <summary>
+          <span>9. Yerel Not Sistemi ve Yedekleme</span>
+        </summary>
+
+        <div class="guide-section-body">
+          <p>
+            Notlar kullanıcı hesabına veya geliştirici sunucusuna gönderilmez.
+            Uygulamanın yerel depolama alanında, ayet numarasıyla ilişkilendirilerek saklanır.
+          </p>
+
+          <h3>Not oluşturma</h3>
+          <ol>
+            <li>Ayet kartındaki <strong>Not Al</strong> düğmesine dokunun.</li>
+            <li>Metin alanına 1 ile 10.000 karakter arasında notunuzu yazın.</li>
+            <li><strong>Kaydet</strong> düğmesine dokunun.</li>
+            <li>Düğme <strong>Notlu</strong> durumuna geçer.</li>
+          </ol>
+
+          <h3>Notu görüntüleme, düzenleme ve silme</h3>
+          <ul>
+            <li><strong>Notlu</strong> düğmesi kayıtlı notu açar veya kapatır.</li>
+            <li><strong>Düzenle</strong> mevcut metni yeniden düzenleme alanına taşır.</li>
+            <li><strong>Sil</strong> yalnızca ilgili ayetin yerel notunu kaldırır.</li>
+          </ul>
+
+          <h3>Notlarım sayfası</h3>
+          <ol>
+            <li>Sol üstteki logoya dokunun.</li>
+            <li><strong>Notlarım</strong> seçeneğini açın.</li>
+            <li>Bir nottan ilgili ayete gidebilir veya notu silebilirsiniz.</li>
+            <li><strong>Notları Gizle/Göster</strong> düğmesi liste görünürlüğünü değiştirir.</li>
+          </ol>
+
+          <h3>Yedekleme</h3>
+          <ul>
+            <li><strong>Notları Yedekle:</strong> Notları JSON dosyası olarak dışa aktarır.</li>
+            <li><strong>Not Dosyası Yükle:</strong> Geçerli JSON not yedeğini içe aktarır.</li>
+            <li>İçe aktarılan notlar aynı ayet numarasındaki mevcut notların üzerine yazabilir.</li>
+            <li>Geçersiz ayet, aşırı uzun içerik veya bozuk dosya reddedilir.</li>
+          </ul>
+
+          <div class="guide-warning">
+            Uygulama kaldırılırsa, Android uygulama verileri temizlenirse veya
+            WebView depolaması sıfırlanırsa yerel notlar kaybolabilir. Önemli
+            notlarınızı düzenli olarak yedekleyin.
+          </div>
+        </div>
+      </details>
+
+      <details class="guide-section" id="section-settings">
+        <summary>
+          <span>10. Ayarlar ve Görünüm Tercihleri</span>
+        </summary>
+
+        <div class="guide-section-body">
+          <h3>Ayarları açma</h3>
+          <ol>
+            <li>Sol üstteki logoya dokunun.</li>
+            <li><strong>Ayarlar</strong> seçeneğini açın.</li>
+            <li>İstediğiniz seçenekleri değiştirip <strong>Ayarları Kaydet</strong> düğmesine dokunun.</li>
+          </ol>
+
+          <h3>Tema seçenekleri</h3>
+          <p>
+            Açık, koyu, yeşil, çivit, kahverengi, açık mavi, siyah, mavi,
+            kırmızı ve zeytin temaları arasından seçim yapılabilir.
+          </p>
+
+          <h3>Yazı boyutu</h3>
+          <p>Küçük, orta veya büyük yazı boyutu seçilebilir.</p>
+
+          <h3>Görünürlük seçenekleri</h3>
+          <ul>
+            <li><strong>Mealleri Göster:</strong> Ayet kartındaki Mealler düğmesini gösterir.</li>
+            <li><strong>Arapça-Türkçe Göster:</strong> Okunuş alanını gösterir.</li>
+            <li><strong>AI Çeviriyi Göster:</strong> Yerel statik AI çeviri alanını etkinleştirir.</li>
+          </ul>
+
+          <p>
+            Ayarlar cihazda yerel olarak saklanır ve uygulama yeniden açıldığında
+            tekrar uygulanır.
+          </p>
+
+          <div class="guide-warning">
+            AI Çeviri alanı canlı bir sohbet sistemi değildir ve kullanıcı
+            girdisini internet üzerinden bir AI hizmetine göndermez. Uygulama
+            paketindeki önceden hazırlanmış deneysel metni gösterir. Resmî meal,
+            fetva veya kesin yorum olarak kullanılmamalıdır.
+          </div>
+        </div>
+      </details>
+
+      <details class="guide-section" id="section-offline">
+        <summary>
+          <span>11. Çevrimdışı Kullanım ve Veri Yükleme</span>
+        </summary>
+
+        <div class="guide-section-body">
+          <p>
+            Uygulamanın ana arayüzü, yerel Kuran verileri, ayarlar ve notlar
+            internet bağlantısı olmadan kullanılabilir. Web sürümünde Service
+            Worker, daha önce açılan uygulama dosyalarını ve veri dosyalarını
+            cihaz önbelleğinde tutabilir.
+          </p>
+
+          <h3>İnternet gerektirmeyen işlemler</h3>
+          <ul>
+            <li>Kuran metinlerini görüntüleme</li>
+            <li>Sure ve ayet numarasıyla gezinme</li>
+            <li>Daha önce hazırlanmış yerel arama indeksini kullanma</li>
+            <li>Not oluşturma, düzenleme ve silme</li>
+            <li>Tema ve yazı boyutu ayarları</li>
+            <li>Paket içinde bulunan analiz, meal ve sözlük verileri</li>
+          </ul>
+
+          <h3>İnternet gerektirebilen işlemler</h3>
+          <ul>
+            <li>Arapça ses dosyasını ilk kez oynatma</li>
+            <li>Harici kaynak bağlantılarını açma</li>
+            <li>Uygulamanın web/PWA sürümünde henüz önbelleğe alınmamış dosyaları ilk kez yükleme</li>
+          </ul>
+
+          <div class="guide-tip">
+            Android Studio ile paketlenen yerel dosyalar uygulamanın içinde yer
+            alıyorsa metin, analiz, meal ve not özellikleri çevrimdışı çalışmaya devam eder.
+          </div>
+        </div>
+      </details>
+
+      <details class="guide-section" id="section-privacy">
+        <summary>
+          <span>12. Gizlilik, Veri Kullanımı ve İzinler</span>
+        </summary>
+
+        <div class="guide-section-body">
+          <h3>Hesap ve kimlik</h3>
+          <ul>
+            <li>Uygulama kullanıcı hesabı oluşturmaz.</li>
+            <li>Ad, telefon numarası, konum veya kişi listesi istemez.</li>
+            <li>Mevcut sürümde geliştiriciye ait reklam veya davranış analizi sistemi bulunmaz.</li>
+          </ul>
+
+          <h3>Cihazda saklanan bilgiler</h3>
+          <ul>
+            <li>Tema, yazı boyutu ve görünürlük tercihleri</li>
+            <li>Kullanıcının oluşturduğu ayet notları</li>
+            <li>Web/PWA kullanımında çevrimdışı önbelleğe alınan uygulama ve veri dosyaları</li>
+          </ul>
+
+          <h3>Ağ üzerinden yapılan işlemler</h3>
+          <ul>
+            <li>Arapça ses yalnızca oynat düğmesine dokunulduğunda CDN'den alınır.</li>
+            <li>Harici kaynak bağlantıları yalnızca kullanıcı bağlantıya dokunduğunda açılır.</li>
+          </ul>
+
+          <h3>Politika belgeleri</h3>
+          <p>
+            Uygulama menüsündeki <strong>Gizlilik Politikası</strong> veri işleme
+            ayrıntılarını; <strong>Lisanslar ve Kaynaklar</strong> sayfası kullanılan
+            veri ve içerik kaynaklarını açıklar.
+          </p>
+
+          <div class="guide-tip">
+            Google Play mağaza sayfasındaki Veri Güvenliği beyanı ile uygulama
+            içindeki Gizlilik Politikası aynı gerçek veri işleme davranışını açıklamalıdır.
+          </div>
+        </div>
+      </details>
+
+      <details class="guide-section" id="section-accessibility">
+        <summary>
+          <span>13. Erişilebilirlik ve Kullanım Kolaylığı</span>
+        </summary>
+
+        <div class="guide-section-body">
+          <ul>
+            <li>Temalar ve büyük yazı seçeneği farklı görme ihtiyaçlarına yardımcı olur.</li>
+            <li>Analiz ve arama sonuçları erişilebilir dialog yapısında açılır.</li>
+            <li>Dialog içinde Tab ve Shift+Tab ile odak sırası korunur.</li>
+            <li>Escape tuşu açık dialogu kapatır.</li>
+            <li>Düğmelerin çoğunda ekran okuyucu için açıklayıcı etiketler bulunur.</li>
+            <li>Sistem hareket azaltma tercihi etkinse animasyon ve yumuşak kaydırma azaltılır.</li>
+          </ul>
+
+          <p>
+            Android'in sistem yazı boyutu, metinden sese motoru ve ekran okuyucu
+            ayarları cihaz modeline göre uygulama deneyimini etkileyebilir.
+          </p>
+        </div>
+      </details>
+
+      <details class="guide-section" id="section-troubleshooting">
+        <summary>
+          <span>14. Sorun Giderme</span>
+        </summary>
+
+        <div class="guide-section-body">
+          <h3>Arapça ses çalmıyor</h3>
+          <ol>
+            <li>İnternet bağlantısını kontrol edin.</li>
+            <li>Android medya ses seviyesini kontrol edin.</li>
+            <li>Başka bir ayette tekrar deneyin.</li>
+          </ol>
+
+          <h3>İngilizce ses çalışmıyor</h3>
+          <ol>
+            <li>Android Ayarları içinden metinden sese motorunun kurulu olduğunu doğrulayın.</li>
+            <li>İngilizce ses paketinin cihazda bulunduğunu kontrol edin.</li>
+          </ol>
+
+          <h3>Mealler veya analiz açılmıyor</h3>
+          <ol>
+            <li>Uygulamayı tamamen kapatıp yeniden açın.</li>
+            <li>Güncelleme sonrası eski Android/WebView önbelleğini temizleyin.</li>
+            <li>Uygulama paketinde <code>data</code> klasörünün eksiksiz bulunduğunu doğrulayın.</li>
+          </ol>
+
+          <h3>Notlar görünmüyor</h3>
+          <ol>
+            <li>Notlarım bölümünde listenin gizli olmadığını kontrol edin.</li>
+            <li>Android uygulama verilerinin yakın zamanda temizlenip temizlenmediğini kontrol edin.</li>
+            <li>Varsa daha önce dışa aktardığınız JSON yedeğini içe aktarın.</li>
+          </ol>
+
+          <h3>Güncellemeden sonra eski görünüm açılıyor</h3>
+          <ol>
+            <li>Android Studio projesinde güncel <code>index.html</code>, <code>style.css</code>, <code>script.js</code>, modül ve kılavuz dosyalarının bulunduğunu kontrol edin.</li>
+            <li>Capacitor kullanıyorsanız web dosyalarını kopyalayıp projeyi yeniden senkronize edin.</li>
+            <li>Uygulamayı yeniden derleyin ve test cihazındaki eski sürümü kaldırıp temiz kurulum yapın.</li>
+          </ol>
+
+          <h3>Destek</h3>
+          <p>
+            Hata bildirirken mümkünse cihaz modeli, Android sürümü, uygulama
+            sürümü, yapılan işlem ve ekran görüntüsünü birlikte iletin.
+          </p>
+          <p>
+            <strong>Geliştirme ve destek:</strong>
+            Berk KÖKSAL —
+            <a href="https://www.berkkoksal.com/" target="_blank" rel="noopener noreferrer">
+              www.berkkoksal.com
+            </a>
+            — berkgitarist@gmail.com
+          </p>
+        </div>
+      </details>
+    </section>
+
+    <section class="guide-final-note" aria-labelledby="guideFinalTitle">
+      <h2 id="guideFinalTitle">Önemli Son Not</h2>
+      <p>
+        Kuran Teyit, metinleri ve araştırma araçlarını bir araya getirir.
+        Çeviri, konu eşleştirmesi, kelime yardımı veya deneysel AI alanı hata
+        içerebilir. Önemli değerlendirmelerde ana metni, güvenilir kaynakları
+        ve farklı çevirileri birlikte inceleyin.
+      </p>
+
+      <button id="guideReturnBottomBtn" type="button" class="guide-return-btn">
+        ← Kuran Teyit Uygulamasına Dön
+      </button>
+    </section>
+  </main>
+
+  <script type="module" src="js/guide.js?v=43"></script>
+</body>
+</html>

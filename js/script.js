@@ -1,8 +1,58 @@
-/* script.js - temizlenmiş ve hızlandırılmış sürüm */
+import {
+  escapeHtml,
+  escapeRegExp,
+  normalizeTurkishText,
+  normalizeSearchText,
+  getSearchMatchScore,
+  expandVerseRefs
+} from './modules/core-utils.js';
+import {
+  parseRouteHash,
+  buildRouteHash,
+  createHistoryState
+} from './modules/navigation-utils.js';
+import {
+  normalizeMealData
+} from './modules/meal-normalizer.js';
+import {
+  sanitizeImportedNotes
+} from './modules/note-validator.js';
 
+/* =========================================================
+   KURAN TEYİT — VERİ KAYNAĞI VE HAK BİLDİRİMİ
+
+   Bu uygulamadaki üçüncü taraf metin/veri dosyalarının kaynak kökeni:
+
+   1) QuranTFT / SubmitterTech
+      - https://github.com/SubmitterTech/quran-tft/tree/main/app/src/assets/translations/tr
+      - https://github.com/SubmitterTech/quran-tft/tree/main/app/src
+      - https://qurantft.com/
+      Kullanılan veri grupları: ana İngilizce/Türkçe çeviri verileri,
+      Arapça karşılaştırma verilerinin bir bölümü, konu haritaları ve ekler.
+
+   2) Açık Kuran
+      - https://github.com/acik-kuran
+      - https://acikkuran.com/
+      Kullanılan veri grupları: Erhan Aktaş Türkçe/Arapça çeviri verileri
+      ve kelime çevirisi/kök verileri.
+
+   3) Kuran Rehberi
+      - https://github.com/eyupipler/Kuran-Rehberi/tree/main/data/translations
+      Kullanılan veri grupları: uygulamadaki çeşitli karşılaştırmalı meal
+      dosyalarının kaynaklandığı veri koleksiyonu.
+
+   ÖNEMLİ:
+   Bu yorum yalnızca veri kökenini ve atfı belgeler. Bir içeriğin GitHub'da
+   herkese açık olması veya burada kaynak gösterilmesi, tek başına yeniden
+   dağıtım lisansı ya da yazılı kullanım izni oluşturmaz. Her çeviri/veri
+   dosyası için kaynak depodaki LICENSE/NOTICE/README koşulları ile çevirmen,
+   yayıncı ve veri sahibinin hakları ayrıca doğrulanmalıdır.
+========================================================= */
+
+/* GÜNCELLEME: İngilizce kelime yardım alanları genişletildi. */
 const CONFIG = {
   batchSize: 3,
-  initialLoad: 5,
+
   mealFiles: [
     'Abdülbaki Gölpınarlı.json',
     'Diyanet İşleri.json',
@@ -15,12 +65,12 @@ const CONFIG = {
     'Ömer Nasuhi Bilmen.json',
     'Süleyman Ateş.json',
     'Süleymaniye.json',
-    "Tefhim-ul Kur'an.json-Link",
+    "Tefhim-ul Kur'an.json",
     'Yaşar Nuri Öztürk.json',
     'Yusuf Ali (İngilizce).json',
-    '2baski_quran_tr.json',
     'kuran_erhan_aktas.json'
   ],
+
   dataPaths: {
     en: './data/qurantft.json',
     tr: './data/quran_tr.json',
@@ -28,14 +78,20 @@ const CONFIG = {
     ai: './data/yapayzekaceviri.json',
     dictionary: './data/manual-dictionary.json',
     arabic2: './data/mealler/quran_arapca2.json',
-    erhanArabic: './data/mealler/kuran_erhan_aktas.json'
+    erhanArabic: './data/mealler/kuran_erhan_aktas.json',
+    wordTranslations: './data/word-translations.json',
+    mapTr: './data/map_tr.json',
+    mapEn: './data/map.json'
   }
 };
 
+const FIRST_QURAN_DATA_PAGE = 23;
+const LAST_QURAN_DATA_PAGE = 604;
+
 const STATE = {
-  currentPage: 1,
-  totalPages: 604,
-  loadedPages: new Set(),
+  currentPage: FIRST_QURAN_DATA_PAGE,
+  currentView: 'page',
+  totalPages: LAST_QURAN_DATA_PAGE,
   data: {
     en: {},
     tr: {},
@@ -44,17 +100,22 @@ const STATE = {
     meals: {},
     dictionary: {},
     arabic2: {},
-    erhanArabic: {}
+    erhanArabic: {},
+    wordTranslations: {},
+    mapTr: {},
+    mapEn: {}
   },
+
   metadata: {
     sureNames: {},
     sureToPageMap: {},
     pageToSuraMap: {},
     verseToPageMap: {}
   },
+
   settings: {
     theme: 'dark',
-    fontSize: 'medium',
+    fontSize: 'small',
     translation: 'Diyanet İşleri',
     showTransliteration: true,
     showMeals: true,
@@ -64,10 +125,8 @@ const STATE = {
 
 const DOM = {
   quranContent: document.getElementById('quranContent'),
-  iframeContent: document.getElementById('iframeContent'),
   content: document.getElementById('quranContent'),
   loadingOverlay: document.getElementById('loadingOverlay'),
-  currentPageDisplay: document.getElementById('currentPageDisplay'),
   searchInput: document.getElementById('searchInput'),
   autocomplete: document.getElementById('autocomplete'),
   suraMenu: document.getElementById('suraMenu'),
@@ -81,8 +140,16 @@ const DOM = {
 const SEARCH_INDEX = {
   quran: [],
   meals: [],
+  quranTokenMap: new Map(),
+  mealTokenMap: new Map(),
   ready: false,
   mealsReady: false
+};
+
+const SURA_SEARCH_CACHE = {
+  exact: new Map(),
+  items: [],
+  queryResults: new Map()
 };
 
 const PAGE_CACHE = new Map();
@@ -91,13 +158,39 @@ const MAX_PAGE_CACHE = 20;
 const MEALS_STATE = {
   status: 'idle',
   loadPromise: null,
-  loadedCount: 0
+  loadedCount: 0,
+  index: Object.create(null)
 };
 
-let externalSiteLoaded = false;
+const FEATURE_STATE = {
+  ai: { status: 'idle', promise: null },
+  dictionary: { status: 'idle', promise: null },
+  arabicComparisons: { status: 'idle', promise: null },
+  analysis: { status: 'idle', promise: null }
+};
+
+const TOPIC_INDEX = {
+  tr: new Map(),
+  en: new Map()
+};
+
+const NAVIGATION_STATE = {
+  applyingHistory: false,
+  initialized: false,
+  lastRoute: null
+};
+
 let activeSearchQuery = '';
 let pendingHighlight = null;
 let tooltipDelegationReady = false;
+let activeSearchRequestId = 0;
+let activeAnalysisRequestId = 0;
+let lastDialogTrigger = null;
+let loadingOperationCount = 0;
+
+// Analiz panelinden bir ayete gidildiğinde, geri dönüş için
+// analiz edilen ayeti ve panelin kaydırma konumunu saklar.
+let analysisReturnState = null;
 
 /* =========================
    Başlangıç
@@ -107,90 +200,306 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   loadSettings();
   applySettings();
-
-  const introPromise = showIntroVerse();
-
-  let dataLoaded = false;
-
-  const dataPromise = loadInitialData()
-    .then(() => {
-      processMetadata();
-      buildSuraMenu();
-      setupEventListeners();
-      STATE.currentPage = 23;
-      dataLoaded = true;
-      console.log('Veri yükleme tamamlandı.');
-    })
-    .catch((err) => {
-      console.error('Veri yükleme başarısız:', err);
-      throw err;
-    });
+  registerServiceWorker();
 
   try {
-    // Önce intro kendi 5 saniyesini tamamlasın
-    await introPromise;
+    await Promise.all([
+      showIntroVerse(),
+      loadInitialData()
+    ]);
 
-    // Veri henüz bitmediyse loading mesajı göster
-    if (!dataLoaded) {
-      ensureQuranView();
-      DOM.content.innerHTML =
-        '<div class="loading-message" style="text-align:center;padding:40px;"><p>Kuran sayfaları yükleniyor...</p></div>';
-      await dataPromise;
-    } else {
-      await dataPromise;
+    if (STATE.settings.showAiTranslation) {
+      try {
+        await ensureFeatureLoaded('ai');
+      } catch (error) {
+        STATE.settings.showAiTranslation = false;
+        showNotification('AI çeviri verisi yüklenemedi; uygulama temel metinlerle açıldı.', 'warning');
+      }
     }
 
-    ensureQuranView();
-    loadPagesAround(STATE.currentPage);
+    processMetadata();
+    buildSuraSearchCache();
+    buildSuraMenu();
+    setupEventListeners();
+
+    const initialRoute = parseRouteHash(window.location.hash);
+    await applyRoute(initialRoute, {
+      historyMode: 'replace',
+      restoreScroll: true
+    });
+
+    if (!NAVIGATION_STATE.initialized) {
+      NAVIGATION_STATE.initialized = true;
+    }
 
     console.log('İlk ekran hazır.');
 
-    // Arama indexini ekran açıldıktan sonra hazırla
-    setTimeout(() => {
+    const scheduleIndexBuild = window.requestIdleCallback || ((callback) => setTimeout(callback, 120));
+
+    scheduleIndexBuild(() => {
       try {
         buildSearchIndex();
-        console.log('Arama indexi hazır.');
-      } catch (err) {
-        console.error('Arama indexi oluşturulamadı:', err);
+        console.log('Arama indeksi hazır.');
+      } catch (error) {
+        console.error('Arama indeksi oluşturulamadı:', error);
       }
-    }, 100);
-
-  } catch (err) {
-    console.error('Başlangıç hatası:', err);
+    });
+  } catch (error) {
+    console.error('Başlangıç hatası:', error);
     ensureQuranView();
-    DOM.content.innerHTML =
-      '<div class="error-message" style="text-align:center;padding:40px;">Veri yüklenirken hata oluştu. Lütfen sayfayı yenileyin.</div>';
+    DOM.content.innerHTML = `
+      <div class="error-message" style="text-align:center;padding:40px;">
+        <h2>Uygulama başlatılamadı</h2>
+        <p>${escapeHtml(error.message || 'Temel veri dosyaları yüklenemedi.')}</p>
+        <button type="button" class="toggle-btn" data-action="reload-app">
+          Yeniden Dene
+        </button>
+      </div>
+    `;
   }
 });
+
+async function clearDevelopmentServiceWorkerState() {
+  const isLocalDevelopment =
+    (location.hostname === '127.0.0.1' || location.hostname === 'localhost') &&
+    Boolean(location.port);
+
+  if (!isLocalDevelopment || !('serviceWorker' in navigator)) {
+    return false;
+  }
+
+  try {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(registrations.map((registration) => registration.unregister()));
+
+    if ('caches' in window) {
+      const cacheKeys = await caches.keys();
+      await Promise.all(
+        cacheKeys
+          .filter((key) => key.startsWith('kuran-teyit-'))
+          .map((key) => caches.delete(key))
+      );
+    }
+
+    console.info('Yerel geliştirme Service Worker önbelleği temizlendi.');
+  } catch (error) {
+    console.warn('Yerel Service Worker temizlenemedi:', error);
+  }
+
+  return true;
+}
+
+function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+
+  window.addEventListener('load', async () => {
+    if (await clearDevelopmentServiceWorkerState()) {
+      return;
+    }
+
+    try {
+      const registration = await navigator.serviceWorker.register('./service-worker.js');
+
+      registration.addEventListener('updatefound', () => {
+        const worker = registration.installing;
+        if (!worker) return;
+
+        worker.addEventListener('statechange', () => {
+          if (worker.state === 'installed' && navigator.serviceWorker.controller) {
+            showNotification('Kuran Teyit için yeni sürüm hazır. Yenilemede uygulanacak.', 'info', 6000);
+          }
+        });
+      });
+    } catch (error) {
+      console.warn('Service Worker kaydedilemedi:', error);
+    }
+  });
+}
 
 /* =========================
    Yardımcılar
 ========================= */
-function escapeHtml(str) {
-  if (!str) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
+
+let currentVerseAudio = null;
+
+function getGlobalAyahNumber(suraNum, verseNum) {
+  const counts = {
+    1:7,2:286,3:200,4:176,5:120,6:165,7:206,8:75,9:129,10:109,11:123,12:111,13:43,14:52,15:99,16:128,
+    17:111,18:110,19:98,20:135,21:112,22:78,23:118,24:64,25:77,26:227,27:93,28:88,29:69,30:60,31:34,
+    32:30,33:73,34:54,35:45,36:83,37:182,38:88,39:75,40:85,41:54,42:53,43:89,44:59,45:37,46:35,47:38,
+    48:29,49:18,50:45,51:60,52:49,53:62,54:55,55:78,56:96,57:29,58:22,59:24,60:13,61:14,62:11,63:11,
+    64:18,65:12,66:12,67:30,68:52,69:52,70:44,71:28,72:28,73:20,74:56,75:40,76:31,77:50,78:40,79:46,
+    80:42,81:29,82:19,83:36,84:25,85:22,86:17,87:19,88:26,89:30,90:20,91:15,92:21,93:11,94:8,95:8,
+    96:19,97:5,98:8,99:8,100:11,101:11,102:8,103:3,104:9,105:5,106:4,107:7,108:3,109:6,110:3,111:5,
+    112:4,113:5,114:6
+  };
+
+  let total = 0;
+  for (let i = 1; i < Number(suraNum); i++) {
+    total += counts[i];
+  }
+
+  return total + Number(verseNum);
 }
 
-function escapeRegExp(string) {
-  return String(string).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function speakVerse(suraNum, verseNum) {
+  stopSpeech();
+
+  const ayahNumber = getGlobalAyahNumber(
+    suraNum,
+    verseNum
+  );
+
+  const audioUrl =
+    `https://cdn.islamic.network/quran/audio/128/ar.alafasy/${ayahNumber}.mp3`;
+
+  currentVerseAudio = new Audio(audioUrl);
+
+  currentVerseAudio
+    .play()
+    .catch((error) => {
+      console.error(
+        'Arapça ses oynatılamadı:',
+        error
+      );
+
+      showNotification(
+        'Arapça ses oynatılamadı. İnternet bağlantısını kontrol edin.',
+        'warning'
+      );
+    });
 }
 
-function normalizeTurkishText(text) {
-  if (!text) return '';
-  return String(text)
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLocaleLowerCase('tr-TR');
+
+function stopSpeech() {
+  if (currentVerseAudio) {
+    currentVerseAudio.pause();
+    currentVerseAudio.currentTime = 0;
+    currentVerseAudio = null;
+  }
+
+  const nativeTextToSpeech =
+    window.Capacitor?.Plugins?.TextToSpeech;
+
+  if (nativeTextToSpeech) {
+    nativeTextToSpeech
+      .stop()
+      .catch((error) => {
+        console.warn(
+          'Yerel ses durdurulamadı:',
+          error
+        );
+      });
+  }
+
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.cancel();
+  }
 }
 
-function showNotification(message, type = 'info') {
+
+function speakEnglishVerse(suraNum, verseNum) {
+  stopSpeech();
+
+  const page = getVersePage(
+    String(suraNum),
+    String(verseNum)
+  );
+
+  const text =
+    STATE.data.en?.[page]
+      ?.sura?.[String(suraNum)]
+      ?.verses?.[String(verseNum)] || '';
+
+  if (!text) {
+    showNotification(
+      'Bu ayet için İngilizce metin bulunamadı.',
+      'warning'
+    );
+
+    return;
+  }
+
+  const nativeTextToSpeech =
+    window.Capacitor?.Plugins?.TextToSpeech;
+
+  if (nativeTextToSpeech) {
+    nativeTextToSpeech
+      .speak({
+        text: text,
+        lang: 'en-US',
+        rate: 0.9,
+        pitch: 1.0,
+        volume: 1.0
+      })
+      .catch((error) => {
+        console.error(
+          'Yerel İngilizce sesli okuma hatası:',
+          error
+        );
+
+        showNotification(
+          'İngilizce sesli okuma başlatılamadı. Telefonun metin okuma ayarlarını kontrol edin.',
+          'warning'
+        );
+      });
+
+    return;
+  }
+
+  if ('speechSynthesis' in window) {
+    const utterance =
+      new SpeechSynthesisUtterance(text);
+
+    utterance.lang = 'en-US';
+    utterance.rate = 0.9;
+    utterance.pitch = 1;
+    utterance.volume = 1;
+
+    window.speechSynthesis.speak(
+      utterance
+    );
+
+    return;
+  }
+
+  showNotification(
+    'Bu cihazda İngilizce sesli okuma kullanılamıyor.',
+    'warning'
+  );
+}
+
+function showNotification(message, type = 'info', duration = 3600) {
   console.log(`[${type}] ${message}`);
-  alert(message);
+
+  const container = document.getElementById('toastContainer');
+  if (!container) return;
+
+  const toast = document.createElement('div');
+  toast.className = `app-toast app-toast-${type}`;
+  toast.setAttribute('role', type === 'warning' || type === 'error' ? 'alert' : 'status');
+
+  const text = document.createElement('span');
+  text.className = 'app-toast-message';
+  text.textContent = String(message || '');
+
+  const closeButton = document.createElement('button');
+  closeButton.type = 'button';
+  closeButton.className = 'app-toast-close';
+  closeButton.setAttribute('aria-label', 'Bildirimi kapat');
+  closeButton.textContent = '×';
+
+  const removeToast = () => {
+    toast.classList.add('app-toast-leaving');
+    setTimeout(() => toast.remove(), 180);
+  };
+
+  closeButton.addEventListener('click', removeToast);
+  toast.append(text, closeButton);
+  container.appendChild(toast);
+
+  requestAnimationFrame(() => toast.classList.add('app-toast-visible'));
+  setTimeout(removeToast, duration);
 }
 
 function setPageCache(pageNum, html) {
@@ -213,28 +522,51 @@ function clearPageCache() {
 function showIntroVerse() {
   return new Promise((resolve) => {
     const intro = DOM.introVerse;
+    const skipButton = document.getElementById('skipIntroBtn');
 
     if (!intro) {
       resolve();
       return;
     }
 
-    // Her açılışta 5 sn göster
-    intro.classList.remove('hidden');
-    intro.classList.remove('fade-out');
-    intro.style.display = 'flex';
-    intro.setAttribute('aria-hidden', 'false');
+    let alreadySeen = false;
 
-    setTimeout(() => {
+    try {
+      alreadySeen = localStorage.getItem('kuranTeyitIntroSeenV1') === 'true';
+    } catch (error) {
+      console.warn('Açılış ekranı tercihi okunamadı:', error);
+    }
+    const visibleDuration = alreadySeen ? 3000 : 3000;
+    let finished = false;
+    let hideTimer = null;
+
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(hideTimer);
+      skipButton?.removeEventListener('click', finish);
+
       intro.classList.add('fade-out');
 
       setTimeout(() => {
         intro.classList.add('hidden');
         intro.style.display = 'none';
         intro.setAttribute('aria-hidden', 'true');
+        try {
+          localStorage.setItem('kuranTeyitIntroSeenV1', 'true');
+        } catch (error) {
+          console.warn('Açılış ekranı tercihi kaydedilemedi:', error);
+        }
         resolve();
-      }, 1000); // fade süresi
-    }, 5000); // ekranda kalma süresi
+      }, alreadySeen ? 120 : 300);
+    };
+
+    intro.classList.remove('hidden', 'fade-out');
+    intro.style.display = 'flex';
+    intro.setAttribute('aria-hidden', 'false');
+
+    skipButton?.addEventListener('click', finish);
+    hideTimer = setTimeout(finish, visibleDuration);
   });
 }
 
@@ -242,91 +574,134 @@ function showIntroVerse() {
    Ayarlar
 ========================= */
 function loadSettings() {
-  const savedSettings = localStorage.getItem('quranAppSettings');
-  if (savedSettings) {
-    try {
-      STATE.settings = { ...STATE.settings, ...JSON.parse(savedSettings) };
-    } catch (error) {
-      console.warn('Ayarlar yüklenemedi:', error);
-    }
+  const allowedThemes = new Set([
+    'light', 'dark', 'green', 'indigo', 'brown',
+    'sky', 'blackyellow', 'bluemaize', 'redpeach', 'greenolive'
+  ]);
+  const allowedFontSizes = new Set(['small', 'medium', 'large']);
+
+  try {
+    const savedSettings = JSON.parse(localStorage.getItem('quranAppSettings') || '{}');
+
+    STATE.settings = {
+      ...STATE.settings,
+      ...savedSettings,
+      theme: allowedThemes.has(savedSettings.theme)
+        ? savedSettings.theme
+        : STATE.settings.theme,
+      fontSize: allowedFontSizes.has(savedSettings.fontSize)
+        ? savedSettings.fontSize
+        : STATE.settings.fontSize,
+      showTransliteration: savedSettings.showTransliteration !== false,
+      showMeals: savedSettings.showMeals !== false,
+      showAiTranslation: savedSettings.showAiTranslation === true
+    };
+  } catch (error) {
+    console.warn('Ayarlar yüklenemedi:', error);
   }
 }
 
-function saveSettings() {
+async function saveSettings(options = {}) {
+  const { refreshPage = true } = options;
   try {
+    if (STATE.settings.showAiTranslation) {
+      try {
+        await ensureFeatureLoaded('ai');
+      } catch (error) {
+        STATE.settings.showAiTranslation = false;
+        showNotification('AI çeviri verisi yüklenemediği için bu seçenek kapatıldı.', 'warning');
+      }
+    }
+
     localStorage.setItem('quranAppSettings', JSON.stringify(STATE.settings));
     applySettings();
     clearPageCache();
 
-    if (STATE.data.en[STATE.currentPage] && STATE.data.tr[STATE.currentPage]) {
+    if (SEARCH_INDEX.ready) {
+      buildSearchIndex();
+    }
+
+    if (
+      refreshPage &&
+      STATE.data.en[STATE.currentPage] &&
+      STATE.data.tr[STATE.currentPage]
+    ) {
       displayPage(STATE.currentPage);
     }
+
+    return true;
   } catch (error) {
     console.error('Ayarlar kaydedilirken hata:', error);
+    showNotification('Ayarlar kaydedilemedi.', 'warning');
+    return false;
   }
 }
 
 function applySettings() {
-  DOM.body.className = `${STATE.settings.theme}-theme`;
+  const themeClasses = [
+    'light-theme',
+    'dark-theme',
+    'green-theme',
+    'indigo-theme',
+    'brown-theme',
+    'sky-theme',
+    'blackyellow-theme',
+    'bluemaize-theme',
+    'redpeach-theme',
+    'greenolive-theme'
+  ];
 
-  const sizes = {
-    small: '14px',
-    medium: '16px',
-    large: '20px'
-  };
+  const root = document.documentElement;
+  root.classList.remove(...themeClasses);
+  DOM.body.classList.remove(...themeClasses);
+  root.classList.add(`${STATE.settings.theme}-theme`);
+  DOM.body.classList.add(`${STATE.settings.theme}-theme`);
+  root.dataset.theme = STATE.settings.theme;
 
-  const fontSize = sizes[STATE.settings.fontSize] || '16px';
-  document.documentElement.style.setProperty('--base-font-size', fontSize);
-  document.documentElement.style.setProperty(
+  let rootSize = 16;
+
+  switch (STATE.settings.fontSize) {
+    case 'small':
+      rootSize = 14;
+      break;
+    case 'large':
+      rootSize = 20;
+      break;
+    default:
+      rootSize = 16;
+  }
+
+  root.style.fontSize = `${rootSize}px`;
+  root.style.setProperty(
     '--verse-arabic-size',
     STATE.settings.fontSize === 'small'
-      ? '20px'
+      ? '22px'
       : STATE.settings.fontSize === 'large'
-      ? '28px'
-      : '24px'
+        ? '34px'
+        : '28px'
   );
-  document.documentElement.style.setProperty('--verse-text-size', fontSize);
 }
 
 /* =========================
    Görünüm
 ========================= */
 function ensureQuranView() {
-  DOM.iframeContent.classList.add('hidden');
-  DOM.iframeContent.style.display = 'none';
-
-  DOM.quranContent.classList.remove('hidden');
-  DOM.quranContent.style.display = 'block';
+  if (DOM.quranContent) {
+    DOM.quranContent.classList.remove('hidden');
+    DOM.quranContent.style.display = 'block';
+  }
 
   const contentArea = document.querySelector('.content-area');
-  if (contentArea) contentArea.style.padding = '';
+
+  if (contentArea) {
+    contentArea.style.padding = '';
+  }
 
   if (DOM.introVerse) {
-    DOM.introVerse.style.display = 'none';
     DOM.introVerse.classList.add('hidden');
-  }
-}
-
-function loadExternalSite() {
-  DOM.quranContent.classList.add('hidden');
-  DOM.iframeContent.classList.remove('hidden');
-  DOM.iframeContent.style.display = 'block';
-
-  const contentArea = document.querySelector('.content-area');
-  if (contentArea) contentArea.style.padding = '0';
-}
-
-function toggleExternalSite() {
-  const display = DOM.currentPageDisplay;
-
-  if (!externalSiteLoaded) {
-    loadExternalSite();
-    display.textContent = "Kur'an Dönüş";
-    externalSiteLoaded = true;
-  } else {
-    ensureQuranView();
-    display.textContent = 'Kuran Oku';
-    externalSiteLoaded = false;
+    DOM.introVerse.classList.remove('fade-out');
+    DOM.introVerse.style.display = 'none';
+    DOM.introVerse.setAttribute('aria-hidden', 'true');
   }
 }
 
@@ -337,7 +712,10 @@ function showLoading(text = 'Yükleniyor...') {
   const loadingOverlay = DOM.loadingOverlay;
   if (!loadingOverlay) return;
 
+  loadingOperationCount += 1;
   loadingOverlay.style.display = 'flex';
+  loadingOverlay.setAttribute('aria-busy', 'true');
+
   const loadingText = document.querySelector('.loading-text');
   if (loadingText) loadingText.textContent = text;
 }
@@ -345,7 +723,16 @@ function showLoading(text = 'Yükleniyor...') {
 function hideLoading() {
   const loadingOverlay = DOM.loadingOverlay;
   if (!loadingOverlay) return;
-  loadingOverlay.style.display = 'none';
+
+  loadingOperationCount = Math.max(0, loadingOperationCount - 1);
+
+  if (loadingOperationCount === 0) {
+    loadingOverlay.style.display = 'none';
+    loadingOverlay.setAttribute('aria-busy', 'false');
+
+    const progressBar = document.querySelector('.progress-bar');
+    if (progressBar instanceof HTMLElement) progressBar.style.width = '0%';
+  }
 }
 
 function updateLoadingProgress(percent) {
@@ -359,38 +746,246 @@ function updateLoadingProgress(percent) {
 /* =========================
    Eventler
 ========================= */
+function prepareStaticView() {
+  const currentRoute = history.state?.route;
+  const fallbackRoute = currentRoute?.view === 'analysis'
+    ? history.state?.parentRoute || { view: 'page', page: STATE.currentPage }
+    : { view: 'page', page: STATE.currentPage };
+
+  closeAnalysisPanel({ updateHistory: false, restoreFocus: false });
+  closeSearchResultsPanel({ restoreFocus: false });
+  clearAnalysisReturnState();
+  updateHistoryRoute(fallbackRoute, 'replace');
+}
+
 function setupEventListeners() {
   document.getElementById('prevPage')?.addEventListener('click', () => {
-    if (STATE.currentPage > 1) goToPage(STATE.currentPage - 1);
+    if (restoreAnalysisPanelFromHistory()) return;
+    navigateAdjacent('previous');
   });
 
   document.getElementById('nextPage')?.addEventListener('click', () => {
-    if (STATE.currentPage < STATE.totalPages) goToPage(STATE.currentPage + 1);
+    clearAnalysisReturnState();
+    navigateAdjacent('next');
   });
 
-  document.getElementById('menuToggle')?.addEventListener('click', toggleSidebar);
+  const menuToggleButton = document.getElementById('menuToggle');
+  let logoClickTimer = null;
+  let logoClickCount = 0;
+
+  menuToggleButton?.addEventListener('click', () => {
+    logoClickCount += 1;
+
+    if (logoClickCount === 1) {
+      logoClickTimer = setTimeout(() => {
+        logoClickCount = 0;
+        logoClickTimer = null;
+        toggleSidebar();
+      }, 280);
+      return;
+    }
+
+    clearTimeout(logoClickTimer);
+    logoClickTimer = null;
+    logoClickCount = 0;
+    closeSidebar();
+    activeSearchQuery = '';
+
+    if (DOM.searchInput) DOM.searchInput.value = '';
+    if (DOM.autocomplete) {
+      DOM.autocomplete.innerHTML = '';
+      DOM.autocomplete.style.display = 'none';
+    }
+
+    goToVerse(1, 1, { source: 'logo' });
+  });
+
   document.getElementById('closeMenu')?.addEventListener('click', closeSidebar);
   document.getElementById('sidebarOverlay')?.addEventListener('click', closeSidebar);
 
   document.getElementById('settingsPage')?.addEventListener('click', () => {
+    prepareStaticView();
     displaySettingsPage();
     closeSidebar();
   });
 
   document.getElementById('notesPage')?.addEventListener('click', () => {
+    prepareStaticView();
     displayNotesPage();
     closeSidebar();
   });
 
   document.getElementById('guidePage')?.addEventListener('click', () => {
+    prepareStaticView();
     displayGuidePage();
     closeSidebar();
   });
 
-  document.getElementById('currentPageDisplay')?.addEventListener('click', toggleExternalSite);
+  document.getElementById('privacyPage')?.addEventListener('click', () => {
+    prepareStaticView();
+    displayPrivacyPage();
+    closeSidebar();
+  });
+
+  document.getElementById('licensesPage')?.addEventListener('click', () => {
+    prepareStaticView();
+    displayLicensesPage();
+    closeSidebar();
+  });
+
+  document.addEventListener('click', handleDelegatedAction);
+  document.addEventListener('toggle', handleDelegatedToggle, true);
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+
+    if (document.getElementById('analysisPanel')) {
+      closeAnalysisPanel();
+      return;
+    }
+
+    if (document.getElementById('searchResultsPanel')) {
+      closeSearchResultsPanel();
+    }
+  });
+
+  window.addEventListener('popstate', async (event) => {
+    const route = event.state?.route || parseRouteHash(window.location.hash);
+    await applyRoute(route, { historyMode: 'none', restoreScroll: true });
+  });
+
+  window.addEventListener('hashchange', async () => {
+    if (NAVIGATION_STATE.applyingHistory) return;
+
+    const route = parseRouteHash(window.location.hash);
+    const currentStateRoute = history.state?.route;
+
+    if (JSON.stringify(route) === JSON.stringify(currentStateRoute)) return;
+    await applyRoute(route, { historyMode: 'replace', restoreScroll: true });
+  });
+
+  let scrollFrame = null;
+  window.addEventListener('scroll', () => {
+    if (scrollFrame) return;
+
+    scrollFrame = requestAnimationFrame(() => {
+      scrollFrame = null;
+      const currentState = history.state;
+      if (!currentState?.route) return;
+
+      const panelBody = document.querySelector('#analysisPanel .analysis-panel-body');
+      const nextState = {
+        ...currentState,
+        pageScrollTop: window.scrollY,
+        analysisScrollTop: panelBody?.scrollTop || currentState.analysisScrollTop || 0
+      };
+
+      history.replaceState(nextState, '', window.location.href);
+    });
+  }, { passive: true });
 
   setupSearch();
   setupWordTooltipDelegation();
+}
+
+function handleDelegatedToggle(event) {
+  const details = event.target.closest('details[data-action="arabic-details"]');
+  if (!details || !details.open) return;
+
+  loadArabicDetails(
+    details.dataset.sura,
+    details.dataset.verse,
+    details
+  );
+}
+
+function handleDelegatedAction(event) {
+  const target = event.target.closest('[data-action]');
+  if (!target) return;
+
+  const action = target.dataset.action;
+  const sura = target.dataset.sura;
+  const verse = target.dataset.verse;
+
+  switch (action) {
+    case 'go-sura':
+      goToSura(sura);
+      break;
+    case 'go-page':
+      goToPage(Number(target.dataset.page));
+      break;
+    case 'navigate-adjacent':
+      navigateAdjacent(target.dataset.direction);
+      break;
+    case 'go-first-revelation':
+      goToFirstRevealedVersePage();
+      break;
+    case 'speak-arabic':
+      speakVerse(sura, verse);
+      break;
+    case 'stop-audio':
+      stopSpeech();
+      break;
+    case 'speak-english':
+      speakEnglishVerse(sura, verse);
+      break;
+    case 'toggle-footnote':
+      toggleNote(target.dataset.target);
+      break;
+    case 'toggle-meal':
+      toggleMeal(target.dataset.target, sura, verse);
+      break;
+    case 'open-analysis':
+      openAnalysisPanel(sura, verse, { trigger: target });
+      break;
+    case 'close-analysis':
+      closeAnalysisPanel();
+      break;
+    case 'toggle-note-input':
+      toggleNoteInput(target.dataset.target, sura, verse);
+      break;
+    case 'save-note':
+      saveNote(sura, verse);
+      break;
+    case 'cancel-note':
+      cancelNote(sura, verse);
+      break;
+    case 'edit-note':
+      editLocalNote(sura, verse);
+      break;
+    case 'remove-note':
+      removeLocalNote(sura, verse);
+      break;
+    case 'notes-go-verse':
+      goToVerseFromNotes(sura, verse);
+      break;
+    case 'notes-remove':
+      removeLocalNoteFromList(sura, verse);
+      break;
+    case 'show-privacy':
+      displayPrivacyPage();
+      break;
+    case 'show-licenses':
+      displayLicensesPage();
+      break;
+    case 'return-quran':
+      goToPage(STATE.currentPage);
+      break;
+    case 'export-notes':
+      exportLocalNotes();
+      break;
+    case 'import-notes':
+      openNotesImportDialog();
+      break;
+    case 'toggle-notes':
+      toggleNotesVisibility();
+      break;
+    case 'reload-app':
+      window.location.reload();
+      break;
+    default:
+      break;
+  }
 }
 
 /* =========================
@@ -403,14 +998,58 @@ function toggleSidebar() {
 }
 
 function openSidebar() {
+  if (!DOM.sidebar || !DOM.sidebarOverlay) {
+    return;
+  }
+
   DOM.sidebar.classList.remove('hidden');
   DOM.sidebarOverlay.classList.remove('hidden');
+
+  DOM.sidebar.setAttribute(
+    'aria-hidden',
+    'false'
+  );
+
+  DOM.sidebarOverlay.setAttribute(
+    'aria-hidden',
+    'false'
+  );
+
+  document
+    .getElementById('menuToggle')
+    ?.setAttribute(
+      'aria-expanded',
+      'true'
+    );
+
   document.body.style.overflow = 'hidden';
 }
 
 function closeSidebar() {
+  if (!DOM.sidebar || !DOM.sidebarOverlay) {
+    return;
+  }
+
   DOM.sidebar.classList.add('hidden');
   DOM.sidebarOverlay.classList.add('hidden');
+
+  DOM.sidebar.setAttribute(
+    'aria-hidden',
+    'true'
+  );
+
+  DOM.sidebarOverlay.setAttribute(
+    'aria-hidden',
+    'true'
+  );
+
+  document
+    .getElementById('menuToggle')
+    ?.setAttribute(
+      'aria-expanded',
+      'false'
+    );
+
   document.body.style.overflow = '';
 }
 
@@ -418,30 +1057,101 @@ function closeSidebar() {
    Veri yükleme
 ========================= */
 async function loadInitialData() {
-  showLoading('Veri dosyaları yükleniyor...');
+  showLoading('Temel Kuran verileri yükleniyor...');
+
   try {
-    await Promise.all([
+    const results = await Promise.allSettled([
       loadDataFile(CONFIG.dataPaths.en, 'en'),
       loadDataFile(CONFIG.dataPaths.tr, 'tr'),
-      loadDataFile(CONFIG.dataPaths.translit, 'translit'),
-      loadDataFile(CONFIG.dataPaths.dictionary, 'dictionary'),
-      loadDataFile(CONFIG.dataPaths.ai, 'ai'),
-      loadDataFile(CONFIG.dataPaths.arabic2, 'arabic2'),
-      loadDataFile(CONFIG.dataPaths.erhanArabic, 'erhanArabic')
+      loadDataFile(CONFIG.dataPaths.translit, 'translit')
     ]);
-  } catch (error) {
-    console.error('Veri yükleme hatası:', error);
-    throw error;
+
+    const [englishResult, turkishResult, transliterationResult] = results;
+
+    if (englishResult.status === 'rejected' || turkishResult.status === 'rejected') {
+      const missing = [];
+      if (englishResult.status === 'rejected') missing.push('İngilizce ana metin');
+      if (turkishResult.status === 'rejected') missing.push('Türkçe ana metin');
+
+      throw new Error(`${missing.join(' ve ')} yüklenemedi.`);
+    }
+
+    if (transliterationResult.status === 'rejected') {
+      console.warn('Okunuş verisi yüklenemedi:', transliterationResult.reason);
+      showNotification('Okunuş verisi yüklenemedi; uygulama temel metinlerle açıldı.', 'warning');
+    }
   } finally {
     hideLoading();
   }
 }
 
 async function loadDataFile(path, key) {
-  const response = await fetch(path);
-  if (!response.ok) throw new Error(`${key} dosyası yüklenemedi: ${response.status}`);
-  STATE.data[key] = await response.json();
+  const response = await fetch(path, { cache: 'no-cache' });
+
+  if (!response.ok) {
+    throw new Error(`${key} dosyası yüklenemedi: ${response.status}`);
+  }
+
+  const json = await response.json();
+  STATE.data[key] = json;
   console.log(`${key} verisi yüklendi.`);
+  return json;
+}
+
+async function ensureFeatureLoaded(featureName) {
+  const feature = FEATURE_STATE[featureName];
+
+  if (!feature) {
+    throw new Error(`Bilinmeyen özellik: ${featureName}`);
+  }
+
+  if (feature.status === 'ready') return true;
+  if (feature.status === 'loading') return feature.promise;
+
+  feature.status = 'loading';
+
+  feature.promise = (async () => {
+    try {
+      if (featureName === 'ai') {
+        await loadDataFile(CONFIG.dataPaths.ai, 'ai');
+      } else if (featureName === 'dictionary') {
+        await loadDataFile(CONFIG.dataPaths.dictionary, 'dictionary');
+      } else if (featureName === 'arabicComparisons') {
+        const results = await Promise.allSettled([
+          loadDataFile(CONFIG.dataPaths.arabic2, 'arabic2'),
+          loadDataFile(CONFIG.dataPaths.erhanArabic, 'erhanArabic')
+        ]);
+
+        if (results.every((result) => result.status === 'rejected')) {
+          throw new Error('Arapça karşılaştırma verileri yüklenemedi.');
+        }
+      } else if (featureName === 'analysis') {
+        const results = await Promise.allSettled([
+          loadDataFile(CONFIG.dataPaths.mapTr, 'mapTr'),
+          loadDataFile(CONFIG.dataPaths.mapEn, 'mapEn')
+        ]);
+
+        if (results.every((result) => result.status === 'rejected')) {
+          throw new Error('Konu haritaları yüklenemedi.');
+        }
+
+        buildTopicIndexes();
+      }
+
+      feature.status = 'ready';
+      return true;
+    } catch (error) {
+      feature.status = 'error';
+      console.error(`${featureName} özelliği yüklenemedi:`, error);
+      throw error;
+    } finally {
+      if (feature.status !== 'loading') {
+        feature.promise = null;
+      }
+    }
+  })();
+
+  return feature.promise;
 }
 
 function processMetadata() {
@@ -484,45 +1194,109 @@ function processMetadata() {
 }
 
 function getVersePage(suraNum, verseNum) {
-  return (
-    STATE.metadata.verseToPageMap[`${suraNum}:${verseNum}`] ||
-    STATE.metadata.sureToPageMap[suraNum] ||
-    1
+  return STATE.metadata.verseToPageMap[`${String(suraNum)}:${String(verseNum)}`] ?? null;
+}
+
+function getSuraStartPage(suraNum) {
+  return STATE.metadata.sureToPageMap[String(suraNum)] ?? null;
+}
+
+function verseExists(suraNum, verseNum) {
+  const page = getVersePage(suraNum, verseNum);
+
+  return Boolean(
+    page &&
+    STATE.data.en?.[page]?.sura?.[String(suraNum)]?.verses?.[String(verseNum)] !== undefined
   );
 }
 
 /* =========================
    Arama index
 ========================= */
+function addSearchTokens(tokenMap, normalizedText, itemIndex) {
+  const tokens = new Set(String(normalizedText || '').split(/\s+/).filter(Boolean));
+
+  tokens.forEach((token) => {
+    if (!tokenMap.has(token)) tokenMap.set(token, new Set());
+    tokenMap.get(token).add(itemIndex);
+  });
+}
+
 function buildSearchIndex() {
   SEARCH_INDEX.quran = [];
+  SEARCH_INDEX.quranTokenMap.clear();
   SEARCH_INDEX.ready = false;
 
-  ['tr', 'en', 'translit', 'ai'].forEach((source) => {
+  function pushSearchItem({ source, page = null, suraNum, verseNum, text }) {
+    const cleanText = String(text || '');
+    if (!cleanText) return;
+
+    const normalized = normalizeSearchText(cleanText);
+    const itemIndex = SEARCH_INDEX.quran.length;
+
+    SEARCH_INDEX.quran.push({
+      type: 'quran',
+      source,
+      page: Number(page) || getVersePage(String(suraNum), String(verseNum)),
+      suraNum: String(suraNum),
+      verseNum: String(verseNum),
+      text: cleanText,
+      normalized
+    });
+
+    addSearchTokens(SEARCH_INDEX.quranTokenMap, normalized, itemIndex);
+  }
+
+  ['tr', 'en'].forEach((source) => {
     const data = STATE.data[source];
-    if (!data) return;
 
-    for (const page in data) {
-      const pageObj = data[page];
-      if (!pageObj?.sura) continue;
+    for (const page of Object.keys(data)) {
+      const pageObject = data[page];
+      if (!pageObject?.sura) continue;
 
-      for (const suraNum in pageObj.sura) {
-        const verses = pageObj.sura[suraNum].verses || {};
-        for (const verseNum in verses) {
-          const text = String(verses[verseNum] || '');
-          SEARCH_INDEX.quran.push({
-            type: 'quran',
+      for (const suraNum of Object.keys(pageObject.sura)) {
+        const verses = pageObject.sura[suraNum]?.verses || {};
+
+        for (const verseNum of Object.keys(verses)) {
+          pushSearchItem({
             source,
-            page: parseInt(page),
+            page,
             suraNum,
             verseNum,
-            text,
-            normalized: normalizeTurkishText(text)
+            text: verses[verseNum]
           });
         }
       }
     }
   });
+
+  for (const suraNum of Object.keys(STATE.data.translit || {})) {
+    const verses = STATE.data.translit[suraNum]?.verses || {};
+
+    for (const verseNum of Object.keys(verses)) {
+      pushSearchItem({
+        source: 'translit',
+        suraNum,
+        verseNum,
+        text: verses[verseNum]
+      });
+    }
+  }
+
+  if (FEATURE_STATE.ai.status === 'ready') {
+    for (const suraNum of Object.keys(STATE.data.ai || {})) {
+      const verses = STATE.data.ai[suraNum]?.verses || {};
+
+      for (const verseNum of Object.keys(verses)) {
+        pushSearchItem({
+          source: 'ai',
+          suraNum,
+          verseNum,
+          text: verses[verseNum]
+        });
+      }
+    }
+  }
 
   SEARCH_INDEX.ready = true;
   console.log('Quran search index hazır:', SEARCH_INDEX.quran.length);
@@ -530,63 +1304,28 @@ function buildSearchIndex() {
 
 function buildMealsSearchIndex() {
   SEARCH_INDEX.meals = [];
+  SEARCH_INDEX.mealTokenMap.clear();
 
-  for (const mealName in STATE.data.meals) {
-    if (!STATE.data.meals.hasOwnProperty(mealName)) continue;
-    const meal = STATE.data.meals[mealName];
+  for (const [mealName, verseIndex] of Object.entries(MEALS_STATE.index)) {
+    for (const [verseId, payload] of Object.entries(verseIndex || {})) {
+      const [suraNum, verseNum] = verseId.split(':');
+      const text = String(payload?.text || payload?.translation || '');
+      if (!text) continue;
 
-    const pushMealVerse = (suraNum, verseNum, text) => {
-      if (!text) return;
+      const normalized = normalizeSearchText(text);
+      const itemIndex = SEARCH_INDEX.meals.length;
+
       SEARCH_INDEX.meals.push({
         type: 'meal',
         mealName,
-        suraNum: String(suraNum),
-        verseNum: String(verseNum),
-        page: getVersePage(String(suraNum), String(verseNum)),
-        text: String(text),
-        normalized: normalizeTurkishText(String(text))
+        suraNum,
+        verseNum,
+        page: getVersePage(suraNum, verseNum),
+        text,
+        normalized
       });
-    };
 
-    if (meal?.sures && Array.isArray(meal.sures)) {
-      meal.sures.forEach((sure, index) => {
-        if (!sure?.ayetler) return;
-        sure.ayetler.forEach(([anum, ayet]) => pushMealVerse(index + 1, anum, ayet));
-      });
-    }
-
-    if (Array.isArray(meal)) {
-      meal.forEach((sure, index) => {
-        if (!sure?.ayetler) return;
-        sure.ayetler.forEach(([anum, ayet]) => pushMealVerse(index + 1, anum, ayet));
-      });
-    }
-
-    if (meal && typeof meal === 'object' && !Array.isArray(meal)) {
-      for (const pageKey in meal) {
-        if (!meal.hasOwnProperty(pageKey)) continue;
-        const pageObj = meal[pageKey];
-        const suraData = pageObj?.sura;
-        if (!suraData) continue;
-
-        for (const suraNum in suraData) {
-          const verses = suraData[suraNum]?.verses || {};
-          for (const verseNum in verses) {
-            pushMealVerse(suraNum, verseNum, verses[verseNum]);
-          }
-        }
-      }
-    }
-
-    if (meal?.surahs && Array.isArray(meal.surahs)) {
-      meal.surahs.forEach((surah) => {
-        if (!surah?.verses) return;
-        surah.verses.forEach((verseObj) => {
-          const verseNum = verseObj.verse_number || verseObj.verseNumber || verseObj.id;
-          const text = verseObj.translation || verseObj.verse || verseObj.text || '';
-          pushMealVerse(surah.id, verseNum, text);
-        });
-      });
+      addSearchTokens(SEARCH_INDEX.mealTokenMap, normalized, itemIndex);
     }
   }
 
@@ -594,62 +1333,95 @@ function buildMealsSearchIndex() {
   console.log('Meal search index hazır:', SEARCH_INDEX.meals.length);
 }
 
+function getIndexedSearchCandidates(items, tokenMap, query) {
+  const normalizedQuery = normalizeSearchText(query);
+  if (!normalizedQuery) return [];
+
+  const queryTokens = normalizedQuery.split(/\s+/).filter(Boolean);
+  const candidateIndexes = new Set();
+
+  queryTokens.forEach((queryToken) => {
+    const exact = tokenMap.get(queryToken);
+    exact?.forEach((index) => candidateIndexes.add(index));
+
+    if (queryToken.length >= 3) {
+      for (const [token, indexes] of tokenMap) {
+        if (
+          token.startsWith(queryToken) ||
+          queryToken.startsWith(token) ||
+          (Math.abs(token.length - queryToken.length) <= 2 && token[0] === queryToken[0])
+        ) {
+          indexes.forEach((index) => candidateIndexes.add(index));
+        }
+      }
+    }
+  });
+
+  // Çok kısa veya hiç aday üretmeyen aramalarda davranışı koru.
+  if (candidateIndexes.size === 0) {
+    return normalizedQuery.length <= 2 ? items : items.slice(0, Math.min(items.length, 5000));
+  }
+
+  return [...candidateIndexes].map((index) => items[index]).filter(Boolean);
+}
+
 /* =========================
    Meal yükleme
 ========================= */
 async function loadMeals() {
-  if (MEALS_STATE.status === 'ready') return Promise.resolve();
+  if (MEALS_STATE.status === 'ready') return true;
   if (MEALS_STATE.status === 'loading') return MEALS_STATE.loadPromise;
 
   MEALS_STATE.status = 'loading';
   MEALS_STATE.loadedCount = 0;
+  MEALS_STATE.index = Object.create(null);
 
   MEALS_STATE.loadPromise = (async () => {
     showLoading('Mealler yükleniyor...');
+
     try {
-      for (let i = 0; i < CONFIG.mealFiles.length; i += CONFIG.batchSize) {
-        const batch = CONFIG.mealFiles.slice(i, i + CONFIG.batchSize);
+      for (let index = 0; index < CONFIG.mealFiles.length; index += CONFIG.batchSize) {
+        const batch = CONFIG.mealFiles.slice(index, index + CONFIG.batchSize);
 
-        await Promise.all(
+        await Promise.allSettled(
           batch.map(async (file) => {
-            try {
-              const filePath = `./data/mealler/${file}`;
-              const response = await fetch(filePath);
-              if (!response.ok) {
-                console.warn(`${file} bulunamadı:`, response.status);
-                return;
-              }
+            const filePath = `./data/mealler/${file}`;
+            const response = await fetch(filePath, { cache: 'force-cache' });
 
-              const json = await response.json();
-              const mealName =
-                file === '2baski_quran_tr.json'
-                  ? 'İD-Soner Tahsinoğlu 2.Baskı'
-                  : file.replace('.json', '');
-
-              STATE.data.meals[mealName] = json;
-              MEALS_STATE.loadedCount++;
-              console.log('Meal yüklendi:', mealName);
-            } catch (err) {
-              console.warn(`${file} yüklenirken hata:`, err);
+            if (!response.ok) {
+              throw new Error(`${file}: ${response.status}`);
             }
+
+            const json = await response.json();
+            const mealName = file.replace(/\.json$/i, '');
+
+            STATE.data.meals[mealName] = json;
+            MEALS_STATE.index[mealName] = normalizeMealData(json);
+            MEALS_STATE.loadedCount += 1;
           })
         );
 
-        const progress = Math.min(
-          100,
-          ((i + CONFIG.batchSize) / CONFIG.mealFiles.length) * 100
+        updateLoadingProgress(
+          Math.min(100, ((index + batch.length) / CONFIG.mealFiles.length) * 100)
         );
-        updateLoadingProgress(progress);
+      }
+
+      if (MEALS_STATE.loadedCount === 0) {
+        throw new Error('Hiçbir meal dosyası yüklenemedi.');
       }
 
       MEALS_STATE.status = 'ready';
       buildMealsSearchIndex();
       console.log(`Mealler hazır (${MEALS_STATE.loadedCount}/${CONFIG.mealFiles.length})`);
+      return true;
     } catch (error) {
       MEALS_STATE.status = 'error';
       console.error('Meal yükleme hatası:', error);
+      showNotification('Meal dosyaları yüklenemedi.', 'warning');
+      throw error;
     } finally {
       hideLoading();
+      MEALS_STATE.loadPromise = null;
     }
   })();
 
@@ -660,108 +1432,511 @@ function areMealsReady() {
   return MEALS_STATE.status === 'ready';
 }
 
+const WORD_TRANSLATIONS_STATE = {
+  status: 'idle',
+  loadPromise: null
+};
+
 /* =========================
    Menü / Sure listesi
 ========================= */
 function buildSuraMenu() {
-  let html = '';
-  const sortedSuraNums = Object.keys(STATE.metadata.sureNames).sort((a, b) => Number(a) - Number(b));
+  const sortedSuraNums = Object.keys(STATE.metadata.sureNames)
+    .sort((a, b) => Number(a) - Number(b));
 
-  sortedSuraNums.forEach((suraNum) => {
-    html += `<li onclick="goToSura(${suraNum})">${escapeHtml(
-      STATE.metadata.sureNames[suraNum]
-    )}</li>`;
-  });
-
-  DOM.suraMenu.innerHTML = html;
+  DOM.suraMenu.innerHTML = sortedSuraNums
+    .map((suraNum) => `
+      <li>
+        <button
+          type="button"
+          class="sura-menu-link"
+          data-action="go-sura"
+          data-sura="${escapeHtml(suraNum)}"
+        >
+          ${escapeHtml(STATE.metadata.sureNames[suraNum])}
+        </button>
+      </li>
+    `)
+    .join('');
 }
 
 /* =========================
    Sayfa geçişi
 ========================= */
-function loadPagesAround(pageNum) {
-  const startPage = Math.max(1, pageNum - CONFIG.initialLoad);
-  const endPage = Math.min(STATE.totalPages, pageNum + CONFIG.initialLoad);
+function showFirstRevealedVersePage() {
+  ensureQuranView();
+  closeSearchResultsPanel({ restoreFocus: false });
+  STATE.currentView = 'first-revelation';
 
-  for (let i = startPage; i <= endPage; i++) {
-    if (!STATE.loadedPages.has(i)) STATE.loadedPages.add(i);
-  }
+  DOM.content.innerHTML = `
+    <div class="first-revelation-page">
+      <div class="first-revelation-card">
+        <img
+          src="assets/images/logo-main.png"
+          alt="Kuran Teyit logosu"
+          class="first-revelation-logo"
+          width="1024"
+          height="1024"
+        >
 
-  displayPage(pageNum);
+        <div class="first-revelation-site">
+          KURAN TEYİT
+        </div>
+
+        <h2 class="first-revelation-title">
+          İlk İnen Ayet
+        </h2>
+
+        <button
+          type="button"
+          class="first-revelation-back-btn"
+          data-action="go-page"
+          data-page="${FIRST_QURAN_DATA_PAGE}"
+        >
+          Fatiha Suresine Dön
+        </button>
+
+        <div class="first-revelation-arabic" dir="rtl">
+          اقْرَأْ بِاسْمِ رَبِّكَ الَّذِي خَلَقَ
+        </div>
+
+        <div class="first-revelation-reading">
+          İkra' bismi rabbikellezî halak.
+        </div>
+
+        <div class="first-revelation-translation">
+          Oku, yaratan Rabbinin adıyla.
+        </div>
+
+        <div class="first-revelation-reference">
+          Alak Suresi • 1. Ayet
+        </div>
+      </div>
+    </div>
+  `;
+
+  window.scrollTo({ top: 0, behavior: 'auto' });
 }
 
-function goToPage(pageNum) {
-  ensureQuranView();
+function goToFirstRevealedVersePage(options = {}) {
+  const {
+    historyMode = 'push',
+    preserveAnalysisReturn = false
+  } = options;
 
-  if (pageNum < 1 || pageNum > STATE.totalPages) return;
+  if (!preserveAnalysisReturn) clearAnalysisReturnState();
+  closeAnalysisPanel({ updateHistory: false, restoreFocus: false });
+  showFirstRevealedVersePage();
 
-  STATE.currentPage = pageNum;
+  updateHistoryRoute(
+    { view: 'first-revelation' },
+    historyMode,
+    { pageScrollTop: 0 }
+  );
 
-  if (STATE.loadedPages.has(pageNum)) {
-    displayPage(pageNum);
-  } else {
-    loadPagesAround(pageNum);
+  return true;
+}
+
+function updateHistoryRoute(route, mode = 'push', extra = {}) {
+  if (mode === 'none' || NAVIGATION_STATE.applyingHistory) return;
+
+  const method = mode === 'replace' ? 'replaceState' : 'pushState';
+  const state = createHistoryState(route, extra);
+  const hash = buildRouteHash(route);
+  const cleanUrl = `${window.location.pathname}${window.location.search}${hash}`;
+
+  // Sayfa numarası ve manuel özel ekran URL'ye yazılmaz.
+  history[method](state, '', cleanUrl);
+  NAVIGATION_STATE.lastRoute = route;
+}
+
+function getLastAvailableQuranPage() {
+  /*
+    Öncelikle Kur'an'ın son ayeti olan
+    114:6'nın bulunduğu gerçek veri sayfasını bulur.
+  */
+  const nasLastVersePage = Number(
+    STATE.metadata.verseToPageMap['114:6']
+  );
+
+  if (
+    Number.isInteger(nasLastVersePage) &&
+    STATE.data.en?.[nasLastVersePage] &&
+    STATE.data.tr?.[nasLastVersePage]
+  ) {
+    return nasLastVersePage;
   }
 
-  if (!pendingHighlight) {
+  /*
+    114:6 haritası bulunamazsa, Türkçe ve İngilizce
+    verilerde ortak bulunan en yüksek sayfa numarasını bulur.
+  */
+  const availablePages = Object
+    .keys(STATE.data.tr || {})
+    .map(Number)
+    .filter((page) => {
+      return (
+        Number.isInteger(page) &&
+        Boolean(STATE.data.en?.[page]) &&
+        Boolean(STATE.data.tr?.[page])
+      );
+    });
+
+  if (availablePages.length > 0) {
+    return Math.max(...availablePages);
+  }
+
+  /*
+    Veri henüz hazır değilse mevcut sabit değer
+    yalnızca yedek olarak kullanılır.
+  */
+  return LAST_QURAN_DATA_PAGE;
+}
+
+
+function getAdjacentTarget(direction) {
+  const actualLastPage =
+    getLastAvailableQuranPage();
+
+  /*
+    Özel "İlk İnen Ayet" ekranındayken:
+    Sol ok → Nas Suresi
+    Sağ ok → Fatiha Suresi
+  */
+  if (STATE.currentView === 'first-revelation') {
+    return direction === 'previous'
+      ? {
+          view: 'page',
+          page: actualLastPage
+        }
+      : {
+          view: 'page',
+          page: FIRST_QURAN_DATA_PAGE
+        };
+  }
+
+  /*
+    Fatiha sayfasından geriye gidildiğinde
+    özel İlk İnen Ayet ekranı açılır.
+  */
+  if (direction === 'previous') {
+    return STATE.currentPage <= FIRST_QURAN_DATA_PAGE
+      ? {
+          view: 'first-revelation'
+        }
+      : {
+          view: 'page',
+          page: STATE.currentPage - 1
+        };
+  }
+
+  /*
+    Nas Suresi'nin son sayfasından ileri gidildiğinde
+    özel İlk İnen Ayet ekranı açılır.
+  */
+  return STATE.currentPage >= actualLastPage
+    ? {
+        view: 'first-revelation'
+      }
+    : {
+        view: 'page',
+        page: STATE.currentPage + 1
+      };
+}
+
+function navigateAdjacent(direction) {
+  const normalizedDirection = direction === 'previous' ? 'previous' : 'next';
+  const target = getAdjacentTarget(normalizedDirection);
+
+  if (target.view === 'first-revelation') {
+    return goToFirstRevealedVersePage();
+  }
+
+  return goToPage(target.page);
+}
+
+function validatePageNumber(pageNum) {
+  const page = Number(pageNum);
+
+  return Number.isInteger(page) &&
+    page >= FIRST_QURAN_DATA_PAGE &&
+    page <= LAST_QURAN_DATA_PAGE &&
+    Boolean(STATE.data.en[page] && STATE.data.tr[page]);
+}
+
+async function applyRoute(route, options = {}) {
+  const {
+    historyMode = 'none',
+    restoreScroll = false
+  } = options;
+
+  const targetRoute = route?.view ? route : { view: 'quran' };
+  NAVIGATION_STATE.applyingHistory = historyMode === 'none';
+
+  try {
+    if (targetRoute.view === 'analysis') {
+      if (!verseExists(targetRoute.sura, targetRoute.verse)) {
+        showNotification('Bağlantıdaki analiz ayeti bulunamadı.', 'warning');
+        return goToPage(FIRST_QURAN_DATA_PAGE, { historyMode: 'replace' });
+      }
+
+      const page = getVersePage(targetRoute.sura, targetRoute.verse);
+      pendingHighlight = {
+        suraNum: String(targetRoute.sura),
+        verseNum: String(targetRoute.verse),
+        query: '',
+        openMeal: false,
+        mealName: ''
+      };
+
+      renderQuranPage(page, { scrollTop: restoreScroll ? history.state?.pageScrollTop : null });
+      await openAnalysisPanel(targetRoute.sura, targetRoute.verse, {
+        historyMode,
+        scrollTop: restoreScroll ? history.state?.analysisScrollTop : 0,
+        trigger: null,
+        parentRoute: history.state?.parentRoute || null
+      });
+      return true;
+    }
+
+    if (targetRoute.view === 'verse') {
+      const analysisPanel = document.getElementById('analysisPanel');
+
+      if (analysisPanel) {
+        let parentRoute = null;
+
+        try {
+          parentRoute = JSON.parse(analysisPanel.dataset.parentRoute || 'null');
+        } catch (error) {
+          parentRoute = null;
+        }
+
+        const targetIsParent = parentRoute &&
+          JSON.stringify(parentRoute) === JSON.stringify(targetRoute);
+
+        if (!targetIsParent) {
+          const panelBody = analysisPanel.querySelector('.analysis-panel-body');
+          analysisReturnState = {
+            suraNum: analysisPanel.dataset.analysisSura,
+            verseNum: analysisPanel.dataset.analysisVerse,
+            scrollTop: panelBody?.scrollTop || 0
+          };
+          updatePreviousButtonState();
+        }
+      }
+
+      return goToVerse(targetRoute.sura, targetRoute.verse, {
+        historyMode,
+        source: 'history',
+        restoreScroll,
+        query: ''
+      });
+    }
+
+    if (targetRoute.view === 'first-revelation') {
+      return goToFirstRevealedVersePage({
+        historyMode
+      });
+    }
+
+    if (targetRoute.view === 'page') {
+      return goToPage(targetRoute.page, {
+        historyMode,
+        restoreScroll
+      });
+    }
+
+    return goToPage(FIRST_QURAN_DATA_PAGE, {
+      historyMode: historyMode === 'none' ? 'replace' : historyMode
+    });
+  } finally {
+    NAVIGATION_STATE.applyingHistory = false;
+  }
+}
+
+function renderQuranPage(pageNum, options = {}) {
+  const { scrollTop = null } = options;
+
+  ensureQuranView();
+  closeSearchResultsPanel({ restoreFocus: false });
+
+  if (!validatePageNumber(pageNum)) {
+    console.warn('Geçersiz veya eksik sayfa:', pageNum);
+    showNotification('İstenen Kur’an sayfası bulunamadı.', 'warning');
+    return false;
+  }
+
+  STATE.currentPage = Number(pageNum);
+  STATE.currentView = 'page';
+  displayPage(STATE.currentPage);
+
+  if (Number.isFinite(scrollTop)) {
+    requestAnimationFrame(() => window.scrollTo({ top: scrollTop, behavior: 'auto' }));
+  } else if (!pendingHighlight) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
+
+  return true;
 }
 
-function goToSura(suraNum) {
-  ensureQuranView();
+function goToPage(pageNum, options = {}) {
+  const {
+    historyMode = 'push',
+    restoreScroll = false,
+    preserveAnalysisReturn = false
+  } = options;
 
-  const page = STATE.metadata.sureToPageMap[suraNum];
-  if (!page) return;
+  if (!preserveAnalysisReturn) clearAnalysisReturnState();
+  closeAnalysisPanel({ updateHistory: false, restoreFocus: false });
 
-  pendingHighlight = {
-    suraNum,
-    verseNum: 1,
-    query: activeSearchQuery || '',
-    openMeal: false,
-    mealName: ''
-  };
+  if (!renderQuranPage(pageNum, {
+    scrollTop: restoreScroll ? history.state?.pageScrollTop : null
+  })) {
+    return false;
+  }
 
-  goToPage(page);
+  updateHistoryRoute(
+    { view: 'page', page: Number(pageNum) },
+    historyMode,
+    { pageScrollTop: window.scrollY }
+  );
+
+  return true;
+}
+
+function goToSura(suraNum, options = {}) {
+  const page = getSuraStartPage(suraNum);
+
+  if (!page) {
+    showNotification('Sure başlangıç sayfası bulunamadı.', 'warning');
+    return false;
+  }
+
   closeSidebar();
+
+  return goToVerse(suraNum, 1, {
+    source: 'sura',
+    ...options
+  });
 }
 
-function goToVerse(suraNum, verseNum) {
-  ensureQuranView();
+function goToVerse(suraNum, verseNum, options = {}) {
+  const {
+    historyMode = 'push',
+    source = 'normal',
+    query = activeSearchQuery || '',
+    openMeal = false,
+    mealName = '',
+    restoreScroll = false
+  } = options;
+
+  const sura = String(suraNum);
+  const verse = String(verseNum);
+  const page = getVersePage(sura, verse);
+
+  if (!page || !verseExists(sura, verse)) {
+    showNotification(`${sura}:${verse} ayeti bulunamadı.`, 'warning');
+    return false;
+  }
+
+  if (source !== 'analysis' && source !== 'history') {
+    clearAnalysisReturnState();
+  }
+
+  closeAnalysisPanel({ updateHistory: false, restoreFocus: false });
 
   pendingHighlight = {
-    suraNum,
-    verseNum,
-    query: activeSearchQuery || '',
-    openMeal: false,
-    mealName: ''
+    suraNum: sura,
+    verseNum: verse,
+    query,
+    openMeal,
+    mealName
   };
 
-  goToPage(getVersePage(suraNum, verseNum));
+  if (!renderQuranPage(page, {
+    scrollTop: restoreScroll ? history.state?.pageScrollTop : null
+  })) {
+    pendingHighlight = null;
+    return false;
+  }
+
+  updateHistoryRoute(
+    { view: 'verse', sura, verse },
+    historyMode,
+    { pageScrollTop: window.scrollY }
+  );
+
+  return true;
 }
+
 
 /* =========================
    Scroll / highlight
 ========================= */
 async function _applyHighlightAndScroll(suraNum, verseNum, query, openMeal, mealName) {
-  let targetElement = null;
-
-  document.querySelectorAll('.verse-number').forEach((el) => {
-    if (el.textContent.trim() === `${suraNum}:${verseNum}`) {
-      targetElement = el.closest('.verse');
-    }
-  });
+  const targetElement = document.querySelector(
+    `.verse[data-verse-id="${String(suraNum)}:${String(verseNum)}"]`
+  );
 
   if (!targetElement) {
     console.warn(`Ayet bulunamadı: ${suraNum}:${verseNum}`);
     return;
   }
 
-  const headerEl = document.querySelector('.header-bar');
-  const headerHeight = headerEl ? headerEl.offsetHeight : 0;
-  const top = targetElement.getBoundingClientRect().top + window.pageYOffset - headerHeight - 8;
+const headerEl = document.querySelector('.header-bar');
+const headerHeight = headerEl ? headerEl.offsetHeight : 0;
 
-  window.scrollTo({ top, behavior: 'smooth' });
+let scrollTarget = targetElement;
+
+/*
+  Ayetin hemen üzerinde pasaj başlığı varsa
+  İngilizce başlıktan başlayarak ekranda göster.
+*/
+let previousElement = targetElement.previousElementSibling;
+let passageTitleTarget = null;
+
+while (
+  previousElement &&
+  (
+    previousElement.classList.contains('passage-title') ||
+    previousElement.classList.contains('passage-title-tr')
+  )
+) {
+  passageTitleTarget = previousElement;
+  previousElement = previousElement.previousElementSibling;
+}
+
+if (passageTitleTarget) {
+  scrollTarget = passageTitleTarget;
+} else if (String(verseNum) === '1') {
+  const suraContainer = targetElement.closest('.sura');
+
+  if (String(suraNum) === '1') {
+    scrollTarget =
+      document.querySelector('.page-header') ||
+      suraContainer ||
+      targetElement;
+  } else {
+    scrollTarget =
+      suraContainer ||
+      targetElement;
+  }
+}
+
+const top = Math.max(
+  0,
+  scrollTarget.getBoundingClientRect().top +
+    window.pageYOffset -
+    headerHeight -
+    8
+);
+
+  window.scrollTo({
+    top,
+    behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      ? 'auto'
+      : 'smooth'
+  });
 
   targetElement.classList.add('verse-search-highlight');
   setTimeout(() => targetElement.classList.remove('verse-search-highlight'), 5000);
@@ -777,47 +1952,120 @@ async function _applyHighlightAndScroll(suraNum, verseNum, query, openMeal, meal
   }
 }
 
-function scrollToVerse(suraNum, verseNum, searchQuery) {
-  _applyHighlightAndScroll(
-    suraNum,
-    verseNum,
-    searchQuery || activeSearchQuery || '',
-    false,
-    ''
-  );
-}
+function applyTemporaryHighlightToVerse(
+  verseElement,
+  query,
+  duration = 5000
+) {
+  if (!verseElement || !query) {
+    return;
+  }
 
-function applyTemporaryHighlightToVerse(verseElement, query, duration = 5000) {
-  if (!verseElement || !query) return;
+  const cleanQuery =
+    String(query).trim();
 
-  const cleanQuery = query.trim();
-  if (!cleanQuery) return;
+  if (!cleanQuery) {
+    return;
+  }
 
-  const regex = new RegExp(escapeRegExp(cleanQuery), 'gi');
-  const targets = ['.verse-arabic', '.verse-text', '.verse-text-tr'];
-  const originalHtml = [];
+  const selectors = [
+    '.verse-arabic',
+    '.verse-text',
+    '.verse-text-tr'
+  ];
 
-  targets.forEach((selector, i) => {
-    const el = verseElement.querySelector(selector);
-    if (!el) return;
+  const changedElements = [];
 
-    originalHtml[i] = el.innerHTML;
+  selectors.forEach((selector) => {
+    const element =
+      verseElement.querySelector(selector);
 
-    if (regex.test(el.textContent)) {
-      el.innerHTML = el.textContent.replace(
-        regex,
-        '<span class="search-result-highlight">$&</span>'
+    if (!element) {
+      return;
+    }
+
+    const originalHtml =
+      element.innerHTML;
+
+    const walker =
+      document.createTreeWalker(
+        element,
+        NodeFilter.SHOW_TEXT
       );
+
+    const textNodes = [];
+
+    while (walker.nextNode()) {
+      const node =
+        walker.currentNode;
+
+      if (
+        node.parentElement?.closest(
+          'button'
+        )
+      ) {
+        continue;
+      }
+
+      textNodes.push(node);
+    }
+
+    let changed = false;
+
+    textNodes.forEach((textNode) => {
+      const text =
+        textNode.nodeValue || '';
+
+      const regex =
+        new RegExp(
+          escapeRegExp(cleanQuery),
+          'gi'
+        );
+
+      if (!regex.test(text)) {
+        return;
+      }
+
+      const wrapper =
+        document.createElement('span');
+
+      wrapper.innerHTML =
+        escapeHtml(text).replace(
+          new RegExp(
+            escapeRegExp(cleanQuery),
+            'gi'
+          ),
+          '<span class="search-result-highlight">$&</span>'
+        );
+
+      textNode.replaceWith(
+        ...wrapper.childNodes
+      );
+
+      changed = true;
+    });
+
+    if (changed) {
+      changedElements.push({
+        element,
+        originalHtml
+      });
     }
   });
 
   setTimeout(() => {
-    targets.forEach((selector, i) => {
-      const el = verseElement.querySelector(selector);
-      if (el && originalHtml[i] !== undefined) {
-        el.innerHTML = originalHtml[i];
+    changedElements.forEach(
+      ({ element, originalHtml }) => {
+        if (!element.isConnected) {
+          return;
+        }
+
+        element.innerHTML =
+          originalHtml;
       }
-    });
+    );
+
+    decorateVerseWords();
   }, duration);
 }
 
@@ -879,168 +2127,828 @@ function getErhanArabicText(suraNum, verseNum) {
   return verse?.verse || '';
 }
 
+async function loadWordTranslations() {
+  if (WORD_TRANSLATIONS_STATE.status === 'ready') return;
+
+  if (WORD_TRANSLATIONS_STATE.status === 'loading') {
+    return WORD_TRANSLATIONS_STATE.loadPromise;
+  }
+
+  WORD_TRANSLATIONS_STATE.status = 'loading';
+
+  WORD_TRANSLATIONS_STATE.loadPromise = loadDataFile(
+    CONFIG.dataPaths.wordTranslations,
+    'wordTranslations'
+  )
+    .then(() => {
+      WORD_TRANSLATIONS_STATE.status = 'ready';
+      console.log('Kelime çevirileri yüklendi.');
+    })
+    .catch((err) => {
+      WORD_TRANSLATIONS_STATE.status = 'error';
+      console.error('Kelime çevirileri yüklenemedi:', err);
+      throw err;
+    });
+
+  return WORD_TRANSLATIONS_STATE.loadPromise;
+}
+
+function getWordTranslationHtml(suraNum, verseNum) {
+  const key = `${suraNum}:${verseNum}`;
+  const words = STATE.data.wordTranslations?.[key];
+
+  if (!Array.isArray(words) || words.length === 0) {
+    return '<div class="word-translation-empty">Kelime çevirisi bulunamadı.</div>';
+  }
+
+  return `
+    <div class="word-translation-box">
+      <div class="word-translation-title">🔤 Kelime Çevirisi</div>
+
+      <div class="word-translation-table">
+        <div class="word-translation-head">
+          <span>#</span>
+          <span>Kelime</span>
+          <span>Okunuş</span>
+          <span>Anlam</span>
+          <span>Kök</span>
+        </div>
+
+        ${words.map((item, index) => `
+          <div class="word-translation-row">
+            <span>${item.sort || index + 1}</span>
+            <strong class="word-arabic" dir="rtl">${escapeHtml(item.arabic || '')}</strong>
+            <span>${escapeHtml(item.transcription_tr || '')}</span>
+            <span>${escapeHtml(item.translation_tr || '')}</span>
+            <span class="word-root" dir="rtl">${escapeHtml(item.root?.arabic || '')}</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+async function loadArabicDetails(suraNum, verseNum, detailsElement = null) {
+  const comparisonBox = document.getElementById(`arabic-comparison-${suraNum}-${verseNum}`);
+  const wordBox = document.getElementById(`word-translation-${suraNum}-${verseNum}`);
+
+  if (detailsElement?.dataset.loaded === 'true') return;
+
+  if (comparisonBox) {
+    comparisonBox.innerHTML = '<div class="word-translation-loading">Karşılaştırmalı Arapça veriler yükleniyor...</div>';
+  }
+
+  if (wordBox && wordBox.dataset.loaded !== 'true') {
+    wordBox.innerHTML = '<div class="word-translation-loading">Kelime çevirileri yükleniyor...</div>';
+  }
+
+  const [comparisonResult, wordsResult] = await Promise.allSettled([
+    ensureFeatureLoaded('arabicComparisons'),
+    loadWordTranslations()
+  ]);
+
+  if (comparisonBox) {
+    if (comparisonResult.status === 'fulfilled') {
+      const arabic2Text = getArabic2Text(suraNum, verseNum);
+      const erhanArabicText = getErhanArabicText(suraNum, verseNum);
+
+      comparisonBox.innerHTML = `
+        ${arabic2Text
+          ? `
+            <div class="arabic-label">İkinci Arapça - quran_arapca2.json</div>
+            <div class="verse-arabic verse-arabic-2">${escapeHtml(arabic2Text)}</div>
+          `
+          : ''}
+
+        ${erhanArabicText
+          ? `
+            <div class="arabic-label">Erhan Aktaş Arapçası - kuran_erhan_aktas.json</div>
+            <div class="verse-arabic verse-arabic-2">${escapeHtml(erhanArabicText)}</div>
+          `
+          : ''}
+
+        ${!arabic2Text && !erhanArabicText
+          ? '<div class="optional-data-hint">Bu ayet için karşılaştırmalı Arapça metin bulunamadı.</div>'
+          : ''}
+      `;
+    } else {
+      comparisonBox.innerHTML = '<div class="word-translation-empty">Karşılaştırmalı Arapça veriler yüklenemedi.</div>';
+    }
+  }
+
+  if (wordBox) {
+    if (wordsResult.status === 'fulfilled') {
+      wordBox.innerHTML = getWordTranslationHtml(suraNum, verseNum);
+      wordBox.dataset.loaded = 'true';
+    } else {
+      wordBox.innerHTML = '<div class="word-translation-empty">Kelime çevirileri yüklenemedi.</div>';
+    }
+  }
+
+  if (detailsElement) detailsElement.dataset.loaded = 'true';
+  decorateVerseWords();
+}
+
+function findVerseData(suraNum, verseNum) {
+  const page = getVersePage(String(suraNum), String(verseNum));
+  const enVerse = STATE.data.en?.[page]?.sura?.[suraNum]?.verses?.[verseNum] || '';
+  const trVerse = STATE.data.tr?.[page]?.sura?.[suraNum]?.verses?.[verseNum] || '';
+  const arabic = STATE.data.en?.[page]?.sura?.[suraNum]?.encrypted?.[verseNum] || '';
+  const translit = STATE.data.translit?.[suraNum]?.verses?.[verseNum] || '';
+
+  return {
+    verseId: `${suraNum}:${verseNum}`,
+    sura: String(suraNum),
+    verse: String(verseNum),
+    page,
+    arabic,
+    english: enVerse,
+    turkish: trVerse,
+    transliteration: translit
+  };
+}
+
+function buildAnalysisContext(suraNum, verseNum) {
+  const mainVerse = findVerseData(String(suraNum), String(verseNum));
+  const topics = findTopicsForVerse(String(suraNum), String(verseNum));
+  const referenceVerses = getUniqueReferenceVerses(topics, 30);
+
+  return {
+    mainVerse,
+    topics,
+    referenceVerses
+  };
+}
+
+function flattenMapTopics(mapObj, lang = 'tr') {
+  const results = [];
+
+  function walk(node, path = []) {
+    if (!node || typeof node !== 'object') return;
+
+    for (const key of Object.keys(node)) {
+      const value = node[key];
+      const nextPath = [...path, key];
+
+      if (typeof value === 'string') {
+        const refs = expandVerseRefs(value);
+
+        if (refs.length) {
+          results.push({
+            lang,
+            title: nextPath.join(' > '),
+            rawRefs: value,
+            refs
+          });
+        }
+      } else if (value && typeof value === 'object') {
+        walk(value, nextPath);
+      }
+    }
+  }
+
+  walk(mapObj);
+  return results;
+}
+
+function buildTopicIndexes() {
+  TOPIC_INDEX.tr.clear();
+  TOPIC_INDEX.en.clear();
+
+  for (const language of ['tr', 'en']) {
+    const mapData = language === 'tr' ? STATE.data.mapTr : STATE.data.mapEn;
+    const topics = flattenMapTopics(mapData, language);
+
+    topics.forEach((topic) => {
+      topic.refs.forEach((verseId) => {
+        if (!TOPIC_INDEX[language].has(verseId)) {
+          TOPIC_INDEX[language].set(verseId, []);
+        }
+
+        TOPIC_INDEX[language].get(verseId).push(topic);
+      });
+    });
+  }
+}
+
+function findTopicsForVerse(suraNum, verseNum) {
+  const verseId = `${suraNum}:${verseNum}`;
+
+  return {
+    tr: TOPIC_INDEX.tr.get(verseId) || [],
+    en: TOPIC_INDEX.en.get(verseId) || []
+  };
+}
+
+function getUniqueReferenceVerses(topics, limit = 20) {
+  const seen = new Set();
+  const refs = [];
+
+  [...topics.tr, ...topics.en].forEach((topic) => {
+    topic.refs.forEach((ref) => {
+      if (seen.has(ref)) return;
+      seen.add(ref);
+      refs.push(ref);
+    });
+  });
+
+  return refs
+    .slice(0, limit)
+    .map((ref) => {
+      const [sura, verse] = ref.split(':');
+      return findVerseData(sura, verse);
+    })
+    .filter((verseData) => verseData.page);
+}
+
+function updatePreviousButtonState() {
+  const previousButton = document.getElementById('prevPage');
+  if (!previousButton) return;
+
+  const label = analysisReturnState ? 'Ayet analizine dön' : 'Önceki sayfa';
+  previousButton.setAttribute('aria-label', label);
+  previousButton.title = label;
+}
+
+function clearAnalysisReturnState() {
+  analysisReturnState = null;
+  updatePreviousButtonState();
+}
+
+function openVerseFromAnalysis(suraNum, verseNum) {
+  const panel = document.getElementById('analysisPanel');
+
+  if (!panel) {
+    goToVerse(suraNum, verseNum);
+    return;
+  }
+
+  const panelBody = panel.querySelector('.analysis-panel-body');
+
+  analysisReturnState = {
+    suraNum: panel.dataset.analysisSura,
+    verseNum: panel.dataset.analysisVerse,
+    scrollTop: panelBody?.scrollTop || 0
+  };
+
+  if (history.state?.route?.view === 'analysis') {
+    history.replaceState({
+      ...history.state,
+      analysisScrollTop: analysisReturnState.scrollTop
+    }, '', window.location.href);
+  }
+
+  updatePreviousButtonState();
+  closeAnalysisPanel({ updateHistory: false, restoreFocus: false });
+  goToVerse(suraNum, verseNum, {
+    source: 'analysis',
+    historyMode: 'push'
+  });
+}
+
+function restoreAnalysisPanelFromHistory() {
+  if (!analysisReturnState) return false;
+
+  const savedState = analysisReturnState;
+  clearAnalysisReturnState();
+
+  if (history.state?.route?.view === 'verse' && history.length > 1) {
+    history.back();
+    return true;
+  }
+
+  openAnalysisPanel(savedState.suraNum, savedState.verseNum, {
+    scrollTop: savedState.scrollTop,
+    historyMode: 'replace'
+  });
+
+  return true;
+}
+
+function trapDialogFocus(panel, event) {
+  if (event.key !== 'Tab') return;
+
+  const focusable = [...panel.querySelectorAll(
+    'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  )].filter((element) => !element.hidden && element.offsetParent !== null);
+
+  if (!focusable.length) return;
+
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+async function openAnalysisPanel(suraNum, verseNum, options = {}) {
+  const requestId = ++activeAnalysisRequestId;
+  const {
+    scrollTop = 0,
+    historyMode = 'push',
+    trigger = document.activeElement,
+    parentRoute: requestedParentRoute = null
+  } = options;
+
+  if (!verseExists(suraNum, verseNum)) {
+    showNotification(`${suraNum}:${verseNum} ayeti analiz için bulunamadı.`, 'warning');
+    return false;
+  }
+
+  clearAnalysisReturnState();
+
+  showLoading('Ayet analizi hazırlanıyor...');
+
+  try {
+    await ensureFeatureLoaded('analysis');
+  } catch (error) {
+    showNotification('Konu haritaları yüklenemedi; temel ayet bilgisi gösteriliyor.', 'warning');
+  } finally {
+    hideLoading();
+  }
+
+  if (requestId !== activeAnalysisRequestId) return false;
+
+  const context = buildAnalysisContext(suraNum, verseNum);
+  const existing = document.getElementById('analysisPanel');
+  if (existing) existing.remove();
+
+  lastDialogTrigger = trigger instanceof HTMLElement ? trigger : null;
+
+  const panel = document.createElement('section');
+  panel.id = 'analysisPanel';
+  panel.className = 'analysis-panel';
+  panel.dataset.analysisSura = context.mainVerse.sura;
+  panel.dataset.analysisVerse = context.mainVerse.verse;
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-modal', 'true');
+  panel.setAttribute('aria-labelledby', 'analysisPanelTitle');
+
+  panel.innerHTML = `
+    <div class="analysis-panel-header">
+      <h2 id="analysisPanelTitle">🔎 Ayet Analizi ${escapeHtml(context.mainVerse.verseId)}</h2>
+      <button
+        type="button"
+        data-action="close-analysis"
+        class="analysis-close-btn"
+        aria-label="Ayet analizini kapat"
+      >✕</button>
+    </div>
+
+    <div class="analysis-panel-body">
+      <h3>Ana Ayet</h3>
+
+      <div class="analysis-card">
+        <div class="analysis-arabic">${escapeHtml(context.mainVerse.arabic)}</div>
+        <p><strong>TR:</strong> ${escapeHtml(context.mainVerse.turkish)}</p>
+        <p><strong>EN:</strong> ${escapeHtml(context.mainVerse.english)}</p>
+        <p><strong>Okunuş:</strong> ${escapeHtml(context.mainVerse.transliteration)}</p>
+      </div>
+
+      <h3>İlgili Konular</h3>
+      <div class="analysis-card">
+        <h4>Türkçe Konular</h4>
+        ${context.topics.tr.length
+          ? context.topics.tr.map((topic) => `
+              <div class="analysis-topic">
+                <strong>${escapeHtml(topic.title)}</strong>
+                <div class="analysis-topic-verses">${renderTopicReferenceVerses(topic)}</div>
+              </div>
+            `).join('')
+          : '<p>Konu bulunamadı.</p>'}
+
+        <h4>İngilizce Konular</h4>
+        ${context.topics.en.length
+          ? context.topics.en.map((topic) => `
+              <div class="analysis-topic">
+                <strong>${escapeHtml(topic.title)}</strong>
+                <div class="analysis-topic-verses">${renderTopicReferenceVerses(topic)}</div>
+              </div>
+            `).join('')
+          : '<p>Topic bulunamadı.</p>'}
+      </div>
+
+      <h3>Referans Ayetler</h3>
+      <div class="analysis-card">
+        ${context.referenceVerses.length
+          ? context.referenceVerses.map((verseData) => `
+              <button
+                type="button"
+                class="analysis-ref-verse analysis-verse-link"
+                data-sura="${escapeHtml(verseData.sura)}"
+                data-verse="${escapeHtml(verseData.verse)}"
+                aria-label="${escapeHtml(verseData.verseId)} ayetine git"
+              >
+                <strong class="analysis-verse-id">${escapeHtml(verseData.verseId)}</strong>
+                <span class="analysis-arabic-small">${escapeHtml(verseData.arabic)}</span>
+                <span><strong>TR:</strong> ${escapeHtml(verseData.turkish)}</span>
+                <span><strong>EN:</strong> ${escapeHtml(verseData.english)}</span>
+              </button>
+            `).join('')
+          : '<p>Referans ayet bulunamadı.</p>'}
+      </div>
+    </div>
+  `;
+
+  panel.addEventListener('click', (event) => {
+    const target = event.target.closest('.analysis-verse-link');
+    if (!target) return;
+    openVerseFromAnalysis(target.dataset.sura, target.dataset.verse);
+  });
+
+  panel.addEventListener('keydown', (event) => trapDialogFocus(panel, event));
+
+  document.body.appendChild(panel);
+  document.body.classList.add('analysis-open');
+
+  const currentHistoryState = history.state;
+  const currentHistoryRoute = currentHistoryState?.route;
+  const parentRoute = requestedParentRoute ||
+    (currentHistoryRoute?.view === 'analysis'
+      ? currentHistoryState?.parentRoute
+      : currentHistoryRoute) || {
+      view: 'verse',
+      sura: String(suraNum),
+      verse: String(verseNum)
+    };
+
+  panel.dataset.parentRoute = JSON.stringify(parentRoute);
+
+  updateHistoryRoute(
+    { view: 'analysis', sura: String(suraNum), verse: String(verseNum) },
+    historyMode,
+    {
+      analysisScrollTop: Number(scrollTop) || 0,
+      parentRoute
+    }
+  );
+
+  requestAnimationFrame(() => {
+    const panelBody = panel.querySelector('.analysis-panel-body');
+    if (panelBody) panelBody.scrollTop = Number(scrollTop) || 0;
+    panel.querySelector('.analysis-close-btn')?.focus();
+  });
+
+  return true;
+}
+
+function renderTopicReferenceVerses(topic, limit = 12) {
+  return topic.refs.slice(0, limit).map((ref) => {
+    const [sura, verse] = ref.split(':');
+    const verseData = findVerseData(sura, verse);
+
+    if (!verseData.page) return '';
+
+    return `
+      <button
+        type="button"
+        class="analysis-topic-verse analysis-verse-link"
+        data-sura="${escapeHtml(verseData.sura)}"
+        data-verse="${escapeHtml(verseData.verse)}"
+        aria-label="${escapeHtml(verseData.verseId)} ayetine git"
+      >
+        <span class="analysis-verse-id">${escapeHtml(verseData.verseId)}</span>
+        <span class="analysis-verse-text">
+          ${escapeHtml(verseData.turkish || 'Türkçe çeviri bulunamadı.')}
+        </span>
+      </button>
+    `;
+  }).join('');
+}
+
+function closeAnalysisPanel(options = {}) {
+  const {
+    updateHistory = true,
+    restoreFocus = true
+  } = options;
+
+  activeAnalysisRequestId += 1;
+
+  const panel = document.getElementById('analysisPanel');
+  if (!panel) {
+    document.body.classList.remove('analysis-open');
+    return;
+  }
+
+  const currentState = history.state;
+  panel.remove();
+  document.body.classList.remove('analysis-open');
+
+  if (restoreFocus && lastDialogTrigger?.isConnected) {
+    lastDialogTrigger.focus();
+  }
+
+  lastDialogTrigger = null;
+
+  if (updateHistory && currentState?.route?.view === 'analysis') {
+    if (currentState.parentRoute && history.length > 1) {
+      history.back();
+    } else {
+      goToVerse(
+        currentState.route.sura,
+        currentState.route.verse,
+        { historyMode: 'replace', source: 'history' }
+      );
+    }
+  }
+}
+
 function buildPageHtml(pageNum) {
   const enPage = STATE.data.en[pageNum];
   const trPage = STATE.data.tr[pageNum];
 
-  let pageTitle = 'Bilinmeyen';
-  const suraNums = Object.keys(enPage.sura).sort((a, b) => Number(a) - Number(b));
-
-  if (suraNums.length > 0) {
-    const suraTitles = suraNums.map(
-      (num) => STATE.metadata.sureNames[num] || `Sure ${num}`
-    );
-    pageTitle = suraTitles.join(' | ');
+  if (!enPage?.sura || !trPage?.sura) {
+    return '<div class="error-message">Bu sayfanın metin verileri eksik.</div>';
   }
+
+  const suraNums = Object.keys(enPage.sura)
+    .sort((a, b) => Number(a) - Number(b));
+
+  const pageTitle = suraNums
+    .map((num) => STATE.metadata.sureNames[num] || `Sure ${num}`)
+    .join(' | ') || 'Bilinmeyen';
 
   let html = `
     <div class="page-header">
-      <h1>📖 ${escapeHtml(pageTitle)}</h1>
-    </div>`;
+      <h1>${escapeHtml(pageTitle)}</h1>
+    </div>
+  `;
 
   const enNotesMap = mapNotesToVerses(enPage.notes?.data);
   const trNotesMap = mapNotesToVerses(trPage.notes?.data);
 
   for (const suraNum of suraNums) {
     const enSura = enPage.sura[suraNum];
-    const trSura = trPage.sura[suraNum];
+    const trSura = trPage.sura[suraNum] || { verses: {} };
 
-    html += `<div class="sura">`;
+    html += '<div class="sura">';
 
-    const verseKeys = Object.keys(enSura.verses).sort((a, b) => Number(a) - Number(b));
+    const verseKeys = Object.keys(enSura.verses || {})
+      .sort((a, b) => Number(a) - Number(b));
 
     for (const verseNum of verseKeys) {
-      if (enSura.titles && enSura.titles[verseNum]) {
-        html += `<div class="passage-title">${escapeHtml(enSura.titles[verseNum])}</div>`;
-
-        if (trSura.titles && trSura.titles[verseNum]) {
-          html += `<div class="passage-title-tr">${escapeHtml(trSura.titles[verseNum])}</div>`;
-        }
+      if (enSura.titles?.[verseNum]) {
+        html += `
+          <div class="passage-title">${escapeHtml(enSura.titles[verseNum])}</div>
+          ${trSura.titles?.[verseNum]
+            ? `<div class="passage-title-tr">${escapeHtml(trSura.titles[verseNum])}</div>`
+            : ''}
+        `;
       }
 
       const verseKey = `${suraNum}:${verseNum}`;
-      const hasNotes =
-        (enNotesMap[verseKey]?.length > 0) || (trNotesMap[verseKey]?.length > 0);
-
-      const arabic2Text = getArabic2Text(suraNum, verseNum);
-      const erhanArabicText = getErhanArabicText(suraNum, verseNum);
+      const hasNotes = Boolean(enNotesMap[verseKey]?.length || trNotesMap[verseKey]?.length);
+      const transliterationText = STATE.data.translit?.[String(suraNum)]?.verses?.[String(verseNum)] || '';
+      const hasUserNote = getLocalNote(suraNum, verseNum);
 
       html += `
-        <div class="verse">
+        <article
+          class="verse"
+          data-verse-id="${escapeHtml(verseKey)}"
+          data-sura="${escapeHtml(suraNum)}"
+          data-verse="${escapeHtml(verseNum)}"
+        >
           <div class="verse-header">
             <div></div>
 
-            <div class="verse-number">${suraNum}:${verseNum}</div>
+            <div class="verse-number">${suraNum} : ${verseNum}</div>
 
-            <details class="arabic-section">
-              <summary>📖 Arapça</summary>
+            <details
+              class="arabic-section"
+              data-action="arabic-details"
+              data-sura="${escapeHtml(suraNum)}"
+              data-verse="${escapeHtml(verseNum)}"
+            >
+              <summary>Arapça</summary>
 
               <div class="arabic-dropdown-content">
                 <div class="arabic-label">Standart Arapça - qurantft.json</div>
-                <div class="verse-arabic">${enSura.encrypted?.[verseNum] || ''}</div>
+                <div class="verse-arabic">${escapeHtml(enSura.encrypted?.[verseNum] || '')}</div>
 
-                ${
-                  arabic2Text
-                    ? `
-                      <div class="arabic-label">İkinci Arapça - quran_arapca2.json</div>
-                      <div class="verse-arabic verse-arabic-2">${arabic2Text}</div>
-                    `
-                    : ''
-                }
+                <div
+                  id="arabic-comparison-${suraNum}-${verseNum}"
+                  class="arabic-comparison-container"
+                  aria-live="polite"
+                >
+                  <div class="optional-data-hint">
+                    Karşılaştırmalı Arapça metinler açıldığında yüklenir.
+                  </div>
+                </div>
 
-                ${
-                  erhanArabicText
-                    ? `
-                      <div class="arabic-label">Erhan Aktaş Arapçası - kuran_erhan_aktas.json</div>
-                      <div class="verse-arabic verse-arabic-2">${erhanArabicText}</div>
-                    `
-                    : ''
-                }
+                <div
+                  id="word-translation-${suraNum}-${verseNum}"
+                  class="word-translation-container"
+                  aria-live="polite"
+                ></div>
               </div>
             </details>
-          </div>`;
+          </div>
+      `;
 
       if (STATE.settings.showTransliteration) {
-        html += `<div class="verse-transliteration">${
-          STATE.data.translit[suraNum]?.verses?.[verseNum] || ''
-        }</div>`;
+        html += `
+          <div class="verse-transliteration">
+            ${transliterationText
+              ? `
+                <span class="audio-control-group">
+                  <button
+                    type="button"
+                    class="audio-control-btn audio-play-btn"
+                    data-action="speak-arabic"
+                    data-sura="${escapeHtml(suraNum)}"
+                    data-verse="${escapeHtml(verseNum)}"
+                    title="Sesi oynat"
+                    aria-label="${escapeHtml(verseKey)} Arapça sesini oynat"
+                  >
+                    <span class="audio-play-icon" aria-hidden="true"></span>
+                  </button>
+
+                  <button
+                    type="button"
+                    class="audio-control-btn audio-stop-btn"
+                    data-action="stop-audio"
+                    title="Sesi durdur"
+                    aria-label="Sesi durdur"
+                  >
+                    <span class="audio-stop-icon" aria-hidden="true"></span>
+                  </button>
+                </span>
+              `
+              : ''}
+
+            <span class="transliteration-text">${escapeHtml(transliterationText)}</span>
+          </div>
+        `;
       }
 
       html += `
-          <div class="verse-text">${escapeHtml(enSura.verses[verseNum])}</div>
-          <div class="verse-text-tr"><strong>${escapeHtml(trSura.verses[verseNum])}</strong></div>
-          <div class="buttons">`;
+        <div class="verse-text verse-text-with-audio">
+          <span class="verse-text-content">${escapeHtml(enSura.verses[verseNum])}</span>
 
-      if (hasNotes) {
-        html += `<button class="toggle-btn dipnot-btn" onclick="toggleNote('note-${suraNum}-${verseNum}')">📌 Dipnot</button>`;
-      }
+          <button
+            type="button"
+            class="inline-speak-btn audio-control-btn audio-play-btn"
+            data-action="speak-english"
+            data-sura="${escapeHtml(suraNum)}"
+            data-verse="${escapeHtml(verseNum)}"
+            title="İngilizce oku"
+            aria-label="${escapeHtml(verseKey)} İngilizce metnini oku"
+          >
+            <span class="audio-play-icon" aria-hidden="true"></span>
+          </button>
+        </div>
 
-      if (STATE.settings.showMeals) {
-        html += `<button class="toggle-btn" id="meal-btn-${suraNum}-${verseNum}" onclick="toggleMeal('meal-${suraNum}-${verseNum}', ${suraNum}, ${verseNum})">📚 Mealler</button>`;
-      }
+        <div class="verse-text-tr">
+          <strong>${escapeHtml(trSura.verses?.[verseNum] || '')}</strong>
+        </div>
 
-      html += `<button class="toggle-btn note-btn" onclick="toggleNoteInput('note-input-box-${suraNum}-${verseNum}', ${suraNum}, ${verseNum})">✍️ Not Al</button>`;
-      html += `</div>`;
+        <div class="buttons">
+          ${hasNotes
+            ? `
+              <button
+                type="button"
+                class="toggle-btn dipnot-btn"
+                data-action="toggle-footnote"
+                data-target="note-${suraNum}-${verseNum}"
+                aria-controls="note-${suraNum}-${verseNum}"
+                aria-expanded="false"
+              >Dipnot</button>
+            `
+            : ''}
+
+          ${STATE.settings.showMeals
+            ? `
+              <button
+                type="button"
+                class="toggle-btn"
+                id="meal-btn-${suraNum}-${verseNum}"
+                data-action="toggle-meal"
+                data-target="meal-${suraNum}-${verseNum}"
+                data-sura="${escapeHtml(suraNum)}"
+                data-verse="${escapeHtml(verseNum)}"
+                aria-controls="meal-${suraNum}-${verseNum}"
+                aria-expanded="false"
+              >Mealler</button>
+            `
+            : ''}
+
+          <button
+            type="button"
+            class="toggle-btn analysis-btn"
+            data-action="open-analysis"
+            data-sura="${escapeHtml(suraNum)}"
+            data-verse="${escapeHtml(verseNum)}"
+          >Analiz</button>
+
+          <button
+            type="button"
+            id="noteBtn-${suraNum}-${verseNum}"
+            class="toggle-btn note-btn ${hasUserNote ? 'has-note' : ''}"
+            data-action="toggle-note-input"
+            data-target="note-input-box-${suraNum}-${verseNum}"
+            data-sura="${escapeHtml(suraNum)}"
+            data-verse="${escapeHtml(verseNum)}"
+          >${hasUserNote ? 'Notlu' : 'Not Al'}</button>
+        </div>
+      `;
 
       if (STATE.settings.showAiTranslation) {
-        html += `<div id="ai-translation-${suraNum}-${verseNum}" class="ai-translation">`;
-
-        if (STATE.data.ai[suraNum]?.verses?.[verseNum]) {
-          html += `<strong>AI ÇEVİRİ:</strong> ${escapeHtml(STATE.data.ai[suraNum].verses[verseNum])}`;
-        } else {
-          html += `<strong>AI ÇEVİRİ:</strong> Çeviri bulunamadı.`;
-        }
-
-        html += `</div>`;
+        const aiText = STATE.data.ai?.[suraNum]?.verses?.[verseNum] || '';
+        html += `
+          <div id="ai-translation-${suraNum}-${verseNum}" class="ai-translation">
+            <strong>AI ÇEVİRİ:</strong>
+            ${aiText ? escapeHtml(aiText) : 'Çeviri bulunamadı.'}
+          </div>
+        `;
       }
 
       if (hasNotes) {
-        html += `<div id="note-${suraNum}-${verseNum}" class="note-box hidden">`;
+        html += `
+          <div id="note-${suraNum}-${verseNum}" class="note-box footnote-box hidden">
+            ${(enNotesMap[verseKey] || []).map((note) => `
+              <div class="footnote-line footnote-en">
+                <strong class="footnote-name">EN:</strong>
+                <span class="footnote-text">${escapeHtml(note)}</span>
+              </div>
+            `).join('')}
 
-        if (enNotesMap[verseKey]) {
-          enNotesMap[verseKey].forEach((note) => {
-            html += `<div class="note-en"><strong>EN:</strong> ${escapeHtml(note)}</div>`;
-          });
-        }
+            ${enNotesMap[verseKey]?.length && trNotesMap[verseKey]?.length
+              ? '<div class="note-separator"></div>'
+              : ''}
 
-        if (trNotesMap[verseKey]) {
-          trNotesMap[verseKey].forEach((note) => {
-            html += `<div class="note-tr"><strong>TR:</strong> ${escapeHtml(note)}</div>`;
-          });
-        }
-
-        html += `</div>`;
+            ${(trNotesMap[verseKey] || []).map((note) => `
+              <div class="footnote-line footnote-tr">
+                <strong class="footnote-name">TR:</strong>
+                <span class="footnote-text">${escapeHtml(note)}</span>
+              </div>
+            `).join('')}
+          </div>
+        `;
       }
 
       html += `
-          <div id="user-note-${suraNum}-${verseNum}" class="note-box hidden"></div>
-          <div id="meal-${suraNum}-${verseNum}" class="note-box hidden"></div>
-          <div id="note-input-box-${suraNum}-${verseNum}" class="note-input-box hidden">
-            <textarea id="note-input-${suraNum}-${verseNum}" placeholder="Notunuzu buraya yazın..." rows="4"></textarea>
-            <div class="note-actions">
-              <button class="save-note-btn" onclick="saveNote(${suraNum}, ${verseNum})">💾 Kaydet</button>
-              <button class="cancel-note-btn" onclick="cancelNote(${suraNum}, ${verseNum})">❌ İptal</button>
-            </div>
+        <div id="user-note-${suraNum}-${verseNum}" class="note-box hidden"></div>
+        <div id="meal-${suraNum}-${verseNum}" class="note-box hidden" aria-live="polite"></div>
+
+        <div id="note-input-box-${suraNum}-${verseNum}" class="note-input-box hidden">
+          <label class="visually-hidden" for="note-input-${suraNum}-${verseNum}">
+            ${escapeHtml(verseKey)} için not
+          </label>
+
+          <textarea
+            id="note-input-${suraNum}-${verseNum}"
+            placeholder="Notunuzu buraya yazın..."
+            rows="4"
+            maxlength="10000"
+          ></textarea>
+
+          <div class="note-actions">
+            <button
+              type="button"
+              class="save-note-btn"
+              data-action="save-note"
+              data-sura="${escapeHtml(suraNum)}"
+              data-verse="${escapeHtml(verseNum)}"
+            >💾 Kaydet</button>
+
+            <button
+              type="button"
+              class="cancel-note-btn"
+              data-action="cancel-note"
+              data-sura="${escapeHtml(suraNum)}"
+              data-verse="${escapeHtml(verseNum)}"
+            >❌ İptal</button>
           </div>
-        </div>`;
+        </div>
+      </article>
+      `;
     }
 
-    html += `</div>`;
+    html += '</div>';
   }
 
-  html += `<div class="page-footer">`;
+  html += `
+    <div class="page-footer">
+      <button
+        type="button"
+        class="header-btn page-footer-btn"
+        data-action="navigate-adjacent"
+        data-direction="previous"
+      >← Önceki Sayfa</button>
 
-  if (STATE.currentPage > 1) {
-    html += `<button class="header-btn" onclick="goToPage(${STATE.currentPage - 1})">⟵ Önceki Sayfa</button>`;
-  }
-
-  html += `<span class="page-info">Sayfa ${STATE.currentPage} / ${STATE.totalPages}</span>`;
-
-  if (STATE.currentPage < STATE.totalPages) {
-    html += `<button class="header-btn" onclick="goToPage(${STATE.currentPage + 1})">Sonraki Sayfa ⟶</button>`;
-  }
-
-  html += `</div>`;
+      <button
+        type="button"
+        class="header-btn page-footer-btn"
+        data-action="navigate-adjacent"
+        data-direction="next"
+      >Sonraki Sayfa →</button>
+    </div>
+  `;
 
   return html;
 }
@@ -1058,15 +2966,26 @@ function afterPageRender() {
   if (pendingHighlight) {
     const ph = pendingHighlight;
     pendingHighlight = null;
+
     requestAnimationFrame(() => {
-      _applyHighlightAndScroll(ph.suraNum, ph.verseNum, ph.query, ph.openMeal, ph.mealName);
+      _applyHighlightAndScroll(
+        ph.suraNum,
+        ph.verseNum,
+        ph.query,
+        ph.openMeal,
+        ph.mealName
+      );
     });
   }
 }
 
 function displayPage(pageNum) {
   if (!STATE.data.en[pageNum] || !STATE.data.tr[pageNum]) {
-    DOM.content.innerHTML = '<p>Sayfa yükleniyor...</p>';
+    console.error(
+      `Sayfa verisi bulunamadı. Veri anahtarı: ${pageNum}`
+    );
+
+    showFirstRevealedVersePage();
     return;
   }
 
@@ -1082,32 +3001,218 @@ function displayPage(pageNum) {
   afterPageRender();
 }
 
+
 /* =========================
    Tooltip - delegation
 ========================= */
+function normalizeDictionaryWord(rawWord) {
+  if (!rawWord) return '';
+
+  let word = String(rawWord)
+    // Farklı apostrofları standartlaştır
+    .replace(/[’‘`´ʼʻ＇]/g, "'")
+
+    // Farklı tire biçimlerini standartlaştır
+    .replace(/[‐‒–—﹘﹣－]/g, "-")
+
+    // Aksanları kaldır
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+
+    .toLowerCase()
+    .trim();
+
+  // Baştaki gereksiz karakterleri temizle
+  word = word.replace(/^[^a-z0-9]+/g, '');
+
+  // Sondaki yıldız, virgül, noktalama, parantez vb. temizle
+  word = word.replace(/[^a-z0-9]+$/g, '');
+
+  // Harfler arasındaki nokta, apostrof ve tireyi koru
+  word = word.replace(/[^a-z0-9.'-]/g, '');
+
+  // Art arda gelen işaretleri sadeleştir
+  word = word
+    .replace(/'{2,}/g, "'")
+    .replace(/-{2,}/g, '-')
+    .replace(/\.{2,}/g, '.');
+
+  // Baş ve sondaki nokta/apostrof/tireleri tekrar temizle
+  word = word.replace(/^['.-]+|['.-]+$/g, '');
+
+  return word;
+}
+
+
+function getDictionaryCandidates(rawWord) {
+  const rawText = String(rawWord || '');
+
+  // Orijinal metinde uzun çizgi bulunup bulunmadığını,
+  // normalizasyon yapılmadan önce tespit ediyoruz.
+  const containsLongDash = /[—–―]/.test(rawText);
+
+  const word = normalizeDictionaryWord(rawText);
+
+  if (!word) return [];
+
+  const candidates = [word];
+
+  // A.L.M. → alm
+  if (word.includes('.')) {
+    const noDots = word.replace(/\./g, '');
+
+    if (noDots) {
+      candidates.push(noDots);
+    }
+  }
+
+  // Joseph's → joseph
+  if (word.endsWith("'s") && word.length > 2) {
+    candidates.push(word.slice(0, -2));
+  }
+
+  // prophets' → prophets
+  if (word.endsWith("'") && word.length > 1) {
+    candidates.push(word.slice(0, -1));
+  }
+
+  // Shu'aib → shuaib
+  if (word.includes("'")) {
+    const noApostrophes = word.replace(/'/g, '');
+
+    if (noApostrophes) {
+      candidates.push(noApostrophes);
+    }
+  }
+
+  // well-protected → wellprotected
+  // Birleşik kelime tek parça olarak korunur.
+  if (word.includes('-')) {
+    const noHyphens = word.replace(/-/g, '');
+
+    if (noHyphens) {
+      candidates.push(noHyphens);
+    }
+  }
+
+  /*
+    Yalnızca orijinal metinde uzun çizgi varsa parçala:
+
+    earth—you → earth, you
+    earth–you → earth, you
+
+    Normal kısa tireli kelimeler parçalanmaz:
+
+    empty-handed
+    well-protected
+    one-fifth
+  */
+  if (containsLongDash && word.includes('-')) {
+    const parts = word
+      .split('-')
+      .map((part) => normalizeDictionaryWord(part))
+      .filter(Boolean);
+
+    candidates.push(...parts);
+  }
+
+  // Tüm işaretleri kaldırılmış son aday.
+  const compact = word.replace(/[.'-]/g, '');
+
+  if (compact) {
+    candidates.push(compact);
+  }
+
+  return [...new Set(candidates)];
+}
+
+
 function decorateVerseWords() {
-  document.querySelectorAll('.verse-text').forEach((el) => {
-    if (el.dataset.decorated === 'true') return;
+  /*
+    İngilizce sözlük yardımının çalışacağı alanlar:
+    - Ana İngilizce ayet metni
+    - İngilizce sure / bölüm başlıkları
+    - İngilizce dipnot metinleri
+  */
+  const englishTextSelectors = [
+    '.verse-text',
+    '.passage-title',
+    '.footnote-en .footnote-text'
+  ];
 
-    const text = el.textContent;
-    const words = text.split(/\s+/);
+  document
+    .querySelectorAll(englishTextSelectors.join(', '))
+    .forEach((element) => {
+      if (element.dataset.decorated === 'true') {
+        return;
+      }
 
-    const html = words
-      .map((word) => {
-        const cleanWord = word.replace(/[^a-zA-Z]/g, '').toLowerCase();
-        if (!cleanWord) return escapeHtml(word);
+      const preservedButtons = Array.from(
+        element.querySelectorAll(
+          ':scope > .inline-speak-btn'
+        )
+      );
 
-        return `<span class="word-token" data-word="${escapeHtml(
-          cleanWord
-        )}" data-original="${escapeHtml(word.toLowerCase())}" style="cursor:help;">${escapeHtml(
-          word
-        )}</span>`;
-      })
-      .join(' ');
+      const text = Array.from(element.childNodes)
+        .filter((node) => {
+          return !(
+            node.nodeType === Node.ELEMENT_NODE &&
+            node.classList?.contains(
+              'inline-speak-btn'
+            )
+          );
+        })
+        .map((node) => node.textContent || '')
+        .join('')
+        .replace(/\s+/g, ' ')
+        .trim();
 
-    el.innerHTML = html;
-    el.dataset.decorated = 'true';
-  });
+      if (!text) {
+        element.dataset.decorated = 'true';
+        return;
+      }
+
+      const words = text.split(/\s+/);
+
+      element.innerHTML = words
+        .map((word) => {
+          const candidates =
+            getDictionaryCandidates(word);
+
+          const cleanWord =
+            candidates[0] || '';
+
+          if (!cleanWord) {
+            return escapeHtml(word);
+          }
+
+          return `
+            <span
+              class="word-token"
+              data-word="${escapeHtml(cleanWord)}"
+              data-candidates="${escapeHtml(
+                JSON.stringify(candidates)
+              )}"
+              data-original="${escapeHtml(
+                normalizeDictionaryWord(word)
+              )}"
+              tabindex="0"
+              style="cursor:help;"
+            >${escapeHtml(word)}</span>
+          `;
+        })
+        .join(' ');
+
+      preservedButtons.forEach((button) => {
+        element.appendChild(
+          document.createTextNode(' ')
+        );
+
+        element.appendChild(button);
+      });
+
+      element.dataset.decorated = 'true';
+    });
 }
 
 function setupWordTooltipDelegation() {
@@ -1115,100 +3220,511 @@ function setupWordTooltipDelegation() {
   tooltipDelegationReady = true;
 
   const tooltip = DOM.wordTooltip;
-  if (!tooltip) return;
+
+  if (!tooltip || !DOM.content) return;
 
   let pinnedToken = null;
+  let activeToken = null;
+  let animationFrameId = null;
+
+  Object.assign(tooltip.style, {
+    position: 'fixed',
+    display: 'none',
+    pointerEvents: 'none',
+    zIndex: '99999',
+    maxWidth: '380px',
+    maxHeight: '65vh',
+    overflowY: 'auto',
+    boxSizing: 'border-box'
+  });
 
   function getTranslationHtml(token) {
-    const originalWord = token.dataset.original;
-    const cleanWord = token.dataset.word;
+    const displayedWord = String(
+      token.textContent || ''
+    ).trim();
 
-    let translationValue = null;
-    if (STATE.data.dictionary[originalWord]) {
-      translationValue = STATE.data.dictionary[originalWord];
-    } else if (STATE.data.dictionary[cleanWord]) {
-      translationValue = STATE.data.dictionary[cleanWord];
+    let candidates = [];
+
+    try {
+      candidates = JSON.parse(
+        token.dataset.candidates || '[]'
+      );
+    } catch (error) {
+      console.warn(
+        'Kelime adayları okunamadı:',
+        error
+      );
     }
 
-    if (translationValue) {
-      const translations = String(translationValue)
-        .split(', ')
-        .map((trans, idx) => {
-          const colors = ['#e74c3c', '#27ae60', '#3498db'];
-          const color = colors[idx % 3];
-          return `<strong style="color:${color}">${escapeHtml(trans)}</strong>`;
+    if (
+      !Array.isArray(candidates) ||
+      candidates.length === 0
+    ) {
+      candidates =
+        getDictionaryCandidates(displayedWord);
+    }
+
+    const originalWord =
+      normalizeDictionaryWord(
+        token.dataset.original ||
+        displayedWord
+      );
+
+    const lookupCandidates = [
+      originalWord,
+      ...candidates
+    ].filter(Boolean);
+
+    const uniqueCandidates = [
+      ...new Set(lookupCandidates)
+    ];
+
+    const foundWords = [];
+    const usedMeanings = new Set();
+
+    for (const candidate of uniqueCandidates) {
+      const hasCandidate =
+        Object.prototype.hasOwnProperty.call(
+          STATE.data.dictionary,
+          candidate
+        );
+
+      if (!hasCandidate) continue;
+
+      const meaning =
+        STATE.data.dictionary[candidate];
+
+      if (!meaning) continue;
+
+      const meaningKey =
+        String(meaning).trim();
+
+      if (usedMeanings.has(meaningKey)) {
+        continue;
+      }
+
+      usedMeanings.add(meaningKey);
+
+      foundWords.push({
+        word: candidate,
+        meaning: meaningKey
+      });
+    }
+
+    if (foundWords.length > 0) {
+      const resultHtml = foundWords
+        .map((item) => {
+          const translations = String(
+            item.meaning
+          )
+            .split(/\s*,\s*/)
+            .filter(Boolean)
+            .map((translation, index) => {
+              const colors = [
+                '#e74c3c',
+                '#27ae60',
+                '#3498db'
+              ];
+
+              const color =
+                colors[index % colors.length];
+
+              return `
+                <strong style="color:${color}">
+                  ${escapeHtml(translation)}
+                </strong>
+              `;
+            })
+            .join(', ');
+
+          return `
+            <div style="margin-bottom:8px;">
+              <strong>
+                ${escapeHtml(item.word)}
+              </strong>
+              ➜
+              ${translations}
+            </div>
+          `;
         })
-        .join(', ');
+        .join('<hr>');
 
-      return `"${escapeHtml(token.textContent)}" ➔ ${translations}`;
+      return `
+        <div>
+          <div style="margin-bottom:8px;">
+            "<strong>
+              ${escapeHtml(displayedWord)}
+            </strong>"
+          </div>
+
+          ${resultHtml}
+        </div>
+      `;
     }
 
-    return `"${escapeHtml(token.textContent)}" ➔ <span style="color:#e74c3c;">Kelime bulunamadı</span>`;
+    console.warn(
+      'Sözlükte bulunamayan kelime:',
+      {
+        displayedWord,
+        originalWord,
+        candidates: uniqueCandidates
+      }
+    );
+
+    return `
+      "${escapeHtml(displayedWord)}"
+      ➔
+      <span style="color:#e74c3c;">
+        Kelime bulunamadı
+      </span>
+    `;
   }
 
-  function showTooltipAt(x, y, html) {
-    tooltip.innerHTML = html;
-    tooltip.style.display = 'block';
-    tooltip.style.left = `${x + 10}px`;
-    tooltip.style.top = `${y + 10}px`;
+  function calculateTooltipPosition(
+    clientX,
+    clientY
+  ) {
+    const margin = 10;
+    const offset = 14;
+
+    const tooltipWidth =
+      tooltip.offsetWidth;
+
+    const tooltipHeight =
+      tooltip.offsetHeight;
+
+    let left = clientX + offset;
+    let top = clientY + offset;
+
+    if (
+      left + tooltipWidth >
+      window.innerWidth - margin
+    ) {
+      left =
+        clientX -
+        tooltipWidth -
+        offset;
+    }
+
+    if (
+      top + tooltipHeight >
+      window.innerHeight - margin
+    ) {
+      top =
+        clientY -
+        tooltipHeight -
+        offset;
+    }
+
+    left = Math.max(
+      margin,
+      Math.min(
+        left,
+        window.innerWidth -
+        tooltipWidth -
+        margin
+      )
+    );
+
+    top = Math.max(
+      margin,
+      Math.min(
+        top,
+        window.innerHeight -
+        tooltipHeight -
+        margin
+      )
+    );
+
+    return {
+      left,
+      top
+    };
   }
 
-  function showTooltipNearElement(element, html) {
-    const rect = element.getBoundingClientRect();
-    const x = rect.left + window.pageXOffset;
-    const y = rect.bottom + window.pageYOffset;
+  function moveTooltip(
+    clientX,
+    clientY
+  ) {
+    if (animationFrameId) {
+      cancelAnimationFrame(
+        animationFrameId
+      );
+    }
+
+    animationFrameId =
+      requestAnimationFrame(() => {
+        if (
+          tooltip.style.display !== 'block'
+        ) {
+          return;
+        }
+
+        const position =
+          calculateTooltipPosition(
+            clientX,
+            clientY
+          );
+
+        tooltip.style.left =
+          `${position.left}px`;
+
+        tooltip.style.top =
+          `${position.top}px`;
+
+        animationFrameId = null;
+      });
+  }
+
+  function showTooltipAt(
+    clientX,
+    clientY,
+    html
+  ) {
     tooltip.innerHTML = html;
+    tooltip.style.visibility = 'hidden';
     tooltip.style.display = 'block';
-    tooltip.style.left = `${x}px`;
-    tooltip.style.top = `${y + 8}px`;
+
+    requestAnimationFrame(() => {
+      const position =
+        calculateTooltipPosition(
+          clientX,
+          clientY
+        );
+
+      tooltip.style.left =
+        `${position.left}px`;
+
+      tooltip.style.top =
+        `${position.top}px`;
+
+      tooltip.style.visibility =
+        'visible';
+    });
+  }
+
+  function showTooltipNearElement(
+    element,
+    html
+  ) {
+    const rect =
+      element.getBoundingClientRect();
+
+    const margin = 10;
+    const offset = 8;
+
+    tooltip.innerHTML = html;
+    tooltip.style.visibility = 'hidden';
+    tooltip.style.display = 'block';
+
+    requestAnimationFrame(() => {
+      const tooltipWidth =
+        tooltip.offsetWidth;
+
+      const tooltipHeight =
+        tooltip.offsetHeight;
+
+      let left = rect.left;
+      let top = rect.bottom + offset;
+
+      if (
+        left + tooltipWidth >
+        window.innerWidth - margin
+      ) {
+        left =
+          window.innerWidth -
+          tooltipWidth -
+          margin;
+      }
+
+      if (
+        top + tooltipHeight >
+        window.innerHeight - margin
+      ) {
+        top =
+          rect.top -
+          tooltipHeight -
+          offset;
+      }
+
+      left = Math.max(
+        margin,
+        left
+      );
+
+      top = Math.max(
+        margin,
+        top
+      );
+
+      tooltip.style.left =
+        `${left}px`;
+
+      tooltip.style.top =
+        `${top}px`;
+
+      tooltip.style.visibility =
+        'visible';
+    });
   }
 
   function hideTooltip() {
+    if (animationFrameId) {
+      cancelAnimationFrame(
+        animationFrameId
+      );
+
+      animationFrameId = null;
+    }
+
     tooltip.style.display = 'none';
+    tooltip.style.visibility = 'hidden';
+
+    activeToken = null;
     pinnedToken = null;
   }
 
   function isTouchDevice() {
-    return window.matchMedia('(hover: none)').matches || 'ontouchstart' in window;
+    return (
+      window
+        .matchMedia('(hover: none)')
+        .matches ||
+      navigator.maxTouchPoints > 0
+    );
   }
 
-  // Desktop hover
-  DOM.content.addEventListener('mouseover', (e) => {
-    if (isTouchDevice()) return;
-    if (pinnedToken) return;
-
-    const token = e.target.closest('.word-token');
-    if (!token) return;
-
-    showTooltipAt(e.pageX, e.pageY, getTranslationHtml(token));
-  });
-
-  DOM.content.addEventListener('mousemove', (e) => {
-    if (isTouchDevice()) return;
-    if (tooltip.style.display === 'block' && !pinnedToken) {
-      tooltip.style.left = `${e.pageX + 10}px`;
-      tooltip.style.top = `${e.pageY + 10}px`;
+  async function getReadyTranslationHtml(token) {
+    if (FEATURE_STATE.dictionary.status !== 'ready') {
+      try {
+        await ensureFeatureLoaded('dictionary');
+      } catch (error) {
+        return '<span class="word-translation-empty">Sözlük verisi yüklenemedi.</span>';
+      }
     }
-  });
 
-  DOM.content.addEventListener('mouseout', (e) => {
-    if (isTouchDevice()) return;
-    if (pinnedToken) return;
+    return getTranslationHtml(token);
+  }
 
-    if (e.target.closest('.word-token')) {
+  DOM.content.addEventListener(
+    'mouseover',
+    async (event) => {
+      if (
+        isTouchDevice() ||
+        pinnedToken
+      ) {
+        return;
+      }
+
+      const token =
+        event.target.closest(
+          '.word-token'
+        );
+
+      if (
+        !token ||
+        !DOM.content.contains(token)
+      ) {
+        return;
+      }
+
+      if (
+        event.relatedTarget &&
+        token.contains(
+          event.relatedTarget
+        )
+      ) {
+        return;
+      }
+
+      activeToken = token;
+
+      showTooltipAt(
+        event.clientX,
+        event.clientY,
+        '<span class="word-translation-loading">Sözlük yükleniyor...</span>'
+      );
+
+      const html = await getReadyTranslationHtml(token);
+      if (activeToken === token) {
+        showTooltipAt(event.clientX, event.clientY, html);
+      }
+    }
+  );
+
+  DOM.content.addEventListener(
+    'mousemove',
+    (event) => {
+      if (
+        isTouchDevice() ||
+        pinnedToken ||
+        !activeToken
+      ) {
+        return;
+      }
+
+      moveTooltip(
+        event.clientX,
+        event.clientY
+      );
+    }
+  );
+
+  DOM.content.addEventListener(
+    'mouseout',
+    (event) => {
+      if (
+        isTouchDevice() ||
+        pinnedToken
+      ) {
+        return;
+      }
+
+      const token =
+        event.target.closest(
+          '.word-token'
+        );
+
+      if (
+        !token ||
+        token !== activeToken
+      ) {
+        return;
+      }
+
+      if (
+        event.relatedTarget &&
+        token.contains(
+          event.relatedTarget
+        )
+      ) {
+        return;
+      }
+
       tooltip.style.display = 'none';
+      tooltip.style.visibility = 'hidden';
+      activeToken = null;
     }
-  });
+  );
 
-  // Mobile tap
-  DOM.content.addEventListener('click', (e) => {
-    const token = e.target.closest('.word-token');
+  DOM.content.addEventListener(
+    'click',
+    async (event) => {
+      const token =
+        event.target.closest(
+          '.word-token'
+        );
 
-    if (!token) return;
+      if (
+        !token ||
+        !DOM.content.contains(token)
+      ) {
+        return;
+      }
 
-    if (isTouchDevice()) {
-      e.preventDefault();
-      e.stopPropagation();
+      if (!isTouchDevice()) return;
+
+      event.preventDefault();
+      event.stopPropagation();
 
       if (pinnedToken === token) {
         hideTooltip();
@@ -1216,351 +3732,1096 @@ function setupWordTooltipDelegation() {
       }
 
       pinnedToken = token;
-      showTooltipNearElement(token, getTranslationHtml(token));
+      activeToken = token;
+
+      showTooltipNearElement(
+        token,
+        '<span class="word-translation-loading">Sözlük yükleniyor...</span>'
+      );
+
+      const html = await getReadyTranslationHtml(token);
+      if (pinnedToken === token) {
+        showTooltipNearElement(token, html);
+      }
     }
+  );
+
+  DOM.content.addEventListener('keydown', async (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+
+    const token = event.target.closest('.word-token');
+    if (!token || !DOM.content.contains(token)) return;
+
+    event.preventDefault();
+    pinnedToken = token;
+    activeToken = token;
+    showTooltipNearElement(token, '<span class="word-translation-loading">Sözlük yükleniyor...</span>');
+
+    const html = await getReadyTranslationHtml(token);
+    if (pinnedToken === token) showTooltipNearElement(token, html);
   });
 
-  // Tooltip dışına tıklayınca kapat
-  document.addEventListener('click', (e) => {
-    if (!pinnedToken) return;
+  document.addEventListener(
+    'click',
+    (event) => {
+      if (!pinnedToken) return;
 
-    const clickedToken = e.target.closest('.word-token');
-    const clickedTooltip = e.target.closest('#wordTooltip');
+      const clickedToken =
+        event.target.closest(
+          '.word-token'
+        );
 
-    if (!clickedToken && !clickedTooltip) {
-      hideTooltip();
+      const clickedTooltip =
+        event.target.closest(
+          '#wordTooltip'
+        );
+
+      if (
+        !clickedToken &&
+        !clickedTooltip
+      ) {
+        hideTooltip();
+      }
     }
-  });
+  );
 
-  // Scroll olunca mobil popup kapansın
-  window.addEventListener('scroll', () => {
-    if (pinnedToken) {
-      hideTooltip();
+  window.addEventListener(
+    'resize',
+    hideTooltip
+  );
+
+  window.addEventListener(
+    'scroll',
+    () => {
+      if (pinnedToken) {
+        hideTooltip();
+      }
+    },
+    {
+      passive: true
     }
-  });
+  );
 }
 
 /* =========================
    Notlar
 ========================= */
-function isDriveReady() {
-  return (
-    typeof gapi !== 'undefined' &&
-    typeof folderId !== 'undefined' &&
-    !!folderId &&
-    typeof loadNoteFromDrive === 'function' &&
-    typeof saveNoteToDrive === 'function'
-  );
+/* =========================
+   Yerel Not Sistemi
+========================= */
+
+const LOCAL_NOTES_KEY = 'kuranTeyitNotesV1';
+
+function getAllLocalNotes() {
+  try {
+    const savedNotes = localStorage.getItem(LOCAL_NOTES_KEY);
+
+    if (!savedNotes) {
+      return {};
+    }
+
+    const parsedNotes = JSON.parse(savedNotes);
+
+    if (
+      !parsedNotes ||
+      typeof parsedNotes !== 'object' ||
+      Array.isArray(parsedNotes)
+    ) {
+      return {};
+    }
+
+    return parsedNotes;
+  } catch (error) {
+    console.error('Yerel notlar okunamadı:', error);
+    return {};
+  }
 }
 
-async function loadNotesForCurrentPage() {
-  if (!isDriveReady()) return;
-
-  const verseElements = document.querySelectorAll('.verse-number');
-  const tasks = [];
-
-  for (const element of verseElements) {
-    const verseText = element.textContent.trim();
-    const match = verseText.match(/^(\d+):(\d+)$/);
-    if (!match) continue;
-
-    const [, sura, verse] = match;
-
-    tasks.push(
-      loadNoteFromDrive(sura, verse)
-        .then((content) => {
-          if (content) displayLoadedNote(sura, verse, content);
-        })
-        .catch((err) => console.warn('Not okunamadı:', sura, verse, err))
+function writeAllLocalNotes(notes) {
+  try {
+    localStorage.setItem(
+      LOCAL_NOTES_KEY,
+      JSON.stringify(notes)
     );
+
+    return true;
+  } catch (error) {
+    console.error('Yerel notlar kaydedilemedi:', error);
+
+    showNotification(
+      'Notlar tarayıcıya kaydedilemedi.',
+      'warning'
+    );
+
+    return false;
+  }
+}
+
+function getLocalNote(sura, verse) {
+  const notes = getAllLocalNotes();
+  const verseId = `${sura}:${verse}`;
+
+  return notes[verseId] || null;
+}
+
+function saveLocalNote(sura, verse, content) {
+  const normalizedContent = String(content || '').trim();
+
+  if (!verseExists(sura, verse)) {
+    showNotification('Not kaydedilecek ayet bulunamadı.', 'warning');
+    return false;
   }
 
-  await Promise.allSettled(tasks);
+  if (!normalizedContent || normalizedContent.length > 10000) {
+    showNotification('Not içeriği 1-10000 karakter arasında olmalıdır.', 'warning');
+    return false;
+  }
+
+  const notes = getAllLocalNotes();
+  const verseId = `${sura}:${verse}`;
+
+  notes[verseId] = {
+    sura: String(sura),
+    verse: String(verse),
+    content: normalizedContent,
+    updatedAt: new Date().toISOString()
+  };
+
+  return writeAllLocalNotes(notes);
 }
+
+function deleteLocalNote(sura, verse) {
+  const notes = getAllLocalNotes();
+  const verseId = `${sura}:${verse}`;
+
+  if (!notes[verseId]) {
+    return false;
+  }
+
+  delete notes[verseId];
+
+  return writeAllLocalNotes(notes);
+}
+
+/* =========================
+   loadNotesForCurrentPage BAŞLANGIÇ
+========================= */
+
+function loadNotesForCurrentPage() {
+    const verseElements =
+        document.querySelectorAll(
+            '.verse-number'
+        );
+
+    verseElements.forEach((element) => {
+        const verseText =
+            element.textContent.trim();
+
+        const match =
+            verseText.match(
+                /^(\d+)\s*:\s*(\d+)$/
+            );
+
+        if (!match) {
+            return;
+        }
+
+        const [, sura, verse] = match;
+
+        const note = getLocalNote(
+            sura,
+            verse
+        );
+
+        if (note?.content) {
+            displayLoadedNote(
+                sura,
+                verse,
+                note.content
+            );
+        } else {
+            updateLocalNoteUI(
+                sura,
+                verse
+            );
+        }
+    });
+}
+
+/* =========================
+   loadNotesForCurrentPage BİTİŞ
+========================= */
 
 function displayLoadedNote(sura, verse, content) {
-  const box = document.getElementById(`user-note-${sura}-${verse}`);
+  const box = document.getElementById(
+    `user-note-${sura}-${verse}`
+  );
+
   if (!box) return;
 
-  const safe = escapeHtml(content || '');
-  box.innerHTML = `<div class="note-tr"><strong>📝 Notunuz:</strong><br>${safe.replace(
-    /\n/g,
-    '<br>'
-  )}</div>`;
-  box.classList.remove('hidden');
+  const safeContent = escapeHtml(content || '');
+
+  box.innerHTML = `
+    <div class="saved-note-card">
+      <div class="saved-note-row">
+        <div class="saved-note-main">
+          <strong class="saved-note-title">
+            📝 Notunuz:
+          </strong>
+
+          <span class="saved-note-content">
+            ${safeContent.replace(/\n/g, '<br>')}
+          </span>
+        </div>
+
+        <div class="saved-note-actions">
+          <button
+            type="button"
+            class="toggle-btn"
+            data-action="edit-note"
+            data-sura="${escapeHtml(String(sura))}"
+            data-verse="${escapeHtml(String(verse))}"
+          >
+            ✏️ Düzenle
+          </button>
+
+          <button
+            type="button"
+            class="toggle-btn"
+            data-action="remove-note"
+            data-sura="${escapeHtml(String(sura))}"
+            data-verse="${escapeHtml(String(verse))}"
+          >
+            🗑️ Sil
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Not kaydı hazırlanır fakat başlangıçta kapalı tutulur.
+  box.classList.add('hidden');
+
+  const noteButton = document.getElementById(
+    `noteBtn-${sura}-${verse}`
+  );
+
+  if (noteButton) {
+    noteButton.classList.add('has-note');
+    noteButton.textContent = '📝 Notlu';
+  }
 }
 
-async function saveNote(sura, verse) {
-  const textarea = document.getElementById(`note-input-${sura}-${verse}`);
-  const noteContent = textarea?.value.trim();
+/* =========================
+   updateLocalNoteUI BAŞLANGIÇ
+========================= */
 
-  if (!noteContent) {
-    showNotification('⚠️ Not içeriği boş olamaz.', 'warning');
+function updateLocalNoteUI(sura, verse) {
+  const note =
+    getLocalNote(
+      sura,
+      verse
+    );
+
+  const noteButton =
+    document.getElementById(
+      `noteBtn-${sura}-${verse}`
+    );
+
+  const noteBox =
+    document.getElementById(
+      `user-note-${sura}-${verse}`
+    );
+
+  if (note?.content) {
+    if (noteButton) {
+      noteButton.classList.add(
+        'has-note'
+      );
+
+      noteButton.textContent =
+        'Notlu';
+    }
+
     return;
   }
 
-  if (!isDriveReady()) {
-    showNotification('Google Drive bağlantısı hazır değil.', 'warning');
-    return;
+  if (noteButton) {
+    noteButton.classList.remove(
+      'has-note'
+    );
+
+    noteButton.textContent =
+      'Not Al';
   }
 
-  const success = await saveNoteToDrive(sura, verse, noteContent);
+  if (noteBox) {
+    noteBox.innerHTML = '';
 
-  if (success) {
+    noteBox.classList.add(
+      'hidden'
+    );
+  }
+}
+
+/* =========================
+   updateLocalNoteUI BİTİŞ
+========================= */
+
+/* =========================
+   saveNote BAŞLANGIÇ
+========================= */
+
+function saveNote(sura, verse) {
+    const textarea = document.getElementById(
+        `note-input-${sura}-${verse}`
+    );
+
+    if (!textarea) {
+        return;
+    }
+
+    const noteContent =
+        textarea.value.trim();
+
+    if (!noteContent) {
+        showNotification(
+            '⚠️ Not içeriği boş olamaz.',
+            'warning'
+        );
+
+        return;
+    }
+
+    const success = saveLocalNote(
+        sura,
+        verse,
+        noteContent
+    );
+
+    if (!success) {
+        return;
+    }
+
+    /*
+      Eski sayfa HTML'inin önbellekten tekrar
+      yüklenmesini engeller.
+    */
+    clearPageCache();
+
     textarea.value = '';
-    const inputBox = document.getElementById(`note-input-box-${sura}-${verse}`);
-    if (inputBox) inputBox.classList.add('hidden');
-    displayLoadedNote(sura, verse, noteContent);
-    showNotification('✅ Not kaydedildi.', 'success');
-  }
+
+    const inputBox = document.getElementById(
+        `note-input-box-${sura}-${verse}`
+    );
+
+    if (inputBox) {
+        inputBox.classList.add(
+            'hidden'
+        );
+    }
+
+    displayLoadedNote(
+        sura,
+        verse,
+        noteContent
+    );
+
+    updateLocalNoteUI(
+        sura,
+        verse
+    );
+
+    showNotification(
+        '✅ Not cihazınıza kaydedildi.',
+        'success'
+    );
 }
+
+/* =========================
+   saveNote BİTİŞ
+========================= */
 
 function cancelNote(sura, verse) {
-  const textarea = document.getElementById(`note-input-${sura}-${verse}`);
-  const inputBox = document.getElementById(`note-input-box-${sura}-${verse}`);
-  if (textarea) textarea.value = '';
-  if (inputBox) inputBox.classList.add('hidden');
+  const textarea = document.getElementById(
+    `note-input-${sura}-${verse}`
+  );
+
+  const inputBox = document.getElementById(
+    `note-input-box-${sura}-${verse}`
+  );
+
+  if (textarea) {
+    textarea.value = '';
+  }
+
+  if (inputBox) {
+    inputBox.classList.add('hidden');
+  }
 }
 
 async function toggleNoteInput(id, sura, verse) {
-  const element = document.getElementById(id);
-  if (!element) return;
+  const inputBox = document.getElementById(id);
+  const savedNoteBox = document.getElementById(
+    `user-note-${sura}-${verse}`
+  );
 
-  element.classList.toggle('hidden');
+  const existingNote = getLocalNote(sura, verse);
 
-  if (!element.classList.contains('hidden') && isDriveReady()) {
-    const textarea = document.getElementById(`note-input-${sura}-${verse}`);
-    if (textarea) {
-      try {
-        const existingNote = await loadNoteFromDrive(sura, verse);
-        if (existingNote) textarea.value = existingNote;
-      } catch (e) {
-        console.warn('Mevcut not okunamadı:', e);
-      }
+  /*
+    Kayıtlı not varsa:
+    Notlu butonu, kayıtlı not alanını açıp kapatır.
+  */
+  if (existingNote?.content) {
+    if (!savedNoteBox) return;
 
-      setTimeout(() => textarea.focus(), 100);
-    }
+    savedNoteBox.classList.toggle('hidden');
+
+    return;
+  }
+
+  /*
+    Kayıtlı not yoksa:
+    Normal not yazma alanı açılır veya kapanır.
+  */
+  if (!inputBox) return;
+
+  inputBox.classList.toggle('hidden');
+
+  if (!inputBox.classList.contains('hidden')) {
+    const textarea = document.getElementById(
+      `note-input-${sura}-${verse}`
+    );
+
+    if (!textarea) return;
+
+    textarea.value = '';
+
+    setTimeout(() => {
+      textarea.focus();
+    }, 100);
   }
 }
 
-async function loadAndDisplayAllNotes() {
-  const notesList = document.getElementById('notesList');
-  if (!notesList || !isDriveReady()) return;
+function editLocalNote(sura, verse) {
+  const inputBox = document.getElementById(
+    `note-input-box-${sura}-${verse}`
+  );
 
-  try {
-    const listResponse = await gapi.client.drive.files.list({
-      q: `'${folderId}' in parents and trashed=false`,
-      fields: 'files(id,name,mimeType,modifiedTime)',
-      orderBy: 'modifiedTime desc',
-      spaces: 'drive',
-      pageSize: 1000
+  const textarea = document.getElementById(
+    `note-input-${sura}-${verse}`
+  );
+
+  if (!inputBox || !textarea) return;
+
+  const note = getLocalNote(sura, verse);
+
+  textarea.value =
+    note?.content || '';
+
+  inputBox.classList.remove('hidden');
+
+  setTimeout(() => {
+    textarea.focus();
+  }, 100);
+}
+
+/* =========================
+   removeLocalNote BAŞLANGIÇ
+========================= */
+
+function removeLocalNote(sura, verse) {
+    const approved = window.confirm(
+        'Bu not silinsin mi?'
+    );
+
+    if (!approved) {
+        return;
+    }
+
+    const deleted = deleteLocalNote(
+        sura,
+        verse
+    );
+
+    if (!deleted) {
+        showNotification(
+            'Silinecek not bulunamadı.',
+            'warning'
+        );
+
+        return;
+    }
+
+    const inputBox = document.getElementById(
+        `note-input-box-${sura}-${verse}`
+    );
+
+    if (inputBox) {
+        inputBox.classList.add(
+            'hidden'
+        );
+    }
+
+    const textarea = document.getElementById(
+        `note-input-${sura}-${verse}`
+    );
+
+    if (textarea) {
+        textarea.value = '';
+    }
+
+    /*
+      Eski "Notlu" HTML'inin önbellekten
+      tekrar gelmesini engeller.
+    */
+    clearPageCache();
+
+    /*
+      Butonu ve not kutusunu güncel
+      localStorage durumuna göre sıfırlar.
+    */
+    updateLocalNoteUI(
+        sura,
+        verse
+    );
+
+    showNotification(
+        '🗑️ Not silindi.',
+        'success'
+    );
+}
+
+/* =========================
+   removeLocalNote BİTİŞ
+========================= */
+
+function loadAndDisplayAllNotes() {
+  const notesList =
+    document.getElementById('notesList');
+
+  if (!notesList) {
+    return;
+  }
+
+  const notes = Object
+    .values(getAllLocalNotes())
+    .sort((a, b) => {
+      const suraDifference =
+        Number(a.sura) - Number(b.sura);
+
+      if (suraDifference !== 0) {
+        return suraDifference;
+      }
+
+      return (
+        Number(a.verse) -
+        Number(b.verse)
+      );
     });
 
-    const files = listResponse.result.files || [];
-    const re = /^(\d+)_(\d+)(?:\.txt)?$/i;
-    const noteFiles = files.filter((f) => re.test(f.name));
+  if (notes.length === 0) {
+    notesList.innerHTML = `
+      <p>
+        Henüz kaydedilmiş notunuz bulunmuyor.
+      </p>
+    `;
 
-    if (noteFiles.length === 0) {
-      notesList.innerHTML = '<p>Henüz kaydedilmiş notunuz bulunmuyor.</p>';
+    return;
+  }
+
+  notesList.innerHTML = `
+    <div class="notes-table-wrapper">
+      <table class="notes-table">
+        <thead>
+          <tr>
+            <th>Sure</th>
+            <th>Ayet</th>
+            <th>Sure Adı</th>
+            <th>Not</th>
+            <th>Güncelleme</th>
+            <th>İşlemler</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${notes
+            .map((note) => {
+              const suraNumber =
+                Number(note.sura);
+
+              const verseNumber =
+                Number(note.verse);
+
+              const suraName =
+                STATE.metadata.sureNames[
+                  String(note.sura)
+                ] ||
+                `Sure ${note.sura}`;
+
+              const updatedDate =
+                note.updatedAt
+                  ? new Date(
+                      note.updatedAt
+                    ).toLocaleString(
+                      'tr-TR'
+                    )
+                  : '';
+
+              /*
+                Satır sonlarını boşluğa çevirir.
+                Böylece not tabloda tek satır olur.
+              */
+              const singleLineContent =
+                String(note.content || '')
+                  .replace(/\s+/g, ' ')
+                  .trim();
+
+              return `
+                <tr>
+                  <td class="notes-number-cell">
+                    ${escapeHtml(
+                      String(note.sura)
+                    )}
+                  </td>
+
+                  <td class="notes-number-cell">
+                    ${escapeHtml(
+                      String(note.verse)
+                    )}
+                  </td>
+
+                  <td
+                    class="notes-sura-cell"
+                    title="${escapeHtml(
+                      suraName
+                    )}"
+                  >
+                    ${escapeHtml(
+                      suraName
+                    )}
+                  </td>
+
+                  <td
+                    class="notes-content-cell"
+                    title="${escapeHtml(
+                      String(
+                        note.content || ''
+                      )
+                    )}"
+                  >
+                    <div class="notes-content-preview">
+                      ${escapeHtml(
+                        singleLineContent
+                      )}
+                    </div>
+                  </td>
+
+                  <td
+                    class="notes-date-cell"
+                    title="${escapeHtml(
+                      updatedDate
+                    )}"
+                  >
+                    ${escapeHtml(
+                      updatedDate
+                    )}
+                  </td>
+
+                  <td class="notes-actions-cell">
+                    <div class="notes-action-buttons">
+                      <button
+                        type="button"
+                        class="notes-go-btn"
+                        data-action="notes-go-verse"
+                        data-sura="${suraNumber}"
+                        data-verse="${verseNumber}"
+                        title="${suraNumber}:${verseNumber} ayetine git"
+                        aria-label="${suraNumber}:${verseNumber} ayetine git"
+                      >
+                        📖 Git
+                      </button>
+
+                      <button
+                        type="button"
+                        class="notes-delete-btn"
+                        data-action="notes-remove"
+                        data-sura="${suraNumber}"
+                        data-verse="${verseNumber}"
+                        title="${suraNumber}:${verseNumber} notunu sil"
+                        aria-label="${suraNumber}:${verseNumber} notunu sil"
+                      >
+                        🗑️ Sil
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              `;
+            })
+            .join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function goToVerseFromNotes(sura, verse) {
+  const suraNumber = Number(sura);
+  const verseNumber = Number(verse);
+
+  if (!Number.isInteger(suraNumber) || !Number.isInteger(verseNumber)) {
+    showNotification('Geçersiz ayet bilgisi.', 'warning');
+    return;
+  }
+
+  goToVerse(suraNumber, verseNumber, {
+    source: 'notes',
+    query: ''
+  });
+}
+
+/* =========================
+   removeLocalNoteFromList BAŞLANGIÇ
+========================= */
+
+function removeLocalNoteFromList(
+    sura,
+    verse
+) {
+    const approved = window.confirm(
+        `${sura}:${verse} ayetine ait not silinsin mi?`
+    );
+
+    if (!approved) {
+        return;
+    }
+
+    const deleted = deleteLocalNote(
+        sura,
+        verse
+    );
+
+    if (!deleted) {
+        showNotification(
+            'Silinecek not bulunamadı.',
+            'warning'
+        );
+
+        return;
+    }
+
+    /*
+      Eski "Notlu" butonlarının önbellekten
+      tekrar yüklenmesini engeller.
+    */
+    clearPageCache();
+
+    updateLocalNoteUI(
+        sura,
+        verse
+    );
+
+    loadAndDisplayAllNotes();
+
+    showNotification(
+        '🗑️ Not silindi.',
+        'success'
+    );
+}
+
+/* =========================
+   removeLocalNoteFromList BİTİŞ
+========================= */
+
+function exportLocalNotes() {
+  const notes = getAllLocalNotes();
+
+  if (Object.keys(notes).length === 0) {
+    showNotification(
+      'Dışa aktarılacak not bulunamadı.',
+      'warning'
+    );
+
+    return;
+  }
+
+  const exportData = {
+    application: 'KuranTeyit',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    notes
+  };
+
+  const blob = new Blob(
+    [
+      JSON.stringify(
+        exportData,
+        null,
+        2
+      )
+    ],
+    {
+      type: 'application/json;charset=utf-8'
+    }
+  );
+
+  const downloadUrl =
+    URL.createObjectURL(blob);
+
+  const anchor =
+    document.createElement('a');
+
+  anchor.href = downloadUrl;
+  anchor.download =
+    'KuranTeyit_Notlar.json';
+
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+
+  URL.revokeObjectURL(downloadUrl);
+}
+
+function openNotesImportDialog() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json,application/json';
+
+  input.addEventListener('change', async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+
+    const MAX_IMPORT_BYTES = 2 * 1024 * 1024;
+
+    if (file.size > MAX_IMPORT_BYTES) {
+      showNotification('Not dosyası 2 MB sınırını aşıyor.', 'warning');
       return;
     }
 
-    let html = '<div class="notes-grid">';
+    try {
+      const content = await file.text();
+      const parsed = JSON.parse(content);
+      const importedNotes = sanitizeImportedNotes(parsed, {
+        maxNotes: 10000,
+        maxContentLength: 10000,
+        verseExists
+      });
 
-    for (const file of noteFiles) {
-      const [, sura, verse] = file.name.match(re);
+      const existingNotes = getAllLocalNotes();
+      const mergedNotes = {
+        ...existingNotes,
+        ...importedNotes
+      };
 
-      let content = '';
-      try {
-        if (typeof getFileTextById === 'function') {
-          content = await getFileTextById(file.id, file.mimeType);
-        }
-      } catch (e) {
-        console.warn('Not içeriği okunamadı:', e);
+      writeAllLocalNotes(mergedNotes);
+      loadAndDisplayAllNotes();
+      clearPageCache();
+
+      if (STATE.data.en[STATE.currentPage] && STATE.data.tr[STATE.currentPage]) {
+        displayPage(STATE.currentPage);
       }
 
-      const suraName = STATE.metadata.sureNames[sura] || `Sure ${sura}`;
-      const modifiedDate = new Date(file.modifiedTime).toLocaleDateString('tr-TR');
-      const preview =
-        escapeHtml((content || '').substring(0, 150)) +
-        ((content || '').length > 150 ? '...' : '');
-
-      html += `
-        <div class="note-card">
-          <div class="note-header">
-            <h3>${escapeHtml(suraName)} ${sura}:${verse}</h3>
-            <span class="note-date">${modifiedDate}</span>
-          </div>
-          <div class="note-content">${preview}</div>
-          <div class="note-actions">
-            <button onclick="goToVerse(${sura}, ${verse})" class="go-to-verse-btn">📖 Ayete Git</button>
-          </div>
-        </div>`;
+      showNotification(`${Object.keys(importedNotes).length} not içe aktarıldı.`, 'success');
+    } catch (error) {
+      console.error('Not dosyası içe aktarılamadı:', error);
+      showNotification(error.message || 'Not dosyası geçersiz veya bozuk.', 'warning');
     }
+  });
 
-    html += '</div>';
-    notesList.innerHTML = html;
-  } catch (error) {
-    console.error('Notlar yüklenirken hata:', error);
-    notesList.innerHTML = '<p>Notlar yüklenirken bir hata oluştu.</p>';
-  }
+  input.click();
 }
 
 /* =========================
    Meal
 ========================= */
 function highlightMealText(text, query) {
-  if (!query || !text) return escapeHtml(text);
+  if (!text) return '';
+
+  const safeText = escapeHtml(text);
+
+  if (!query) return safeText;
+
   const q = query.trim();
-  if (!q) return escapeHtml(text);
+  if (!q) return safeText;
 
-  const regex = new RegExp(escapeRegExp(q), 'gi');
-  return String(text).replace(regex, '<strong class="search-result-highlight">$&</strong>');
-}
+  const regex = new RegExp(escapeRegExp(escapeHtml(q)), 'gi');
 
-function getOtherTranslations(suraNum, verseNum, query = '', focusedMealName = '') {
-  const suraIndex = parseInt(suraNum, 10) - 1;
-
-  if (isNaN(suraIndex) || suraIndex < 0 || suraIndex > 113) {
-    return '<div>Geçersiz sure numarası.</div>';
-  }
-
-  if (!verseNum || isNaN(parseInt(verseNum, 10))) {
-    return '<div>Geçersiz ayet numarası.</div>';
-  }
-
-  let otherMealsHtml = '';
-  let erhanTranslation = null;
-  let erhanArabic = null;
-  let erhanTranscription = null;
-
-  for (const mealName in STATE.data.meals) {
-    if (!STATE.data.meals.hasOwnProperty(mealName)) continue;
-    const meal = STATE.data.meals[mealName];
-    if (!meal) continue;
-
-    let ayetText = null;
-
-    if (meal.sures && Array.isArray(meal.sures)) {
-      const sure = meal.sures[suraIndex];
-      if (sure && Array.isArray(sure.ayetler)) {
-        const ayet = sure.ayetler.find((a) => a && String(a[0]) === String(verseNum));
-        if (ayet && ayet[1]) ayetText = ayet[1];
-      }
-    }
-
-    if (!ayetText && Array.isArray(meal)) {
-      const sure = meal[suraIndex];
-      if (sure && Array.isArray(sure.ayetler)) {
-        const ayet = sure.ayetler.find((a) => a && String(a[0]) === String(verseNum));
-        if (ayet && ayet[1]) ayetText = ayet[1];
-      }
-    }
-
-    if (!ayetText && meal && typeof meal === 'object' && !Array.isArray(meal)) {
-      for (const pageKey in meal) {
-        if (!meal.hasOwnProperty(pageKey)) continue;
-        const page = meal[pageKey];
-        const suraData = page?.sura?.[suraNum];
-        if (suraData?.verses?.[verseNum] !== undefined) {
-          ayetText = suraData.verses[verseNum];
-          break;
-        }
-      }
-    }
-
-    if (!ayetText && meal.surahs && Array.isArray(meal.surahs)) {
-      const sura = meal.surahs.find((s) => s && String(s.id) === String(suraNum));
-      if (sura && Array.isArray(sura.verses)) {
-        const verseObj = sura.verses.find(
-          (v) => v && String(v.verse_number) === String(verseNum)
-        );
-        if (verseObj) {
-          if (verseObj.translation) erhanTranslation = verseObj.translation;
-          if (verseObj.verse) erhanArabic = verseObj.verse;
-          if (verseObj.transcription) erhanTranscription = verseObj.transcription;
-        }
-      }
-    }
-
-    if (ayetText && mealName.toLowerCase() !== 'kuran_erhan_aktas') {
-      const highlighted = highlightMealText(ayetText, query);
-      const isFocused = mealName === focusedMealName ? 'meal-focused-result' : '';
-      otherMealsHtml += `<div class="note-tr ${isFocused}">
-        <strong>${escapeHtml(mealName)}:</strong> ${highlighted}
-      </div>`;
-    }
-  }
-
-  if (erhanTranslation) {
-    otherMealsHtml += `<div class="note-tr"><strong>Erhan Aktaş Çeviri:</strong> ${highlightMealText(
-      erhanTranslation,
-      query
-    )}</div>`;
-  }
-  if (erhanArabic) {
-    otherMealsHtml += `<div class="note-tr"><strong>Erhan Aktaş Arapça:</strong> <span class="erhan-arabic-text">${highlightMealText(
-      erhanArabic,
-      query
-    )}</span></div>`;
-  }
-  if (erhanTranscription) {
-    otherMealsHtml += `<div class="note-tr"><strong>Erhan Aktaş Arapça Okunuş:</strong> ${highlightMealText(
-      erhanTranscription,
-      query
-    )}</div>`;
-  }
-
-  if (!otherMealsHtml) {
-    return '<div>Bu ayet için diğer mealler bulunamadı.</div>';
-  }
-
-  return otherMealsHtml;
+  return safeText.replace(
+    regex,
+    '<strong class="search-result-highlight">$&</strong>'
+  );
 }
 
 function highlightMealMatch(element, query) {
-  if (!element || !query) return;
+  if (!element || !query) {
+    return;
+  }
 
-  const q = query.trim();
-  if (!q) return;
+  const cleanQuery =
+    String(query).trim();
 
-  const re = new RegExp(escapeRegExp(q), 'gi');
+  if (!cleanQuery) {
+    return;
+  }
 
-  element.querySelectorAll('.note-tr').forEach((node) => {
-    node.innerHTML = node.textContent.replace(
-      re,
-      '<strong class="search-result-highlight">$&</strong>'
+  const normalizedQuery =
+    normalizeTurkishText(cleanQuery);
+
+  const mealRows =
+    element.querySelectorAll(
+      '.meal-row'
     );
+
+  mealRows.forEach((row) => {
+    const mealText =
+      row.querySelector('.meal-text');
+
+    if (!mealText) {
+      return;
+    }
+
+    const normalizedText =
+      normalizeTurkishText(
+        mealText.textContent
+      );
+
+    if (
+      normalizedText.includes(
+        normalizedQuery
+      )
+    ) {
+      row.classList.add(
+        'meal-highlight'
+      );
+    } else {
+      row.classList.remove(
+        'meal-highlight'
+      );
+    }
   });
 }
 
-async function toggleMeal(id, suraNum, verseNum, query = '', focusedMealName = '') {
+function getOtherTranslations(
+  suraNum,
+  verseNum,
+  query = '',
+  focusedMealName = ''
+) {
+  const verseId = `${String(suraNum)}:${String(verseNum)}`;
+  const rows = [];
+  let erhanTranslation = '';
+  let erhanArabic = '';
+
+  for (const [mealName, verseIndex] of Object.entries(MEALS_STATE.index)) {
+    const payload = verseIndex?.[verseId];
+    if (!payload) continue;
+
+    const normalizedName = mealName.toLocaleLowerCase('tr-TR');
+
+    if (normalizedName === 'kuran_erhan_aktas') {
+      erhanTranslation = payload.translation || payload.text || '';
+      erhanArabic = payload.arabic || '';
+      continue;
+    }
+
+    const ayetText = payload.text || payload.translation || '';
+    if (!ayetText) continue;
+
+    const focusedClass = mealName === focusedMealName ? 'meal-focused-result' : '';
+
+    rows.push(`
+      <div class="meal-row ${focusedClass}">
+        <strong class="meal-name">${escapeHtml(mealName)}</strong>
+        <span class="meal-text">${highlightMealText(ayetText, query)}</span>
+      </div>
+    `);
+  }
+
+  if (erhanTranslation) {
+    rows.push(`
+      <div class="meal-row">
+        <strong class="meal-name">Erhan Aktaş Çeviri</strong>
+        <span class="meal-text">${highlightMealText(erhanTranslation, query)}</span>
+      </div>
+    `);
+  }
+
+  if (erhanArabic) {
+    rows.push(`
+      <div class="meal-row meal-row-arabic">
+        <strong class="meal-name">Erhan Aktaş Arapça</strong>
+        <span class="meal-text erhan-arabic-text" dir="rtl">
+          ${highlightMealText(erhanArabic, query)}
+        </span>
+      </div>
+    `);
+  }
+
+  const pageTransliteration =
+    STATE.data.translit?.[String(suraNum)]?.verses?.[String(verseNum)] || '';
+
+  if (pageTransliteration) {
+    rows.push(`
+      <div class="meal-row">
+        <strong class="meal-name">Arapça Okunuş</strong>
+        <span class="meal-text">${highlightMealText(pageTransliteration, query)}</span>
+      </div>
+    `);
+  }
+
+  if (!rows.length) {
+    return '<div class="meal-empty">Bu ayet için diğer mealler bulunamadı.</div>';
+  }
+
+  return `<div class="meal-list">${rows.join('')}</div>`;
+}
+
+async function toggleMeal(
+  id,
+  suraNum,
+  verseNum,
+  query = '',
+  focusedMealName = ''
+) {
   const element = document.getElementById(id);
+  const button = document.getElementById(`meal-btn-${suraNum}-${verseNum}`);
+
   if (!element) return;
 
-  if (!areMealsReady()) {
-    const btn = document.getElementById(`meal-btn-${suraNum}-${verseNum}`);
-    if (btn) {
-      btn.textContent = '⏳ Yükleniyor...';
-      btn.disabled = true;
+  try {
+    if (!areMealsReady()) {
+      if (button) {
+        button.textContent = 'Yükleniyor...';
+        button.disabled = true;
+      }
+
+      await loadMeals();
     }
 
-    await loadMeals();
-
-    if (btn) {
-      btn.textContent = '📚 Mealler';
-      btn.disabled = false;
+    if (!element.innerHTML.trim() || query || focusedMealName) {
+      element.innerHTML = getOtherTranslations(
+        suraNum,
+        verseNum,
+        query,
+        focusedMealName
+      );
     }
-  }
 
-  if (!element.innerHTML.trim() || query || focusedMealName) {
-    element.innerHTML = getOtherTranslations(suraNum, verseNum, query, focusedMealName);
-  }
+    const isHidden = element.classList.toggle('hidden');
+    button?.setAttribute('aria-expanded', String(!isHidden));
 
-  element.classList.toggle('hidden');
-
-  if (!element.classList.contains('hidden') && query) {
-    highlightMealMatch(element, query);
+    if (!isHidden && query) {
+      highlightMealMatch(element, query);
+    }
+  } catch (error) {
+    element.innerHTML = '<div class="meal-empty">Mealler yüklenemedi.</div>';
+    element.classList.remove('hidden');
+    button?.setAttribute('aria-expanded', 'true');
+  } finally {
+    if (button) {
+      button.textContent = 'Mealler';
+      button.disabled = false;
+    }
   }
 }
 
@@ -1596,12 +4857,695 @@ async function ensureMealOpen(suraNum, verseNum, query = '', focusedMealName = '
 ========================= */
 function toggleNote(id) {
   const element = document.getElementById(id);
-  if (element) element.classList.toggle('hidden');
+
+  if (!element) {
+    return;
+  }
+
+  const isHidden =
+    element.classList.toggle('hidden');
+
+  const btn =
+    document.querySelector(
+      `[data-target="${id}"]`
+    );
+
+  if (btn) {
+    btn.textContent = 'Dipnot';
+
+    btn.setAttribute(
+      'aria-expanded',
+      String(!isHidden)
+    );
+  }
 }
 
 /* =========================
    Arama
 ========================= */
+/* =========================
+   GELİŞMİŞ ARAMA YARDIMCILARI
+========================= */
+
+function parseVerseReference(value) {
+  const input = String(value || '').trim();
+
+  const match = input.match(
+    /^(\d{1,3})\s*[:\/,\-\s]\s*(\d{1,3})$/
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  const suraNum = Number(match[1]);
+  const verseNum = Number(match[2]);
+
+  const numbersAreValid =
+    Number.isInteger(suraNum) &&
+    Number.isInteger(verseNum) &&
+    suraNum >= 1 &&
+    suraNum <= 114 &&
+    verseNum >= 1;
+
+  if (!numbersAreValid) {
+    return {
+      suraNum: String(suraNum),
+      verseNum: String(verseNum),
+      page: null,
+      exists: false
+    };
+  }
+
+  const page = getVersePage(
+    String(suraNum),
+    String(verseNum)
+  );
+
+  const exists =
+    STATE.data.en?.[page]?.sura?.[String(suraNum)]?.verses?.[
+      String(verseNum)
+    ] !== undefined;
+
+  return {
+    suraNum: String(suraNum),
+    verseNum: String(verseNum),
+    page,
+    exists
+  };
+}
+
+
+function normalizeSuraLookup(value) {
+  return normalizeTurkishText(
+    String(value || '')
+  )
+    .replace(/\b(suresi|sure)\b/g, ' ')
+    .replace(/[^\p{L}\p{N}]+/gu, '')
+    .trim();
+}
+
+function getSuraNameVariants(fullName) {
+  const source = String(fullName || '');
+  const variants = new Set();
+
+  const nameWithoutNumber = source.replace(
+    /^\s*\d+\s*[:.\-]?\s*/,
+    ''
+  );
+
+  variants.add(
+    normalizeSuraLookup(source)
+  );
+
+  variants.add(
+    normalizeSuraLookup(nameWithoutNumber)
+  );
+
+  variants.add(
+    normalizeSuraLookup(
+      source.replace(/\([^)]*\)/g, ' ')
+    )
+  );
+
+  variants.add(
+    normalizeSuraLookup(
+      nameWithoutNumber.replace(/\([^)]*\)/g, ' ')
+    )
+  );
+
+  const parentheticalMatches =
+    source.matchAll(/\(([^)]*)\)/g);
+
+  for (const match of parentheticalMatches) {
+    variants.add(
+      normalizeSuraLookup(match[1])
+    );
+  }
+
+  return [...variants].filter(Boolean);
+}
+
+function buildSuraSearchCache() {
+  SURA_SEARCH_CACHE.exact.clear();
+  SURA_SEARCH_CACHE.items = [];
+  SURA_SEARCH_CACHE.queryResults.clear();
+
+  for (const suraNum in STATE.metadata.sureNames) {
+    const suraName =
+      STATE.metadata.sureNames[suraNum];
+
+    const item = {
+      type: 'sura',
+      suraNum: String(suraNum),
+      suraName,
+      page:
+        STATE.metadata.sureToPageMap[suraNum],
+      variants:
+        getSuraNameVariants(suraName)
+    };
+
+    SURA_SEARCH_CACHE.items.push(item);
+
+    item.variants.forEach((variant) => {
+      if (
+        variant &&
+        !SURA_SEARCH_CACHE.exact.has(variant)
+      ) {
+        SURA_SEARCH_CACHE.exact.set(
+          variant,
+          item
+        );
+      }
+    });
+  }
+
+  SURA_SEARCH_CACHE.items.sort(
+    (a, b) =>
+      Number(a.suraNum) -
+      Number(b.suraNum)
+  );
+}
+
+function findExactSura(query) {
+  const normalizedQuery =
+    normalizeSuraLookup(query);
+
+  if (!normalizedQuery) {
+    return null;
+  }
+
+  return (
+    SURA_SEARCH_CACHE.exact.get(
+      normalizedQuery
+    ) || null
+  );
+}
+
+
+function getFastSuraSuggestions(
+  query,
+  limit = 5
+) {
+  const normalizedQuery =
+    normalizeSuraLookup(query);
+
+  if (!normalizedQuery) {
+    return [];
+  }
+
+  const cacheKey =
+    `${normalizedQuery}:${limit}`;
+
+  if (
+    SURA_SEARCH_CACHE.queryResults.has(
+      cacheKey
+    )
+  ) {
+    return SURA_SEARCH_CACHE
+      .queryResults
+      .get(cacheKey);
+  }
+
+  const suggestions = [];
+
+  for (
+    const item of
+    SURA_SEARCH_CACHE.items
+  ) {
+    let priority = 99;
+
+    for (const variant of item.variants) {
+      if (variant === normalizedQuery) {
+        priority = 0;
+        break;
+      }
+
+      if (
+        variant.startsWith(
+          normalizedQuery
+        )
+      ) {
+        priority =
+          Math.min(priority, 1);
+
+        continue;
+      }
+
+      if (
+        variant.includes(
+          normalizedQuery
+        )
+      ) {
+        priority =
+          Math.min(priority, 2);
+      }
+    }
+
+    if (priority === 99) {
+      continue;
+    }
+
+    suggestions.push({
+      type: 'sura',
+      suraNum: item.suraNum,
+      suraName: item.suraName,
+      page: item.page,
+      priority
+    });
+  }
+
+  const results = suggestions
+    .sort((a, b) => {
+      if (a.priority !== b.priority) {
+        return (
+          a.priority -
+          b.priority
+        );
+      }
+
+      return (
+        Number(a.suraNum) -
+        Number(b.suraNum)
+      );
+    })
+    .slice(0, limit);
+
+  SURA_SEARCH_CACHE
+    .queryResults
+    .set(
+      cacheKey,
+      results
+    );
+
+  return results;
+}
+
+function getSearchWordSuggestions(
+  query,
+  limit = 5
+) {
+  const normalizedQuery =
+    normalizeTurkishText(query).trim();
+
+  if (
+    !normalizedQuery ||
+    normalizedQuery.length < 2 ||
+    !SEARCH_INDEX.ready
+  ) {
+    return [];
+  }
+
+  const candidates = new Map();
+
+  for (const item of SEARCH_INDEX.quran) {
+    const words =
+      String(item.text || '')
+        .match(/[\p{L}\p{N}'’-]+/gu) || [];
+
+    for (const word of words) {
+      const normalizedWord =
+        normalizeTurkishText(word)
+          .replace(/[^\p{L}\p{N}]/gu, '')
+          .trim();
+
+      if (
+        !normalizedWord ||
+        normalizedWord.length <=
+          normalizedQuery.length ||
+        !normalizedWord.startsWith(
+          normalizedQuery
+        )
+      ) {
+        continue;
+      }
+
+      const current =
+        candidates.get(normalizedWord);
+
+      if (current) {
+        current.count++;
+      } else {
+        candidates.set(
+          normalizedWord,
+          {
+            text: word,
+            normalized: normalizedWord,
+            count: 1
+          }
+        );
+      }
+    }
+  }
+
+  return Array
+    .from(candidates.values())
+    .sort((a, b) => {
+      if (b.count !== a.count) {
+        return b.count - a.count;
+      }
+
+      return (
+        a.normalized.length -
+        b.normalized.length
+      );
+    })
+    .slice(0, limit);
+}
+
+function highlightSearchResultText(
+  text,
+  query
+) {
+  const safeText =
+    escapeHtml(text || '');
+
+  const cleanQuery =
+    String(query || '').trim();
+
+  if (!cleanQuery) {
+    return safeText;
+  }
+
+  const regex = new RegExp(
+    escapeRegExp(cleanQuery),
+    'gi'
+  );
+
+  return safeText.replace(
+    regex,
+    '<mark class="search-panel-highlight">$&</mark>'
+  );
+}
+
+function getSearchSourceLabel(source) {
+  const labels = {
+    tr: 'Türkçe',
+    en: 'İngilizce',
+    translit: 'Okunuş',
+    ai: 'AI Çeviri'
+  };
+
+  return labels[source] || source || 'Ayet';
+}
+
+function groupDetailedSearchResults(results) {
+  const groups = new Map();
+
+  results.forEach((result) => {
+    const key =
+      `${result.suraNum}:${result.verseNum}`;
+
+    if (!groups.has(key)) {
+      const verseData = findVerseData(
+        String(result.suraNum),
+        String(result.verseNum)
+      );
+
+      groups.set(key, {
+        key,
+        suraNum: String(result.suraNum),
+        verseNum: String(result.verseNum),
+        page: result.page || verseData.page,
+        verseData,
+        sources: new Set(),
+        meals: new Set(),
+        score: 0,
+        fuzzy: false
+      });
+    }
+
+    const group = groups.get(key);
+
+    if (result.type === 'meal') {
+      group.meals.add(
+        result.mealName || 'Meal'
+      );
+    } else {
+      group.sources.add(
+        getSearchSourceLabel(result.source)
+      );
+    }
+
+    group.score = Math.max(
+      group.score,
+      Number(result.score) || 0
+    );
+
+    group.fuzzy =
+      group.score < 100;
+  });
+
+  return Array
+    .from(groups.values())
+    .sort((a, b) => {
+      if (b.score !== a.score) {
+        return b.score - a.score;
+      }
+
+      const suraDifference =
+        Number(a.suraNum) -
+        Number(b.suraNum);
+
+      if (suraDifference !== 0) {
+        return suraDifference;
+      }
+
+      return (
+        Number(a.verseNum) -
+        Number(b.verseNum)
+      );
+    });
+}
+
+function createSearchPanelShell(query) {
+  closeSearchResultsPanel({ restoreFocus: false });
+
+  if (document.getElementById('analysisPanel')) {
+    const fallbackRoute = history.state?.parentRoute || {
+      view: 'page',
+      page: STATE.currentPage
+    };
+
+    closeAnalysisPanel({ updateHistory: false, restoreFocus: false });
+    updateHistoryRoute(fallbackRoute, 'replace');
+  }
+  lastDialogTrigger = DOM.searchInput instanceof HTMLElement
+    ? DOM.searchInput
+    : document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+
+  const panel = document.createElement('section');
+  panel.id = 'searchResultsPanel';
+  panel.className = 'search-results-panel';
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-modal', 'true');
+  panel.setAttribute('aria-labelledby', 'searchResultsTitle');
+
+  panel.innerHTML = `
+    <header class="search-results-header">
+      <div>
+        <h2 id="searchResultsTitle">🔎 Arama Sonuçları</h2>
+        <div class="search-results-query">“${escapeHtml(query)}”</div>
+      </div>
+
+      <button
+        type="button"
+        class="search-results-close"
+        aria-label="Arama sonuçlarını kapat"
+        title="Kapat"
+      >✕</button>
+    </header>
+
+    <div id="searchResultsPanelBody" class="search-results-body" aria-live="polite">
+      <div class="search-panel-loading">Arama sonuçları hazırlanıyor...</div>
+    </div>
+  `;
+
+  panel.querySelector('.search-results-close')?.addEventListener('click', () => {
+    closeSearchResultsPanel();
+  });
+
+  panel.addEventListener('keydown', (event) => trapDialogFocus(panel, event));
+  document.body.appendChild(panel);
+  document.body.classList.add('search-results-open');
+
+  requestAnimationFrame(() => panel.querySelector('.search-results-close')?.focus());
+  return panel;
+}
+
+async function openSearchResultsPanel(query) {
+  const cleanQuery = String(query || '').trim();
+  if (!cleanQuery) return;
+
+  const panel = createSearchPanelShell(cleanQuery);
+  const requestId = ++activeSearchRequestId;
+  const body = panel.querySelector('#searchResultsPanelBody');
+  if (!body) return;
+
+  if (!SEARCH_INDEX.ready) {
+    body.innerHTML = `
+      <div class="search-panel-empty">
+        Arama dizini henüz hazırlanıyor. Birkaç saniye sonra tekrar deneyin.
+      </div>
+    `;
+    return;
+  }
+
+  let results = searchKeywordInData(cleanQuery, 200, false);
+
+  if (!areMealsReady()) {
+    body.innerHTML = `
+      <div class="search-panel-loading">
+        <strong>Kuran sonuçları bulundu, mealler aranıyor.</strong>
+        <div class="search-panel-wait-message">Detaylı arama hazırlanıyor...</div>
+      </div>
+    `;
+
+    try {
+      await loadMeals();
+    } catch (error) {
+      // Kuran sonuçları yine gösterilir.
+    }
+
+    if (
+      requestId !== activeSearchRequestId ||
+      !panel.isConnected ||
+      document.getElementById('searchResultsPanel') !== panel
+    ) {
+      return;
+    }
+
+    results = searchKeywordInData(cleanQuery, 1000, areMealsReady());
+  }
+
+  if (requestId !== activeSearchRequestId || !panel.isConnected) return;
+
+  const groupedResults = groupDetailedSearchResults(results);
+  const wordSuggestions = getSearchWordSuggestions(cleanQuery, 5);
+
+  if (!groupedResults.length && !wordSuggestions.length) {
+    body.innerHTML = `
+      <div class="search-panel-empty">
+        <strong>“${escapeHtml(cleanQuery)}”</strong> için sonuç bulunamadı.
+      </div>
+    `;
+    return;
+  }
+
+  const suggestionHtml = wordSuggestions.length
+    ? `
+      <div class="search-panel-suggestions">
+        <strong>Şunlardan birini mi demek istediniz?</strong>
+        <div class="search-panel-suggestion-list">
+          ${wordSuggestions.map((suggestion) => `
+            <button
+              type="button"
+              class="search-word-suggestion"
+              data-search-word="${escapeHtml(suggestion.text)}"
+            >${escapeHtml(suggestion.text)}</button>
+          `).join('')}
+        </div>
+      </div>
+    `
+    : '';
+
+  const resultCards = groupedResults.map((group) => {
+    const suraName = STATE.metadata.sureNames[group.suraNum] || `Sure ${group.suraNum}`;
+    const sources = [...group.sources];
+    if (group.meals.size) sources.push(`${group.meals.size} meal`);
+    const sourceText = sources.length ? sources.join(', ') : 'Ayet';
+    const scoreClass = group.score === 100 ? 'search-result-exact' : '';
+
+    return `
+      <article class="search-result-card">
+        <div class="search-result-card-header">
+          <div>
+            <strong class="search-result-reference">${escapeHtml(group.key)}</strong>
+            <span class="search-result-sura-name">${escapeHtml(suraName)}</span>
+          </div>
+          <span class="search-result-fuzzy ${scoreClass}">%${group.score} eşleşme</span>
+        </div>
+
+        <div class="search-result-source">Eşleşen alan: ${escapeHtml(sourceText)}</div>
+
+        ${group.verseData.turkish
+          ? `<div class="search-result-language"><strong>TR:</strong> <span>${highlightSearchResultText(group.verseData.turkish, cleanQuery)}</span></div>`
+          : ''}
+
+        ${group.verseData.english
+          ? `<div class="search-result-language"><strong>EN:</strong> <span>${highlightSearchResultText(group.verseData.english, cleanQuery)}</span></div>`
+          : ''}
+
+        <div class="search-result-actions">
+          <button type="button" class="search-result-action" data-search-action="verse" data-sura="${escapeHtml(group.suraNum)}" data-verse="${escapeHtml(group.verseNum)}">📖 Ayete Git</button>
+          <button type="button" class="search-result-action" data-search-action="meal" data-sura="${escapeHtml(group.suraNum)}" data-verse="${escapeHtml(group.verseNum)}">📚 Mealler</button>
+          <button type="button" class="search-result-action" data-search-action="analysis" data-sura="${escapeHtml(group.suraNum)}" data-verse="${escapeHtml(group.verseNum)}">🔎 Analiz</button>
+        </div>
+      </article>
+    `;
+  }).join('');
+
+  body.innerHTML = `
+    ${suggestionHtml}
+    <div class="search-results-summary"><strong>${groupedResults.length}</strong> ayet sonucu bulundu.</div>
+    <div class="search-results-list">${resultCards}</div>
+  `;
+
+  body.querySelectorAll('.search-word-suggestion').forEach((button) => {
+    button.addEventListener('click', () => {
+      const nextQuery = button.dataset.searchWord || '';
+      DOM.searchInput.value = nextQuery;
+      openSearchResultsPanel(nextQuery);
+    });
+  });
+
+  body.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-search-action]');
+    if (!button) return;
+
+    const action = button.dataset.searchAction;
+    const suraNum = button.dataset.sura;
+    const verseNum = button.dataset.verse;
+
+    closeSearchResultsPanel({ restoreFocus: false });
+
+    if (action === 'analysis') {
+      openAnalysisPanel(suraNum, verseNum, { trigger: DOM.searchInput });
+      return;
+    }
+
+    activeSearchQuery = cleanQuery;
+    DOM.searchInput.value = '';
+    DOM.autocomplete.innerHTML = '';
+    DOM.autocomplete.style.display = 'none';
+
+    goToVerse(suraNum, verseNum, {
+      source: 'search',
+      query: cleanQuery,
+      openMeal: action === 'meal'
+    });
+  });
+}
+
+function closeSearchResultsPanel(options = {}) {
+  const { restoreFocus = true } = options;
+  activeSearchRequestId += 1;
+
+  const panel = document.getElementById('searchResultsPanel');
+  document.body.classList.remove('search-results-open');
+  if (!panel) return;
+
+  panel.remove();
+
+  if (restoreFocus && lastDialogTrigger?.isConnected) {
+    lastDialogTrigger.focus();
+  }
+
+  lastDialogTrigger = null;
+}
+
 function makeSnippet(text, query) {
   if (!text || typeof text !== 'string') return '';
   if (!query || typeof query !== 'string') {
@@ -1625,432 +5569,305 @@ function makeSnippet(text, query) {
   return snippet;
 }
 
-function searchPrimarySources(query, maxResults = 16) {
-  const q = query.trim();
-  if (!q) return [];
 
-  if (!SEARCH_INDEX.ready) {
-  autocomplete.innerHTML = '<div>⏳ Arama hazırlanıyor...</div>';
-  autocomplete.style.display = 'block';
-  return;
-}
 
-  const normalizedQuery = normalizeTurkishText(q);
-  const results = [];
-  const seenVerses = new Set();
 
-  for (const item of SEARCH_INDEX.quran) {
-    if (results.length >= maxResults) break;
-    if (!item.normalized.includes(normalizedQuery)) continue;
+function searchKeywordInData(
+  query,
+  maxResults = 16,
+  includeMeals = true
+) {
+  const q = String(query || '').trim();
 
-    const key = `${item.suraNum}:${item.verseNum}`;
-    if (seenVerses.has(key)) continue;
-    seenVerses.add(key);
+  if (!q || !SEARCH_INDEX.ready) return [];
 
-    results.push({
-      type: 'quran',
-      source: item.source,
-      page: item.page,
-      suraNum: item.suraNum,
-      verseNum: item.verseNum,
-      snippet: makeSnippet(item.text, q),
+  const allResults = [];
+  const seen = new Set();
+
+  function addResult(item, type) {
+    const score = getSearchMatchScore(q, item.text, item.normalized);
+    if (score < 75) return;
+
+    const key = type === 'meal'
+      ? `meal:${item.mealName}:${item.suraNum}:${item.verseNum}`
+      : `quran:${item.source}:${item.suraNum}:${item.verseNum}`;
+
+    if (seen.has(key)) return;
+    seen.add(key);
+
+    allResults.push({
+      type,
+      source: item.source || '',
+      mealName: item.mealName || '',
+      page: item.page || getVersePage(item.suraNum, item.verseNum),
+      suraNum: String(item.suraNum),
+      verseNum: String(item.verseNum),
+      text: String(item.text || ''),
+      snippet: makeSnippet(String(item.text || ''), q),
       query: q,
+      score,
+      fuzzy: score < 100
     });
   }
 
-  return results;
-}
-
-function searchMeals(query, maxResults = 16) {
-  const q = query.trim();
-  if (!q || !SEARCH_INDEX.mealsReady) return [];
-
-  const normalizedQuery = normalizeTurkishText(q);
-  const results = [];
-
-  for (const item of SEARCH_INDEX.meals) {
-    if (results.length >= maxResults) break;
-    if (!item.normalized.includes(normalizedQuery)) continue;
-
-    results.push({
-      type: 'meal',
-      mealName: item.mealName,
-      suraNum: item.suraNum,
-      verseNum: item.verseNum,
-      page: item.page,
-      text: item.text,
-      snippet: makeSnippet(item.text, q),
-      query: q
-    });
-  }
-
-  return results;
-}
-
-function levenshtein(a, b) {
-  a = String(a || '');
-  b = String(b || '');
-
-  const matrix = Array.from({ length: b.length + 1 }, () => []);
-
-  for (let i = 0; i <= b.length; i++) matrix[i][0] = i;
-  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
-
-  for (let i = 1; i <= b.length; i++) {
-    for (let j = 1; j <= a.length; j++) {
-      if (b.charAt(i - 1) === a.charAt(j - 1)) {
-        matrix[i][j] = matrix[i - 1][j - 1];
-      } else {
-        matrix[i][j] = Math.min(
-          matrix[i - 1][j - 1] + 1,
-          matrix[i][j - 1] + 1,
-          matrix[i - 1][j] + 1
-        );
-      }
-    }
-  }
-
-  return matrix[b.length][a.length];
-}
-
-function isFuzzyMatch(query, text) {
-  const q = normalizeTurkishText(query).trim();
-  const t = normalizeTurkishText(text).trim();
-
-  if (!q || !t) return false;
-  if (q.length < 2) return false;
-  if (t.includes(q)) return true;
-
-  const words = t.split(/\s+/).filter(Boolean);
-  if (!words.length) return false;
-
-  for (const word of words) {
-    if (word.includes(q)) return true;
-
-    const distance = levenshtein(q, word);
-
-    if (q.length <= 4 && distance <= 1) return true;
-    if (q.length <= 7 && distance <= 2) return true;
-    if (q.length > 7 && distance <= 3) return true;
-  }
-
-  return false;
-}
-function searchKeywordInData(query, maxResults = 16) {
-  const q = query.trim();
-  if (!q) return [];
-
-  let primaryResults = searchPrimarySources(q, maxResults);
-
-  if (primaryResults.length < maxResults) {
-    const fuzzyResults = [];
-    const seen = new Set(
-      primaryResults.map(r => `${r.type}:${r.source || r.mealName}:${r.suraNum}:${r.verseNum}`)
-    );
-
-    for (const item of SEARCH_INDEX.quran) {
-      if (primaryResults.length + fuzzyResults.length >= maxResults) break;
-
-      if (!isFuzzyMatch(q, item.text)) continue;
-
-      const key = `${item.type}:${item.source}:${item.suraNum}:${item.verseNum}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-
-      fuzzyResults.push({
-        type: 'quran',
-        source: item.source,
-        page: item.page,
-        suraNum: item.suraNum,
-        verseNum: item.verseNum,
-        snippet: makeSnippet(item.text, q),
-        query: q,
-        fuzzy: true
-      });
-    }
-
-    primaryResults = [...primaryResults, ...fuzzyResults];
-  }
-
-  if (primaryResults.length >= maxResults) return primaryResults;
-  if (!areMealsReady()) return primaryResults;
-
-  const remaining = maxResults - primaryResults.length;
-  const exactMealResults = searchMeals(q, remaining);
-
-  if (exactMealResults.length >= remaining) {
-    return [...primaryResults, ...exactMealResults];
-  }
-
-  const seenMeal = new Set(
-    exactMealResults.map(r => `${r.mealName}:${r.suraNum}:${r.verseNum}`)
+  const quranCandidates = getIndexedSearchCandidates(
+    SEARCH_INDEX.quran,
+    SEARCH_INDEX.quranTokenMap,
+    q
   );
 
-  const fuzzyMealResults = [];
+  quranCandidates.forEach((item) => addResult(item, 'quran'));
 
-  for (const item of SEARCH_INDEX.meals) {
-    if (fuzzyMealResults.length + exactMealResults.length >= remaining) break;
+  if (includeMeals && areMealsReady()) {
+    const mealCandidates = getIndexedSearchCandidates(
+      SEARCH_INDEX.meals,
+      SEARCH_INDEX.mealTokenMap,
+      q
+    );
 
-    if (!isFuzzyMatch(q, item.text)) continue;
-
-    const key = `${item.mealName}:${item.suraNum}:${item.verseNum}`;
-    if (seenMeal.has(key)) continue;
-    seenMeal.add(key);
-
-    fuzzyMealResults.push({
-      type: 'meal',
-      mealName: item.mealName,
-      suraNum: item.suraNum,
-      verseNum: item.verseNum,
-      page: item.page,
-      text: item.text,
-      snippet: makeSnippet(item.text, q),
-      query: q,
-      fuzzy: true
-    });
+    mealCandidates.forEach((item) => addResult(item, 'meal'));
   }
 
-  return [...primaryResults, ...exactMealResults, ...fuzzyMealResults];
-}
+  allResults.sort((left, right) => {
+    if (right.score !== left.score) return right.score - left.score;
 
-function navigateToSearchResult(result, inputElement) {
-  ensureQuranView();
-  DOM.autocomplete.innerHTML = '';
-  DOM.autocomplete.style.display = 'none';
-  inputElement.value = '';
+    const suraDifference = Number(left.suraNum) - Number(right.suraNum);
+    if (suraDifference !== 0) return suraDifference;
 
-  if (!result) return;
+    return Number(left.verseNum) - Number(right.verseNum);
+  });
 
-  activeSearchQuery = result.query || '';
-
-  if (result.type === 'quran' || result.type === 'verse') {
-    pendingHighlight = {
-      suraNum: result.suraNum,
-      verseNum: result.verseNum,
-      query: result.query || '',
-      openMeal: false,
-      mealName: ''
-    };
-    goToPage(result.page || getVersePage(result.suraNum, result.verseNum));
-    return;
-  }
-
-  if (result.type === 'meal') {
-    pendingHighlight = {
-      suraNum: result.suraNum,
-      verseNum: result.verseNum,
-      query: result.query || '',
-      openMeal: true,
-      mealName: result.mealName || ''
-    };
-    goToPage(result.page || getVersePage(result.suraNum, result.verseNum));
-    return;
-  }
-
-  if (result.type === 'sura') {
-    goToPage(STATE.metadata.sureToPageMap[result.suraNum]);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
+  return allResults.slice(0, maxResults);
 }
 
 function setupSearch() {
   const searchInput = DOM.searchInput;
   const autocomplete = DOM.autocomplete;
 
+  if (!searchInput || !autocomplete) return;
+
   let debounceTimer = null;
-  const DEBOUNCE_MS = 250;
-  const runSearch = async (val) => {
-  autocomplete.innerHTML = '';
+  let activeIndex = -1;
+  const DEBOUNCE_MS = 180;
 
-  if (val.length < 1) {
+  function getOptions() {
+    return [...autocomplete.querySelectorAll('[role="option"][data-selectable="true"]')];
+  }
+
+  function updateActiveOption(nextIndex) {
+    const options = getOptions();
+    if (!options.length) return;
+
+    activeIndex = (nextIndex + options.length) % options.length;
+
+    options.forEach((option, index) => {
+      const isActive = index === activeIndex;
+      option.classList.toggle('autocomplete-active', isActive);
+      option.setAttribute('aria-selected', String(isActive));
+    });
+
+    const activeOption = options[activeIndex];
+    searchInput.setAttribute('aria-activedescendant', activeOption.id);
+    activeOption.scrollIntoView({ block: 'nearest' });
+  }
+
+  function hideAutocomplete() {
+    autocomplete.innerHTML = '';
     autocomplete.style.display = 'none';
-    return;
+    searchInput.setAttribute('aria-expanded', 'false');
+    searchInput.removeAttribute('aria-activedescendant');
+    activeIndex = -1;
   }
 
-  if (!SEARCH_INDEX.ready) {
-    autocomplete.innerHTML = '<div>⏳ Arama hazırlanıyor...</div>';
+  function showAutocomplete() {
     autocomplete.style.display = 'block';
-    return;
+    searchInput.setAttribute('aria-expanded', 'true');
   }
 
+  function addAutocompleteItem({ html, className = '', onClick = null, selectable = true }) {
+    const item = document.createElement('div');
+    item.id = `autocomplete-option-${Date.now()}-${autocomplete.children.length}`;
+    item.className = className;
+    item.setAttribute('role', 'option');
+    item.setAttribute('aria-selected', 'false');
+    item.dataset.selectable = String(selectable);
+    item.innerHTML = html;
 
-    let found = false;
-    const suggestions = [];
-    const fragment = document.createDocumentFragment();
-
-    for (const suraNum in STATE.metadata.sureNames) {
-      const suraName = STATE.metadata.sureNames[suraNum].toLowerCase();
-      if (suraName.includes(val)) {
-        found = true;
-        suggestions.push({
-          suraNum,
-          suraName: STATE.metadata.sureNames[suraNum],
-          type: 'sura',
-          priority: suraName.startsWith(val) ? 1 : 2
-        });
-      }
+    if (selectable && typeof onClick === 'function') {
+      item.addEventListener('mousedown', (event) => event.preventDefault());
+      item.addEventListener('click', onClick);
     }
 
-    const verseMatch = val.match(/^(\d+)(?:[:\/\s])(\d+)$/);
-    if (verseMatch) {
-      const [, suraNum, verseNum] = verseMatch;
-      const page = getVersePage(suraNum, verseNum);
+    autocomplete.appendChild(item);
+    return item;
+  }
 
-      if (
-        STATE.data.en[page]?.sura?.[suraNum]?.verses?.[verseNum]
-      ) {
-        found = true;
-        const trVerseText = STATE.data.tr[page]?.sura?.[suraNum]?.verses?.[verseNum] || '';
-        suggestions.push({
-          suraNum,
-          verseNum,
-          page,
-          text: `${suraNum}:${verseNum} - ${trVerseText.substring(0, 100)}...`,
-          type: 'verse',
-          priority: 0
-        });
-      }
-    }
+  function showReferenceWarning(reference) {
+    autocomplete.innerHTML = '';
 
-    if (suggestions.length < 16) {
-      const keywordResults = searchKeywordInData(val, 16 - suggestions.length);
+    addAutocompleteItem({
+      className: 'autocomplete-warning',
+      selectable: false,
+      html: `<strong>${escapeHtml(reference.suraNum)}:${escapeHtml(reference.verseNum)} ayeti bulunamadı.</strong>`
+    });
 
-      if (keywordResults.length > 0) {
-        found = true;
-        keywordResults.forEach((result) => {
-          const div = document.createElement('div');
+    showAutocomplete();
+  }
 
-          if (result.type === 'quran') {
-              div.innerHTML = `<strong>${escapeHtml(result.suraNum)}:${escapeHtml(
-                    result.verseNum
-                    )}</strong> (${escapeHtml(result.source)}) ${result.fuzzy ? '<em style="color:#f59e0b;">yaklaşık eşleşme</em> ' : ''}- ${result.snippet}`;
-                  } else if (result.type === 'meal') {
-                      div.innerHTML = `<strong>${escapeHtml(result.mealName)}</strong> ${escapeHtml(
-                            result.suraNum
-                            )}:${escapeHtml(result.verseNum)} ${result.fuzzy ? '<em style="color:#f59e0b;">yaklaşık eşleşme</em> ' : ''}- ${result.snippet}`;
-                          }
+  function goDirectlyToReference(reference) {
+    activeSearchQuery = '';
+    searchInput.value = '';
+    hideAutocomplete();
 
-          div.onclick = () => navigateToSearchResult(result, searchInput);
-          fragment.appendChild(div);
-        });
-      }
+    goToVerse(reference.suraNum, reference.verseNum, {
+      source: 'search-reference',
+      query: ''
+    });
+  }
 
-      if (!areMealsReady() && MEALS_STATE.status !== 'loading') {
-        found = true;
-        const infoDiv = document.createElement('div');
-        infoDiv.className = 'meal-loading-hint';
-        infoDiv.innerHTML = `⏳ <em>Mealler yükleniyor, meal sonuçları birazdan görünecek...</em>`;
-        fragment.appendChild(infoDiv);
+  function goDirectlyToSura(sura) {
+    searchInput.value = '';
+    hideAutocomplete();
+    goToSura(sura.suraNum, { source: 'search-sura' });
+  }
 
-        loadMeals().then(() => {
-          const currentVal = searchInput.value.toLowerCase().trim();
-          if (currentVal === val) runSearch(val);
-        });
-      }
-    }
+  function runLightSearch(rawValue) {
+    const value = String(rawValue || '').trim();
+    autocomplete.innerHTML = '';
+    activeIndex = -1;
 
-    if (suggestions.length > 0) {
-      suggestions.sort((a, b) => a.priority - b.priority);
-
-      suggestions.slice(0, 8).forEach((suggestion) => {
-        const div = document.createElement('div');
-
-        if (suggestion.type === 'verse') {
-          div.innerHTML = `<strong>${escapeHtml(suggestion.suraNum)}:${escapeHtml(
-            suggestion.verseNum
-          )}</strong> - ${escapeHtml(
-            suggestion.text.replace(suggestion.text.split(' - ')[0] + ' - ', '')
-          )}`;
-        } else {
-          div.innerHTML = `<strong>${escapeHtml(suggestion.suraNum)}:</strong> ${escapeHtml(
-            suggestion.suraName
-          )}`;
-        }
-
-        div.onclick = () => navigateToSearchResult(suggestion, searchInput);
-        fragment.appendChild(div);
-      });
-    }
-
-    if (found) {
-      autocomplete.appendChild(fragment);
-      autocomplete.style.display = 'block';
-    } else {
-      autocomplete.style.display = 'none';
-    }
-  };
-
-  searchInput.addEventListener('input', (e) => {
-    const val = e.target.value.toLowerCase().trim();
-
-    if (val.length < 1) {
-      clearTimeout(debounceTimer);
-      autocomplete.innerHTML = '';
-      autocomplete.style.display = 'none';
+    if (!value) {
+      hideAutocomplete();
       return;
     }
 
+    const verseReference = parseVerseReference(value);
+
+    if (verseReference) {
+      if (!verseReference.exists) {
+        showReferenceWarning(verseReference);
+        return;
+      }
+
+      const verseData = findVerseData(verseReference.suraNum, verseReference.verseNum);
+
+      addAutocompleteItem({
+        className: 'autocomplete-verse-reference',
+        html: `
+          <strong>${escapeHtml(verseReference.suraNum)}:${escapeHtml(verseReference.verseNum)} ayetine git</strong>
+          <br>
+          <small>${escapeHtml(String(verseData.turkish || '').slice(0, 130))}</small>
+        `,
+        onClick: () => goDirectlyToReference(verseReference)
+      });
+
+      showAutocomplete();
+      return;
+    }
+
+    getFastSuraSuggestions(value, 5).forEach((suggestion) => {
+      addAutocompleteItem({
+        className: 'autocomplete-sura-result',
+        html: `<strong>${escapeHtml(suggestion.suraNum)}:</strong> ${escapeHtml(suggestion.suraName)}`,
+        onClick: () => goDirectlyToSura(suggestion)
+      });
+    });
+
+    addAutocompleteItem({
+      className: 'autocomplete-all-results',
+      html: `
+        <strong>“${escapeHtml(value)}” için yaklaşık eşleşmeleri ve tüm sonuçları göster</strong>
+        <br>
+        <small>Ayrıntılı aramayı başlatmak için seçin.</small>
+      `,
+      onClick: () => {
+        hideAutocomplete();
+        openSearchResultsPanel(value);
+      }
+    });
+
+    showAutocomplete();
+  }
+
+  searchInput.setAttribute('role', 'combobox');
+  searchInput.setAttribute('aria-autocomplete', 'list');
+  searchInput.setAttribute('aria-controls', 'autocomplete');
+  searchInput.setAttribute('aria-expanded', 'false');
+
+  searchInput.addEventListener('input', (event) => {
+    const value = event.target.value.trim();
     clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => runSearch(val), DEBOUNCE_MS);
+
+    if (!value) {
+      hideAutocomplete();
+      return;
+    }
+
+    debounceTimer = setTimeout(() => runLightSearch(value), DEBOUNCE_MS);
   });
 
-  searchInput.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter') return;
+  searchInput.addEventListener('keydown', (event) => {
+    const options = getOptions();
 
-    e.preventDefault();
-    const val = e.target.value.trim();
-
-    const verseMatch = val.match(/^(\d+)(?:[:\/\s])(\d+)$/);
-    if (verseMatch) {
-      const [, suraNum, verseNum] = verseMatch;
-      const page = getVersePage(suraNum, verseNum);
-
-      if (STATE.data.en[page]?.sura?.[suraNum]?.verses?.[verseNum]) {
-        goToPage(page);
-        searchInput.value = '';
-        autocomplete.style.display = 'none';
-        setTimeout(() => scrollToVerse(suraNum, verseNum), 300);
-        return;
-      }
-
-      showNotification(`${suraNum}:${verseNum} ayeti bulunamadı!`, 'warning');
+    if (event.key === 'ArrowDown' && options.length) {
+      event.preventDefault();
+      updateActiveOption(activeIndex + 1);
       return;
     }
 
-    for (const suraNum in STATE.metadata.sureNames) {
-      const suraName = STATE.metadata.sureNames[suraNum].toLowerCase();
-      if (suraName.includes(val.toLowerCase())) {
-        goToPage(STATE.metadata.sureToPageMap[suraNum]);
-        searchInput.value = '';
-        autocomplete.style.display = 'none';
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        return;
-      }
-    }
-
-    const keywordResults = searchKeywordInData(val, 1);
-    if (keywordResults.length > 0) {
-      navigateToSearchResult(keywordResults[0], searchInput);
+    if (event.key === 'ArrowUp' && options.length) {
+      event.preventDefault();
+      updateActiveOption(activeIndex - 1);
       return;
     }
 
-    if (val) {
-      showNotification(
-        'Aradığınız sure veya ayet bulunamadı! Format: "2:209", "2/209" veya "2 209" veya sure ismi',
-        'warning'
-      );
+    if (event.key === 'Escape') {
+      hideAutocomplete();
+      return;
     }
+
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    clearTimeout(debounceTimer);
+
+    if (activeIndex >= 0 && options[activeIndex]) {
+      options[activeIndex].click();
+      return;
+    }
+
+    const value = searchInput.value.trim();
+    if (!value) return;
+
+    const verseReference = parseVerseReference(value);
+    if (verseReference) {
+      if (!verseReference.exists) {
+        showReferenceWarning(verseReference);
+        return;
+      }
+
+      goDirectlyToReference(verseReference);
+      return;
+    }
+
+    const exactSura = findExactSura(value);
+    if (exactSura) {
+      goDirectlyToSura(exactSura);
+      return;
+    }
+
+    openSearchResultsPanel(value);
+    hideAutocomplete();
   });
 
   searchInput.addEventListener('blur', () => {
     setTimeout(() => {
-      autocomplete.style.display = 'none';
-    }, 200);
+      if (!autocomplete.matches(':hover')) hideAutocomplete();
+    }, 180);
   });
 
   searchInput.addEventListener('focus', () => {
-    const val = searchInput.value.toLowerCase().trim();
-    if (val.length >= 1) autocomplete.style.display = 'block';
+    const value = searchInput.value.trim();
+    if (value) runLightSearch(value);
   });
 }
 
@@ -2137,35 +5954,81 @@ function displaySettingsPage() {
         </label>
       </div>
 
-      <div class="settings-section">
-        <h2>Google Drive Durumu</h2>
-        <div class="drive-status">
-          <p><strong>Durum:</strong> <span id="driveStatus">${
-            isDriveReady() ? '🟢 Bağlı' : '🔴 Bağlı değil'
-          }</span></p>
-          <p><strong>Klasör:</strong> <span id="folderStatus">${
-            typeof folderId !== 'undefined' && folderId ? '✅ Hazır' : '❌ Bulunamadı'
-          }</span></p>
+        <div class="settings-section">
+          <h2>Yerel Not Sistemi</h2>
+
+          <div class="local-storage-status">
+            <p>
+              <strong>Durum:</strong>
+              🟢 Yerel kayıt aktif
+            </p>
+
+            <p>
+              Notlarınız bu tarayıcıda ve bu cihazda saklanır.
+            </p>
+
+            <p>
+              Tarayıcı verilerini silmeden önce notlarınızı
+              JSON dosyası olarak yedeklemeniz önerilir.
+            </p>
+          </div>
         </div>
-      </div>
 
       <div class="settings-section">
         <h2>Yazılım Hakkında</h2>
+
         <div class="about-section">
+          <p>
+            <strong>Kuran Teyit</strong>, Android için geliştirilmiş bağımsız
+            bir Kuran araştırma uygulamasıdır.
+          </p>
+
+          <p class="independence-notice">
+            Kuran Teyit bağımsız bir araştırma uygulamasıdır. QuranTFT,
+            SubmitterTech, International Community of Submitters,
+            Masjid Tucson veya uygulamada adı geçen diğer kaynak
+            sağlayıcılarının resmî uygulaması değildir ve bu kuruluşlar
+            tarafından yayımlanmamaktadır.
+          </p>
+
           <ul>
-            <li><strong>Kodlama, Tasarım: <strong>Berk KÖKSAL</strong></p>  <a href="https://www.berkkoksal.com" target="_blank" rel="noopener noreferrer">
-            www.berkkoksal.com
-          </a>
-        </li>
-        <li><strong>Arama:</strong> (örn: "2:255") 2 255 veya 2/255 yazabilirsiniz.</li>
-            <li><strong>Arama:</strong> (örn: "2:255") 2 255  2/255 yazabilirsiniz.</li>
-            <li><strong>Google Drive:</strong> Notlarınız otomatik olarak "Kuran_Teyit_Not" klasörüne kaydedilir.</li>
+            <li><strong>Geliştirme ve tasarım:</strong>
+  Berk KÖKSAL —
+  <a
+    href="https://www.berkkoksal.com/"
+    target="_blank"
+    rel="noopener noreferrer"
+  >
+    www.berkkoksal.com
+  </a>
+</li>
+            <li><strong>Destek:</strong> berkgitarist@gmail.com</li>
+            <li><strong>Yerel notlar:</strong> Notlar cihazda saklanır.</li>
+            <li><strong>Arapça ses:</strong> İnternet üzerinden Islamic Network CDN'den oynatılır.</li>
           </ul>
+        </div>
+
+        <div class="legal-action-row">
+          <button
+            type="button"
+            class="toggle-btn"
+            data-action="show-privacy"
+          >
+            Gizlilik Politikası
+          </button>
+
+          <button
+            type="button"
+            class="toggle-btn"
+            data-action="show-licenses"
+          >
+            Lisanslar ve Kaynaklar
+          </button>
         </div>
       </div>
 
       <button class="toggle-btn" id="saveSettingsBtn">💾 Ayarları Kaydet</button>
-      <button class="toggle-btn" onclick="goToPage(${STATE.currentPage})">🔙 Kuran'a Dön</button>
+      <button type="button" class="toggle-btn" data-action="return-quran">🔙 Kuran'a Dön</button>
     </div>
   `;
 
@@ -2185,22 +6048,22 @@ function displaySettingsPage() {
 
   document.getElementById('showMeals')?.addEventListener('change', (e) => {
     STATE.settings.showMeals = e.target.checked;
-    saveSettings();
+    saveSettings({ refreshPage: false });
   });
 
   document.getElementById('showTransliteration')?.addEventListener('change', (e) => {
     STATE.settings.showTransliteration = e.target.checked;
-    saveSettings();
+    saveSettings({ refreshPage: false });
   });
 
   document.getElementById('showAiTranslation')?.addEventListener('change', (e) => {
     STATE.settings.showAiTranslation = e.target.checked;
-    saveSettings();
+    saveSettings({ refreshPage: false });
   });
 
-  document.getElementById('saveSettingsBtn')?.addEventListener('click', () => {
-    saveSettings();
-    showNotification('✅ Ayarlar kaydedildi!', 'success');
+  document.getElementById('saveSettingsBtn')?.addEventListener('click', async () => {
+    const saved = await saveSettings({ refreshPage: false });
+    if (saved) showNotification('Ayarlar kaydedildi.', 'success');
   });
 }
 
@@ -2211,159 +6074,482 @@ function displayNotesPage() {
     <div class="page-header">
       <h1>📝 Notlarım</h1>
     </div>
+
     <div class="sura">
       <div class="notes-section">
-        <p>Google Drive'daki notlarınız burada görüntülenecek...</p>
-        <div id="notesList" class="notes-list">
-          ${isDriveReady() ? 'Notlar yükleniyor...' : 'Google hesabınızla giriş yapın.'}
-        </div>
-        <button class="toggle-btn" onclick="goToPage(${STATE.currentPage})">🔙 Kuran'a Dön</button>
-      </div>
-    </div>`;
+        <p>
+          Notlarınız bu tarayıcıda,
+          cihazınızda saklanmaktadır.
+        </p>
 
-  if (isDriveReady()) loadAndDisplayAllNotes();
+        <div
+          class="note-actions"
+          style="
+            display:flex;
+            gap:10px;
+            flex-wrap:wrap;
+            margin-bottom:20px;
+          "
+        >
+          <button
+            type="button"
+            class="toggle-btn"
+            data-action="export-notes"
+          >
+            💾 Notları Yedekle
+          </button>
+
+          <button
+            type="button"
+            class="toggle-btn"
+            data-action="import-notes"
+          >
+            📂 Not Dosyası Yükle
+          </button>
+
+          <button
+            id="toggleNotesVisibilityBtn"
+            class="toggle-btn"
+            type="button"
+            data-action="toggle-notes"
+            aria-expanded="true"
+            aria-controls="notesList"
+          >
+            🙈 Notları Gizle
+          </button>
+        </div>
+
+        <div
+          id="notesList"
+          class="notes-list"
+        >
+          Notlar yükleniyor...
+        </div>
+
+        <button
+          type="button"
+          class="toggle-btn"
+          data-action="return-quran"
+        >
+          🔙 Kuran'a Dön
+        </button>
+      </div>
+    </div>
+  `;
+
+  loadAndDisplayAllNotes();
 }
 
-const GUIDE_CONTENT = `
-    <h1>Kuran Teyit Yazılımı: Tanıtım ve Kullanım Kılavuzu</h1>
-    
-    <h2>Tanıtım: Kuran Teyit Yazılımı Nedir?</h2>
-    <p>[1:1] En Lütufkâr, En Merhametli TANRI’nın adıyla.</p>
-    <p>Bu, Tanrı’nın insanlığa son mesajıdır. Tanrı’nın tüm peygamberleri bu dünyaya geldi ve tüm kutsal yazılar iletildi. Tanrı’nın peygamberleri tarafından iletilen tüm mesajların arındırılıp tek bir mesajda birleştirilmesinin ve bundan böyle Tanrı’nın kabul ettiği tek dinin “Teslimiyet” (3:19, 3:85) olduğunun duyurulmasının zamanı geldi. “Teslimiyet,” Tanrı’nın mutlak otoritesini tanıdığımız ve tüm güce sahip olanın YALNIZCA Tanrı olduğuna; O’ndan bağımsız başka hiçbir varlığın herhangi bir güce sahip olmadığına dair sarsılmaz bir kanaate ulaştığımız dindir. Böyle bir farkındalığın doğal sonucu, yaşamlarımızı ve tapınmamızı mutlak bir şekilde YALNIZCA Tanrı’ya adamaktır. Bu, Eski Ahit, Yeni Ahit ve bu Son Ahit de dâhil olmak üzere tüm kutsal yazılardaki İlk Buyruktur.</p>
-    <p>Kuran Teyit Yazılımı, Tanrı’nın antlaşma elçisi Reşat Halife’nin Yetkilendirilmiş (İngilizce) çevirisi üzerine geliştirilmiş modern bir web uygulamasıdır. Kur'an-ı Kerim'i Arapça, Türkçe ve İngilizce çevirileriyle inceleme, farklı mealleri karşılaştırma, not alma ve kelime çevirisi gibi özelliklerle kullanıcı dostu bir deneyim sunar. Google Drive entegrasyonu ile notlarınızı güvenli bir şekilde kaydedebilirsiniz.</p>
-    <p>Uygulama, [17:36] ayetinden ilhamla, "Kendiniz için teyit etmediğiniz sürece hiçbir bilgiyi kabul etmeyin" mesajıyla eleştirel düşünmeyi teşvik eder. Tema seçenekleri ve özelleştirilebilir arayüzü ile her cihazda kolayca kullanılabilir. Yetkilendirilmiş Çeviri’nin teyide ihtiyacı olmadığını vurgulayarak, İngilizce bilmeyenler için kelimelerin derin anlamlarına ulaşmayı hedefler.</p>
-    
+function toggleNotesVisibility() {
+  const notesList =
+    document.getElementById('notesList');
 
-    <h2>Kullanım Kılavuzu</h2>
+  const button =
+    document.getElementById(
+      'toggleNotesVisibilityBtn'
+    );
 
-    <h3>1. Genel Yapı ve Navigasyon</h3>
-    <ul>
-        <li><strong>Menü Butonu (☰):</strong> Sure listesi, notlar ve ayarlara ulaşmanızı sağlar.</li>
-        <li><strong>Önceki/Sonraki Sayfa:</strong> Kur'an sayfaları arasında geçiş yapar.</li>
-        <li><strong>Arama Alanı:</strong> Sure, ayet veya kelime aramak için kullanılır.</li>
-        <li><strong>Kuran Oku:</strong> Harici Kur'an okuma sayfasına geçiş yapar; tekrar tıklayınca uygulama görünümüne dönülür.</li>
-    </ul>
+  if (!notesList || !button) return;
 
-    <h3>2. Arapça Karşılaştırma Alanı</h3>
-    <p>Her ayetin sağ üstünde <strong>📖 Arapça</strong> bağlantısı bulunur. Bu bağlantıya tıklayınca ayetin üç farklı Arapça metni açılır.</p>
-    <ul>
-        <li><strong>Standart Arapça - qurantft.json:</strong> Ana Arapça kaynak.</li>
-        <li><strong>İkinci Arapça - quran_arapca2.json:</strong> Eklenen ikinci Arapça veri dosyası.</li>
-        <li><strong>Erhan Aktaş Arapçası - kuran_erhan_aktas.json:</strong> Erhan Aktaş veri dosyasındaki Arapça metin.</li>
-    </ul>
-    <p>Bu alan özellikle ayet kayması, eksik kelime, fazla kelime veya farklı Arapça yazım kontrolü için kullanışlıdır. İleride bu bölüme kelime farklarını renkli gösterme özelliği eklenebilir.</p>
+  const willHide =
+    !notesList.classList.contains('hidden');
 
-    <h3>3. Arama Alanının Kullanımı</h3>
-    <p>Arama çubuğuna sure adı, ayet numarası veya kelime yazabilirsiniz.</p>
-    <ul>
-        <li><code>2:255</code> → Bakara 255. ayete gider.</li>
-        <li><code>2/255</code> → Aynı şekilde çalışır.</li>
-        <li><code>2 255</code> → Boşluklu format da desteklenir.</li>
-        <li><code>Bakara</code>, <code>Fatiha</code>, <code>Yasin</code> gibi sure isimleriyle arama yapılabilir.</li>
-    </ul>
+  notesList.classList.toggle(
+    'hidden',
+    willHide
+  );
 
-    <h3>4. Kur'an Okuma ve Çeviriler</h3>
-    <ul>
-        <li>Ayet numarası ortada gösterilir.</li>
-        <li>📖 Arapça alanı açılır/kapanır yapıdadır; kapalıyken sayfayı kalabalıklaştırmaz.</li>
-        <li>Okunuş satırı açıksa Arapça-Türkçe okunuş gösterilir.</li>
-        <li>İngilizce ve Türkçe çeviriler ayetin altında görünür.</li>
-    </ul>
+  button.textContent = willHide
+    ? '👁️ Notları Göster'
+    : '🙈 Notları Gizle';
 
-    <h3>5. Mealler</h3>
-    <ul>
-        <li>Ayarlar bölümünden <strong>Mealler’i Göster</strong> seçeneği açılırsa her ayette <strong>📚 Mealler</strong> butonu görünür.</li>
-        <li>Butona tıklayınca farklı çevirmenlerin mealleri aynı ayet altında listelenir.</li>
-        <li>Mealler ilk ihtiyaç olduğunda yüklenir; bu sayede uygulama ilk açılışta daha hızlı çalışır.</li>
-    </ul>
+  button.setAttribute(
+    'aria-expanded',
+    String(!willHide)
+  );
+}
 
-    <h3>6. Not Alma ve Google Drive</h3>
-    <ul>
-        <li><strong>✍️ Not Al</strong> butonuyla ayete özel not yazabilirsiniz.</li>
-        <li>Google Drive bağlantısı hazırsa notlarınız Drive üzerinde saklanır.</li>
-        <li><strong>📝 Notlarım</strong> sayfasından kayıtlı notlarınıza ulaşabilirsiniz.</li>
-    </ul>
+const INDEPENDENCE_NOTICE = `
+  <p class="independence-notice">
+    <strong>Bağımsızlık bildirimi:</strong>
+    Kuran Teyit bağımsız bir araştırma uygulamasıdır. QuranTFT,
+    SubmitterTech, International Community of Submitters, Masjid Tucson
+    veya uygulamada adı geçen diğer kaynak sağlayıcılarının resmî
+    uygulaması değildir ve bu kuruluşlar tarafından yayımlanmamaktadır.
+  </p>
+`;
 
-    <h3>7. Kelime Yardımı</h3>
-    <ul>
-        <li>İngilizce metindeki kelimelerin üzerine gelince Türkçe karşılıkları gösterilir.</li>
-        <li>Mobil cihazlarda kelimeye dokunarak yardım kutusu açılabilir.</li>
-    </ul>
+const PRIVACY_CONTENT = `
+  <h1>Gizlilik Politikası</h1>
 
-    <h3>8. Ayarlar</h3>
-    <ul>
-        <li><strong>Tema:</strong> Açık, koyu, yeşil, mavi ve diğer tema seçenekleri kullanılabilir.</li>
-        <li><strong>Yazı Boyutu:</strong> Küçük, orta veya büyük yazı boyutu seçilebilir.</li>
-        <li><strong>Mealler’i Göster:</strong> Meal butonlarını açar/kapatır.</li>
-        <li><strong>Arapça-Türkçe Göster:</strong> Okunuş satırını açar/kapatır.</li>
-        <li><strong>AI Çeviriyi Göster:</strong> Yapay zeka çevirisi varsa gösterir.</li>
-    </ul>
+  <p><strong>Son güncelleme:</strong> 20 Temmuz 2026</p>
 
-    <h3>9. Performans ve Kod İyileştirmeleri</h3>
-    <ul>
-        <li>Sayfalar önbelleğe alınarak daha hızlı geçiş sağlanır.</li>
-        <li>Mealler ihtiyaç oldukça yüklenir.</li>
-        <li>Arama indexi uygulama açıldıktan sonra hazırlanır.</li>
-        <li>Üç Arapça veri kaynağı ayrı ayrı yüklenir ve aynı ayet altında karşılaştırmalı gösterilir.</li>
-        <li>Arapça alanı kapalı geldiği için sayfa daha sade ve hızlı okunabilir hale getirilmiştir.</li>
-    </ul>
+  ${INDEPENDENCE_NOTICE}
 
-    <h3>10. Gelecek Geliştirme Fikirleri</h3>
-    <ul>
-        <li>Yapay Zeka ile Referans Ayetleri listeleyen yeni bir ekran.</li>
-        <li>Yapay zeka destekli bağlantılı kelime arama özelliği</li>
-        <li>Üç Arapça metin arasındaki kelime farklarını renkli vurgulama.</li>
-        <li>Ayet bazında “Arapça kaynaklarda fark var” uyarısı.</li>
-        <li>Sadece farklı kelimeleri gösterme modu.</li>
-        <li>Arapça karşılaştırma raporu oluşturma.</li>
-        <li>Kullanım kılavuzunu ileride ayrı bir <code>guide.html</code> veya <code>guide.md</code> dosyasına taşıma.</li>
-    </ul>
+  <h2>1. Uygulama ve geliştirici</h2>
+  <p>
+    Bu politika, <strong>Kuran Teyit</strong> Android ve PWA uygulaması için
+    geçerlidir. Geliştirici ve gizlilik iletişimi:
+    <strong>Berk KÖKSAL</strong> —
+    <a
+      href="https://www.berkkoksal.com/"
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      www.berkkoksal.com
+    </a>
+    — berkgitarist@gmail.com.
+  </p>
 
-    <h3>11. Sıkça Sorulan Sorular</h3>
-    <ul>
-        <li><strong>Mealler butonunu göremiyorum, neden?</strong> Ayarlar bölümünden “Mealler’i Göster” seçeneğini açmalısınız.</li>
-        <li><strong>Arapça metinler neden kapalı geliyor?</strong> Sayfanın sade kalması için Arapça karşılaştırma alanı açılır/kapanır yapıdadır.</li>
-        <li><strong>Üç Arapça metin ne işe yarar?</strong> Aynı ayetin farklı veri kaynaklarındaki Arapça karşılıklarını kontrol etmeye yarar.</li>
-        <li><strong>Notlarım neden kaydedilmiyor?</strong> Google hesabınızla giriş yaptığınızdan ve Drive bağlantısının hazır olduğundan emin olun.</li>
-        <li><strong>Tema değişiklikleri kalıcı mı?</strong> Evet, ayarlar tarayıcıda saklanır.</li>
-    </ul>
+  <h2>2. Hesap, reklam ve analiz</h2>
+  <p>
+    Uygulama kullanıcı hesabı oluşturmaz. Mevcut sürümde reklam,
+    reklam kimliği kullanan reklam SDK'sı veya geliştiriciye ait kullanıcı
+    davranışı analiz sistemi bulunmaz.
+  </p>
 
-    <h2>Son Söz</h2>
-    <p>Kuran Teyit Yazılımı, Kur'an metinlerini okumak, karşılaştırmak, teyit etmek ve kişisel notlarla çalışmak için geliştirilmiş bir araçtır. Yeni eklenen Arapça karşılaştırma alanı sayesinde aynı ayetin üç farklı Arapça veri kaynağı tek ekranda incelenebilir.</p>
-    <p>Geliştirme, tasarım ve kodlama: <strong>Berk KÖKSAL</strong></p>  <a href="https://www.berkkoksal.com" target="_blank" rel="noopener noreferrer">
-            www.berkkoksal.com
-          </a>
-    <p> Sorularınız veya önerileriniz için; <strong><a href=>berkgitarist@gmail.com</a> adreslerinden ulaşabilirsiniz.</p>
-    <p> Bu proje Tamamen <strong>TANRI<strong>'ya Adanmıştır.
-`;    
+  <h2>3. Yerel olarak saklanan bilgiler</h2>
+  <ul>
+    <li>Tema, yazı boyutu ve görünüm tercihleri cihazda yerel olarak saklanır.</li>
+    <li>Kullanıcının yazdığı ayet notları cihazın uygulama depolama alanında saklanır.</li>
+    <li>Notlar en fazla 10.000 karakter olarak doğrulanır ve ayet numarasıyla ilişkilendirilir.</li>
+    <li>Bu veriler geliştiriciye ait bir sunucuya gönderilmez.</li>
+    <li>Notların JSON olarak dışa aktarılması veya içe alınması yalnızca kullanıcının başlattığı işlemle gerçekleşir.</li>
+  </ul>
 
+  <h2>4. Çevrimdışı önbellek</h2>
+  <p>
+    Web/PWA sürümünde Service Worker, uygulamanın daha hızlı ve çevrimdışı
+    açılabilmesi için uygulama dosyalarını ve kullanıcı tarafından erişilen
+    yerel JSON veri dosyalarını cihaz önbelleğinde saklayabilir. Bu önbellek
+    geliştirici sunucusuna kullanıcı notu veya tercih göndermez.
+  </p>
+
+  <h2>5. Paket içindeki metin ve kaynak verileri</h2>
+  <p>
+    Kuran metinleri, çeviri dosyaları, konu haritaları, ekler, sözlük,
+    deneysel AI çevirisi ve kelime verileri uygulama paketinde yerel dosyalar
+    olarak bulunur. Kullanıcının bu içerikleri okuması sırasında kaynak
+    sağlayıcıların sitelerine otomatik bir istek gönderilmez.
+  </p>
+
+  <h2>6. AI çeviri alanı</h2>
+  <p>
+    AI Çeviri alanı canlı sohbet veya kullanıcı istemiyle çalışan üretken AI
+    hizmeti değildir. Uygulama paketinde önceden hazırlanmış statik deneysel
+    metni gösterir. Kullanıcının ayet araması, notu veya başka bir girdisi AI
+    hizmetine gönderilmez.
+  </p>
+
+  <h2>7. Ses hizmetleri ve ağ bağlantısı</h2>
+  <p>
+    İngilizce sesli okuma, cihazın metinden sese altyapısı üzerinden çalışır.
+    Arapça kıraat düğmesine basıldığında ses dosyası doğrudan
+    <strong>cdn.islamic.network</strong> adresinden HTTPS bağlantısıyla yüklenir.
+    Ses isteği yalnızca kullanıcı oynat düğmesine dokunduğunda başlar.
+  </p>
+
+  <p>
+    Bir internet isteğinin iletilebilmesi için IP adresi, tarayıcı/cihaz
+    bilgisi, istek zamanı ve istenen dosya gibi teknik bağlantı bilgileri
+    üçüncü taraf hizmet sağlayıcı tarafından işlenebilir. Bu hizmetin sunucu
+    kayıtları geliştiricinin kontrolünde değildir ve geliştiriciye aktarılmaz.
+  </p>
+
+
+  <h2>8. Üçüncü taraf kaynak bağlantıları</h2>
+  <p>
+    Uygulamadaki GitHub, QuranTFT, Açık Kuran ve diğer kaynak bağlantıları
+    yalnızca kullanıcı bağlantıya dokunduğunda açılır. Açılan sitelerin kendi
+    gizlilik politikaları ve kullanım koşulları geçerlidir.
+  </p>
+
+  <h2>9. Saklama ve silme</h2>
+  <p>
+    Yerel notlar ve ayarlar kullanıcı silene, uygulama verileri temizlenene
+    veya uygulama kaldırılana kadar cihazda kalabilir. Kullanıcı notları
+    uygulama içinden tek tek silebilir. Android ayarlarından uygulama
+    verilerinin temizlenmesi tüm yerel kayıtları kaldırır. Web/PWA önbelleği
+    tarayıcı veya uygulama depolama ayarlarından temizlenebilir.
+  </p>
+
+  <h2>10. Çocukların gizliliği</h2>
+  <p>
+    Uygulama özellikle çocuklara yönelik olarak tasarlanmamıştır ve bilerek
+    çocuklardan kişisel bilgi toplamayı amaçlamaz.
+  </p>
+
+  <h2>11. Güvenlik</h2>
+  <p>
+    Harici ses bağlantısı HTTPS üzerinden kurulur. Not içe aktarma dosyaları
+    biçim, ayet ve içerik uzunluğu bakımından doğrulanır. Kullanıcıların JSON
+    not yedeklerini güvenli bir yerde saklaması ve herkese açık alanlarda
+    paylaşmaması önerilir.
+  </p>
+
+  <h2>12. Google Play Veri Güvenliği beyanı</h2>
+  <p>
+    Google Play mağaza sayfasındaki Veri Güvenliği beyanı, uygulamanın gerçek
+    veri işleme davranışıyla ve bu Gizlilik Politikasıyla aynı bilgileri
+    açıklamalıdır. Uygulamaya ileride reklam, analiz, hesap veya yeni bir ağ
+    hizmeti eklenirse hem bu politika hem de Play Console beyanı güncellenir.
+  </p>
+
+  <h2>13. Politika değişiklikleri</h2>
+  <p>
+    Uygulamanın veri işleme biçimi değişirse bu politika güncellenir ve son
+    güncelleme tarihi değiştirilir.
+  </p>
+
+  <h2>14. İletişim</h2>
+  <p>
+    <strong>Geliştirme, tasarım ve kodlama:</strong><br>
+    Berk KÖKSAL —
+    <a
+      href="https://www.berkkoksal.com/"
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      www.berkkoksal.com
+    </a>
+    <br>
+    Destek: berkgitarist@gmail.com
+  </p>
+`;
+
+const LICENSES_CONTENT = `
+  <h1>Lisanslar, Kaynaklar ve Veri Kökeni</h1>
+
+  <p><strong>Son güncelleme:</strong> 20 Temmuz 2026</p>
+
+  ${INDEPENDENCE_NOTICE}
+
+  <p class="independence-notice">
+    <strong>Önemli hak notu:</strong>
+    Bu sayfa kullanılan içeriklerin kaynak kökenini ve atıflarını belgeler.
+    Bir kaynağın herkese açık bir GitHub deposunda bulunması veya burada
+    bağlantısının verilmesi, tek başına yeniden dağıtım lisansı ya da yazılı
+    kullanım izni anlamına gelmez. Çeviri, dipnot, sözlük, ses ve veri
+    düzenlemelerinin hakları ilgili çevirmen, yazar, yayıncı, okuyucu ve veri
+    sağlayıcılarına ait olabilir.
+  </p>
+
+  <h2>1. QuranTFT / SubmitterTech</h2>
+  <p>
+    Uygulamadaki ana İngilizce ve Türkçe çeviri verileri, Arapça
+    karşılaştırma verilerinin bir bölümü, konu haritaları ve ek içeriklerde
+    QuranTFT / SubmitterTech proje yapısından yararlanılmıştır.
+  </p>
+  <ul>
+    <li>
+      <a href="https://github.com/SubmitterTech/quran-tft/tree/main/app/src/assets/translations/tr" target="_blank" rel="noopener noreferrer">
+        Türkçe çeviri veri klasörü
+      </a>
+    </li>
+    <li>
+      <a href="https://github.com/SubmitterTech/quran-tft/tree/main/app/src" target="_blank" rel="noopener noreferrer">
+        QuranTFT uygulama kaynak klasörü
+      </a>
+    </li>
+    <li>
+      <a href="https://qurantft.com/" target="_blank" rel="noopener noreferrer">
+        qurantft.com
+      </a>
+    </li>
+  </ul>
+  <p><strong>Uygulamadaki ilgili dosya grupları:</strong></p>
+  <ul>
+    <li><code>data/qurantft.json</code></li>
+    <li><code>data/quran_tr.json</code></li>
+    <li><code>data/mealler/quran_arapca2.json</code></li>
+    <li><code>data/map.json</code> ve <code>data/map_tr.json</code></li>
+    <li><code>data/appendices.json</code> ve <code>data/appendices_tr.json</code></li>
+  </ul>
+
+  <h2>2. Authorized English Translation</h2>
+  <p>
+    İngilizce ana referans ve ilişkili dipnotlarda Rashad Khalifa'nın
+    <strong>Authorized English Translation</strong> çalışması temel
+    referanslardan biridir. Eser adı, yazar/çevirmen bilgisi ve kaynak
+    bağlantıları atıf amacıyla belirtilmektedir; eserin yayın ve yeniden
+    dağıtım koşulları ayrıca doğrulanmalıdır.
+  </p>
+
+  <h2>3. Açık Kuran</h2>
+  <p>
+    Erhan Aktaş Türkçe/Arapça çeviri verileri ile kelime çevirisi ve kök
+    verilerinde Açık Kuran çalışmalarından yararlanılmıştır.
+  </p>
+  <ul>
+    <li>
+      <a href="https://github.com/acik-kuran" target="_blank" rel="noopener noreferrer">
+        Açık Kuran GitHub organizasyonu
+      </a>
+    </li>
+    <li>
+      <a href="https://acikkuran.com/" target="_blank" rel="noopener noreferrer">
+        acikkuran.com
+      </a>
+    </li>
+  </ul>
+  <p><strong>Uygulamadaki ilgili dosya grupları:</strong></p>
+  <ul>
+    <li><code>data/mealler/kuran_erhan_aktas.json</code></li>
+    <li><code>data/word-translations.json</code></li>
+  </ul>
+
+  <h2>4. Kuran Rehberi çeviri koleksiyonu</h2>
+  <p>
+    Uygulamada karşılaştırma amacıyla gösterilen çeşitli meal dosyaları
+    aşağıdaki çeviri veri koleksiyonundan alınmış veya bu koleksiyon
+    üzerinden düzenlenmiştir:
+  </p>
+  <p>
+    <a href="https://github.com/eyupipler/Kuran-Rehberi/tree/main/data/translations" target="_blank" rel="noopener noreferrer">
+      eyupipler/Kuran-Rehberi — data/translations
+    </a>
+  </p>
+  <p>
+    Kaynak deponun proje kodu için belirttiği lisans ile deponun içerdiği
+    üçüncü taraf çeviri metinlerinin hakları aynı olmayabilir. Her mealin
+    çevirmen/yayıncı hakkı ve yeniden dağıtım izni ayrı değerlendirilmelidir.
+  </p>
+  <p><strong>Uygulamadaki ilgili dosya grubu:</strong></p>
+  <ul>
+    <li><code>data/mealler/*.json</code> içindeki karşılaştırmalı meal dosyaları</li>
+  </ul>
+
+  <h2>5. Yapay zekâ destekli çeviri alanı</h2>
+  <p>
+    <code>data/yapayzekaceviri.json</code> içeriği önceden hazırlanmış, statik
+    ve deneysel bir yapay zekâ destekli çalışma alanıdır. Canlı bir chatbot
+    veya kullanıcı istemiyle çalışan üretken AI hizmeti değildir. Resmî meal,
+    dinî hüküm veya fetva olarak sunulmaz. Kullanıcıların ana metni ve güvenilir
+    çeviri kaynaklarını ayrıca karşılaştırması önerilir.
+  </p>
+
+  <h2>6. Mealler ve çevirmen hakları</h2>
+  <p>
+    Uygulamada görüntülenen meal metinlerinin hakları ilgili çevirmenlere,
+    mirasçılarına ve/veya yayıncılara ait olabilir. Uygulama paketine bir
+    meal eklenmeden önce yeniden dağıtım lisansı, açık lisans koşulları veya
+    yazılı kullanım izni proje kayıtlarında doğrulanmalıdır. Kaynak
+    gösterimi, gerekli iznin yerine geçmez.
+  </p>
+
+  <h2>7. Arapça kıraat</h2>
+  <ul>
+    <li><strong>Okuyucu:</strong> Mishary Rashid Alafasy</li>
+    <li><strong>Hizmet:</strong> Al Quran Cloud / Islamic Network CDN</li>
+    <li><strong>İstek adresi:</strong> <code>https://cdn.islamic.network/</code></li>
+    <li>Ses kayıtlarının hakları ilgili okuyucu, yayıncı ve hak sahiplerine aittir.</li>
+  </ul>
+
+  <h2>8. Sürüm kayıtlarında tutulması önerilen bilgiler</h2>
+  <ul>
+    <li>Kaynak depo ve tam dosya yolu</li>
+    <li>İndirilen commit kimliği veya sürüm etiketi</li>
+    <li>İndirme tarihi</li>
+    <li>Kaynak LICENSE, NOTICE ve README dosyalarının kopyası</li>
+    <li>Uygulamada yapılan değişikliklerin kısa açıklaması</li>
+    <li>Gerekliyse çevirmen veya yayıncıdan alınan yazılı izin</li>
+  </ul>
+
+  <h2>9. Bağımsızlık ve marka kullanımı</h2>
+  <p>
+    Kuran Teyit; QuranTFT, SubmitterTech, Açık Kuran, Kuran Rehberi,
+    International Community of Submitters, Masjid Tucson veya adı geçen
+    başka bir kaynak sağlayıcısının resmî uygulaması değildir. Kaynak ve
+    eser adları yalnızca açıklama ve atıf amacıyla kullanılmaktadır.
+  </p>
+
+  <h2>10. Yazı tipleri ve uygulama kodu</h2>
+  <p>
+    Uygulama uzak Google Fonts bağlantısı kullanmaz. Arayüz ve Arapça
+    metinler cihazda bulunan sistem yazı tipleriyle gösterilir.
+  </p>
+  <p>
+    Kuran Teyit uygulamasının özgün arayüz, yerel not sistemi, arama,
+    analiz ve uygulama kodu geliştirmeleri: <strong>Berk KÖKSAL</strong>.
+  </p>
+
+  <h2>11. Hak ve lisans iletişimi</h2>
+  <p>
+    Bir hak, kaynak düzeltmesi veya lisans bildirimi için:
+    <strong>berkgitarist@gmail.com</strong> —
+
+  <a
+    href="https://www.berkkoksal.com/"
+    target="_blank"
+    rel="noopener noreferrer"
+  >
+    www.berkkoksal.com
+  </a>
+</p>
+`;
 
 function displayGuidePage() {
+  try {
+    sessionStorage.setItem(
+      'kuranTeyitGuideReturnUrl',
+      window.location.href
+    );
+  } catch (error) {
+    console.warn('Kılavuz dönüş adresi saklanamadı:', error);
+  }
+
+  window.location.assign('./guide.html');
+}
+
+function displayLegalContent(title, content) {
   ensureQuranView();
 
   DOM.content.innerHTML = `
-    <div class="page-header">
-      <h1>📖 Kullanım Kılavuzu</h1>
+    <div class="page-header legal-page-header">
+      <img
+        src="assets/images/logo-main.png"
+        alt="Kuran Teyit logosu"
+        class="guide-page-logo"
+        width="1024"
+        height="1024"
+      >
+
+      <h1>${escapeHtml(title)}</h1>
     </div>
+
     <div class="sura">
-      <div class="settings-section">
+      <div class="settings-section legal-page-content">
         <div class="about-section">
-          ${GUIDE_CONTENT}
+          ${content}
         </div>
-        <button class="toggle-btn" onclick="goToPage(${STATE.currentPage})">🔙 Kuran'a Dön</button>
+
+        <button
+          type="button"
+          class="toggle-btn"
+          data-action="return-quran"
+        >
+          ← Kuran'a Dön
+        </button>
       </div>
-    </div>`;
+    </div>
+  `;
+
+  window.scrollTo({
+    top: 0,
+    behavior: 'auto'
+  });
 }
 
-/* =========================
-   Global export
-========================= */
-window.goToPage = goToPage;
-window.goToSura = goToSura;
-window.goToVerse = goToVerse;
-window.toggleMeal = toggleMeal;
-window.toggleNote = toggleNote;
-window.toggleNoteInput = toggleNoteInput;
-window.saveNote = saveNote;
-window.cancelNote = cancelNote;
-window.displayGuidePage = displayGuidePage;
+function displayPrivacyPage() {
+  displayLegalContent(
+    'Gizlilik Politikası',
+    PRIVACY_CONTENT
+  );
+}
+
+function displayLicensesPage() {
+  displayLegalContent(
+    'Lisanslar ve Kaynaklar',
+    LICENSES_CONTENT
+  );
+}

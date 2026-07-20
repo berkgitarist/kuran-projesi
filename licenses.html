@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lisanslar, Kaynaklar ve Veri Kökeni - Kuran Teyit</title>
+  <meta name="robots" content="index,follow">
+  <style>
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      background: #0f172a;
+      color: #f1f5f9;
+      line-height: 1.65;
+    }
+    main { width: min(920px, calc(100% - 28px)); margin: 0 auto; padding: 28px 0 48px; }
+    header { text-align: center; margin-bottom: 20px; }
+    .logo { width: 108px; height: auto; border-radius: 22px; }
+    article { background: #1e293b; border: 1px solid #334155; border-radius: 16px; padding: clamp(18px, 4vw, 34px); }
+    h1, h2, h3 { line-height: 1.3; }
+    h1 { margin-top: 0; }
+    h2 { margin-top: 30px; }
+    a { color: #93c5fd; overflow-wrap: anywhere; }
+    code { background: #111827; color: #e2e8f0; padding: 2px 6px; border-radius: 6px; overflow-wrap: anywhere; }
+    .notice { padding: 12px 14px; border: 1px solid #475569; border-left: 4px solid #3b82f6; border-radius: 12px; background: #111827; }
+    .warning { border-left-color: #f59e0b; }
+    footer { margin-top: 20px; color: #cbd5e1; text-align: center; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <img src="assets/images/logo-main.png" alt="Kuran Teyit logosu" class="logo" width="108" height="108">
+    </header>
+    <article>
+      <h1>Lisanslar, Kaynaklar ve Veri Kökeni</h1>
+      <p><strong>Son güncelleme:</strong> 19 Temmuz 2026</p>
+
+      <p class="notice">
+        <strong>Bağımsızlık bildirimi:</strong>
+        Kuran Teyit bağımsız bir araştırma uygulamasıdır. QuranTFT,
+        SubmitterTech, Açık Kuran, Kuran Rehberi, International Community of
+        Submitters, Masjid Tucson veya uygulamada adı geçen diğer kaynak
+        sağlayıcılarının resmî uygulaması değildir.
+      </p>
+
+      <p class="notice warning">
+        <strong>Önemli hak notu:</strong>
+        Bu sayfa kaynak kökenini ve atıfları belgeler. Bir içeriğin herkese
+        açık GitHub deposunda bulunması veya burada bağlantısının verilmesi,
+        tek başına yeniden dağıtım lisansı ya da yazılı kullanım izni
+        oluşturmaz. Çeviri ve veri hakları ayrıca doğrulanmalıdır.
+      </p>
+
+      <h2>1. QuranTFT / SubmitterTech</h2>
+      <p>Ana İngilizce/Türkçe çeviri verileri, Arapça karşılaştırma verilerinin bir bölümü, konu haritaları ve ek içeriklerde bu kaynaklardan yararlanılmıştır.</p>
+      <ul>
+        <li><a href="https://github.com/SubmitterTech/quran-tft/tree/main/app/src/assets/translations/tr" target="_blank" rel="noopener noreferrer">Türkçe çeviri veri klasörü</a></li>
+        <li><a href="https://github.com/SubmitterTech/quran-tft/tree/main/app/src" target="_blank" rel="noopener noreferrer">QuranTFT uygulama kaynak klasörü</a></li>
+        <li><a href="https://qurantft.com/" target="_blank" rel="noopener noreferrer">qurantft.com</a></li>
+      </ul>
+      <p><strong>İlgili dosyalar:</strong></p>
+      <ul>
+        <li><code>data/qurantft.json</code></li>
+        <li><code>data/quran_tr.json</code></li>
+        <li><code>data/mealler/quran_arapca2.json</code></li>
+        <li><code>data/map.json</code> ve <code>data/map_tr.json</code></li>
+        <li><code>data/appendices.json</code> ve <code>data/appendices_tr.json</code></li>
+      </ul>
+
+      <h2>2. Authorized English Translation</h2>
+      <p>İngilizce ana referans ve ilişkili dipnotlarda Rashad Khalifa'nın <strong>Authorized English Translation</strong> çalışması temel referanslardan biridir. Yayın ve yeniden dağıtım koşulları ayrıca doğrulanmalıdır.</p>
+
+      <h2>3. Açık Kuran</h2>
+      <p>Erhan Aktaş Türkçe/Arapça çeviri verileri ile kelime çevirisi ve kök verilerinde Açık Kuran çalışmalarından yararlanılmıştır.</p>
+      <ul>
+        <li><a href="https://github.com/acik-kuran" target="_blank" rel="noopener noreferrer">Açık Kuran GitHub organizasyonu</a></li>
+        <li><a href="https://acikkuran.com/" target="_blank" rel="noopener noreferrer">acikkuran.com</a></li>
+      </ul>
+      <p><strong>İlgili dosyalar:</strong></p>
+      <ul>
+        <li><code>data/mealler/kuran_erhan_aktas.json</code></li>
+        <li><code>data/word-translations.json</code></li>
+      </ul>
+
+      <h2>4. Kuran Rehberi çeviri koleksiyonu</h2>
+      <p><a href="https://github.com/eyupipler/Kuran-Rehberi/tree/main/data/translations" target="_blank" rel="noopener noreferrer">eyupipler/Kuran-Rehberi — data/translations</a></p>
+      <p>Çeşitli karşılaştırmalı meal dosyaları bu koleksiyondan alınmış veya bu koleksiyon üzerinden düzenlenmiştir. Proje kodunun lisansı ile üçüncü taraf çeviri metinlerinin hakları aynı olmayabilir.</p>
+      <p><strong>İlgili dosya grubu:</strong> <code>data/mealler/*.json</code></p>
+
+      <h2>5. Yapay zekâ destekli çeviri alanı</h2>
+      <p><code>data/yapayzekaceviri.json</code> deneysel, yapay zekâ destekli bir çalışma alanıdır; resmî meal, dinî hüküm veya fetva olarak sunulmaz.</p>
+
+      <h2>6. Mealler ve çevirmen hakları</h2>
+      <p>Meal metinlerinin hakları ilgili çevirmenlere, mirasçılarına ve/veya yayıncılara ait olabilir. Yeniden dağıtım lisansı, açık lisans koşulları veya yazılı izin ayrıca doğrulanmalıdır. Kaynak gösterimi gerekli iznin yerine geçmez.</p>
+
+      <h2>7. Arapça kıraat</h2>
+      <ul>
+        <li><strong>Okuyucu:</strong> Mishary Rashid Alafasy</li>
+        <li><strong>Hizmet:</strong> Al Quran Cloud / Islamic Network CDN</li>
+        <li><strong>İstek adresi:</strong> <code>https://cdn.islamic.network/</code></li>
+        <li>Ses kayıtlarının hakları ilgili okuyucu, yayıncı ve hak sahiplerine aittir.</li>
+      </ul>
+
+      <h2>8. Sürüm kayıtları</h2>
+      <ul>
+        <li>Kaynak depo ve tam dosya yolu</li>
+        <li>Commit kimliği veya sürüm etiketi</li>
+        <li>İndirme tarihi</li>
+        <li>LICENSE, NOTICE ve README dosyalarının kopyası</li>
+        <li>Yapılan değişikliklerin açıklaması</li>
+        <li>Gerekliyse yazılı kullanım izni</li>
+      </ul>
+
+      <h2>9. Geliştirici ve iletişim</h2>
+      <p>Kuran Teyit uygulamasının özgün arayüz, yerel not sistemi, arama, analiz ve uygulama kodu geliştirmeleri: <strong>Berk KÖKSAL</strong>.</p>
+      <p>Hak, kaynak düzeltmesi veya lisans bildirimi: <strong>berkgitarist@gmail.com</strong></p>
+    </article>
+    <footer>Kuran Teyit - Bağımsız Kuran araştırma uygulaması</footer>
+  </main>
+</body>
+</html>

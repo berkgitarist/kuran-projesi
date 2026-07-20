@@ -1,0 +1,76 @@
+KURAN TEYİT — THIRD-PARTY DATA AND SOURCE NOTICES
+Last updated: 19 July 2026
+
+IMPORTANT
+This file records source provenance and attribution. Public availability on
+GitHub and attribution alone do not constitute a redistribution license or
+written permission. Verify every upstream LICENSE, NOTICE, README, translator,
+publisher and data-owner condition before distribution on Google Play.
+
+1. QURANTFT / SUBMITTERTECH
+Source:
+https://github.com/SubmitterTech/quran-tft/tree/main/app/src/assets/translations/tr
+https://github.com/SubmitterTech/quran-tft/tree/main/app/src
+https://qurantft.com/
+
+Related packaged files:
+- data/qurantft.json
+- data/quran_tr.json
+- data/mealler/quran_arapca2.json
+- data/map.json
+- data/map_tr.json
+- data/appendices.json
+- data/appendices_tr.json
+
+2. AUTHORIZED ENGLISH TRANSLATION
+The Authorized English Translation by Rashad Khalifa is used as a principal
+English reference and for related footnotes. Publication and redistribution
+conditions must be verified separately.
+
+3. ACIK KURAN
+Source:
+https://github.com/acik-kuran
+https://acikkuran.com/
+
+Related packaged files:
+- data/mealler/kuran_erhan_aktas.json
+- data/word-translations.json
+
+4. KURAN REHBERI TRANSLATION COLLECTION
+Source:
+https://github.com/eyupipler/Kuran-Rehberi/tree/main/data/translations
+
+Related packaged files:
+- data/mealler/*.json comparison translations
+
+The repository's project-code license may not cover every third-party
+translation text. Translator and publisher rights must be checked separately.
+
+5. AI-ASSISTED TRANSLATION AREA
+- data/yapayzekaceviri.json
+This is an experimental aid and is not presented as an official translation,
+religious ruling, or fatwa.
+
+6. ARABIC RECITATION
+Reciter: Mishary Rashid Alafasy
+Service: Al Quran Cloud / Islamic Network CDN
+Network host: https://cdn.islamic.network/
+Audio rights remain with the relevant reciter, publisher and rights holders.
+
+7. INDEPENDENCE
+Kuran Teyit is an independent research application. It is not an official app
+of QuranTFT, SubmitterTech, Acik Kuran, Kuran Rehberi, International Community
+of Submitters, Masjid Tucson, or any other referenced provider.
+
+8. DEVELOPER / RIGHTS CONTACT
+Original interface, local notes system, search, analysis and application code:
+Berk KOKSAL
+Rights, attribution and licensing contact: berkgitarist@gmail.com
+
+RELEASE RECORD CHECKLIST
+- Exact source repository and file path
+- Commit SHA or release tag
+- Download date
+- Copy of upstream LICENSE / NOTICE / README
+- Description of local modifications
+- Written permission where an open redistribution license is absent

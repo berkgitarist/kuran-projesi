@@ -600,9 +600,45 @@ function setupEventListeners() {
       goToPage(nextPage);
     });
 
-  document
-    .getElementById('menuToggle')
-    ?.addEventListener('click', toggleSidebar);
+const menuToggleButton = document.getElementById('menuToggle');
+
+let logoClickTimer = null;
+let logoClickCount = 0;
+
+menuToggleButton?.addEventListener('click', () => {
+  logoClickCount += 1;
+
+  if (logoClickCount === 1) {
+    logoClickTimer = setTimeout(() => {
+      logoClickCount = 0;
+      logoClickTimer = null;
+
+      toggleSidebar();
+    }, 280);
+
+    return;
+  }
+
+  clearTimeout(logoClickTimer);
+
+  logoClickTimer = null;
+  logoClickCount = 0;
+
+  closeSidebar();
+
+  activeSearchQuery = '';
+
+  if (DOM.searchInput) {
+    DOM.searchInput.value = '';
+  }
+
+  if (DOM.autocomplete) {
+    DOM.autocomplete.innerHTML = '';
+    DOM.autocomplete.style.display = 'none';
+  }
+
+  goToVerse(1, 1);
+});
 
   document
     .getElementById('closeMenu')
@@ -1266,9 +1302,58 @@ async function _applyHighlightAndScroll(suraNum, verseNum, query, openMeal, meal
     return;
   }
 
-  const headerEl = document.querySelector('.header-bar');
-  const headerHeight = headerEl ? headerEl.offsetHeight : 0;
-  const top = targetElement.getBoundingClientRect().top + window.pageYOffset - headerHeight - 8;
+const headerEl = document.querySelector('.header-bar');
+const headerHeight = headerEl ? headerEl.offsetHeight : 0;
+
+let scrollTarget = targetElement;
+
+/*
+  Ayetin hemen üzerinde pasaj başlığı varsa
+  İngilizce başlıktan başlayarak ekranda göster.
+*/
+let previousElement = targetElement.previousElementSibling;
+let passageTitleTarget = null;
+
+while (
+  previousElement &&
+  (
+    previousElement.classList.contains('passage-title') ||
+    previousElement.classList.contains('passage-title-tr')
+  )
+) {
+  passageTitleTarget = previousElement;
+  previousElement = previousElement.previousElementSibling;
+}
+
+if (passageTitleTarget) {
+  scrollTarget = passageTitleTarget;
+} else if (String(verseNum) === '1') {
+  const suraContainer = targetElement.closest('.sura');
+
+  if (String(suraNum) === '1') {
+    scrollTarget =
+      document.querySelector('.page-header') ||
+      suraContainer ||
+      targetElement;
+  } else {
+    scrollTarget =
+      suraContainer ||
+      targetElement;
+  }
+}
+
+const top = Math.max(
+  0,
+  scrollTarget.getBoundingClientRect().top +
+    window.pageYOffset -
+    headerHeight -
+    8
+);
+
+window.scrollTo({
+  top,
+  behavior: 'smooth'
+});
 
   window.scrollTo({ top, behavior: 'smooth' });
 
@@ -4486,13 +4571,28 @@ function getSuraNameVariants(fullName) {
   const source = String(fullName || '');
   const variants = new Set();
 
+  const nameWithoutNumber = source.replace(
+    /^\s*\d+\s*[:.\-]?\s*/,
+    ''
+  );
+
   variants.add(
     normalizeSuraLookup(source)
   );
 
   variants.add(
+    normalizeSuraLookup(nameWithoutNumber)
+  );
+
+  variants.add(
     normalizeSuraLookup(
       source.replace(/\([^)]*\)/g, ' ')
+    )
+  );
+
+  variants.add(
+    normalizeSuraLookup(
+      nameWithoutNumber.replace(/\([^)]*\)/g, ' ')
     )
   );
 

@@ -4789,3 +4789,35 @@ ALT SAYFA GEÇİŞ BUTONLARI
     white-space: nowrap;
   }
 }
+@media (min-width: 769px) {
+  .sura .verse {
+    padding-bottom: 4px !important;
+  }
+
+  .sura .verse .buttons {
+    margin-bottom: 0 !important;
+  }
+}
+@media (min-width: 769px) {
+  .verse-header .verse-number,
+  .verse-number {
+    height: 34px !important;
+    min-height: 34px !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    line-height: 1 !important;
+  }
+
+  .verse-header {
+    min-height: 34px;
+  }
+}
+@media (min-width: 769px) {
+  .sura > .verse:first-child {
+    padding-top: 6px !important;
+  }
+
+  .sura > .verse:first-child .verse-header .verse-number {
+    top: 0 !important;
+  }
+}

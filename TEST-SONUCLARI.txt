@@ -1,0 +1,29 @@
+KURAN TEYIT V41 - TEST SONUCLARI
+Tarih: 20 Temmuz 2026
+
+SONUC: 17 / 17 otomatik test basarili
+
+Kontrol edilenler:
+- Ana script.js JavaScript sozdizimi
+- guide.js JavaScript sozdizimi
+- Service Worker JavaScript sozdizimi
+- ES modul dosyalarinin sozdizimi
+- Ayet referansi genisletme
+- Turkce metin normalizasyonu
+- Arama benzerlik puani
+- Meal verisi normalizasyonu
+- URL / ayet / analiz / sayfa rotalari
+- Yerel not dogrulamasi
+- Dinamik HTML icinde inline onclick/ontoggle bulunmamasi
+- Ana uygulamanin ES modul ve PWA manifest baglantilari
+- guide.html dosyasinin bulunmasi ve temel bolumleri
+- Ana uygulamadaki kilavuz dugmesinin guide.html sayfasina yonlendirmesi
+- guide.js tema, arama ve geri donus davranisi
+- Service Worker icinde guide.html ve guide.js onbellegi
+- index.html ve guide.html icinde tekrar eden id bulunmamasi
+- CSS suslu parantez dengesi: 751 / 751
+- Yerel HTTP testi: index.html, guide.html, guide.js ve style.css icin HTTP 200
+
+Bilinen sinir:
+- Tam Android WebView / Capacitor calisma testi bu ortamda yapilamadi.
+- Gercek cihazda temiz kurulum, geri hareketi, cevrimdisi kullanim ve harici ses testi yapilmalidir.

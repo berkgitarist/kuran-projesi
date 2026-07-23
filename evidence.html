@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
+
+  <title>Ayet Araştırma | Kuran Teyit</title>
+
+  <link
+    rel="icon"
+    type="image/png"
+    href="./assets/images/logo-main.png"
+  >
+
+  <meta
+    name="theme-color"
+    content="#0f172a"
+  >
+
+  <link
+    rel="stylesheet"
+    href="./css/style.css?v=50"
+  >
+
+  <link
+    rel="stylesheet"
+    href="./css/evidence.css?v=50"
+  >
+</head>
+
+<body class="dark-theme evidence-page">
+  <header class="evidence-header">
+    <a
+      href="./index.html"
+      class="evidence-home-button"
+      aria-label="Kuran Teyit ana sayfasına dön"
+    >
+      ← Kuran Teyit
+    </a>
+
+    <div class="evidence-header-title">
+      <img
+        src="./assets/images/logo-icon.png"
+        alt="Kuran Teyit logosu"
+        width="42"
+        height="42"
+      >
+
+      <div>
+        <h1>Ayet Araştırma</h1>
+
+        <p>
+          Numbered Verse Evidence Graph v2.1
+        </p>
+      </div>
+    </div>
+  </header>
+
+  <main class="evidence-main">
+    <section class="evidence-source-notice">
+      <strong>Kaynak sınırı:</strong>
+
+      İngilizce ve Arapça ayet metinleri, arama indeksleri ve
+      bağlantılar Numbered Verse Evidence Graph v2.1 veri setinden
+      alınır. Türkçe ayet metinleri mevcut Kuran Teyit
+      <code>quran_tr.json</code> verisiyle eşleştirilir.
+      İnternet, hadis, tefsir veya haricî dinî kaynak kullanılmaz.
+    </section>
+
+    <section class="evidence-search-panel">
+      <form id="evidenceSearchForm">
+        <label for="evidenceSearchInput">
+          Ayet numarası, İngilizce kelime veya kelime kalıbı
+        </label>
+
+        <div class="evidence-search-row">
+          <input
+            id="evidenceSearchInput"
+            type="search"
+            placeholder="Örnek: 2:62, righteous, those who believe"
+            autocomplete="off"
+            spellcheck="false"
+          >
+
+          <button type="submit">
+            Ara
+          </button>
+        </div>
+      </form>
+
+      <div class="evidence-search-examples">
+        <button
+          type="button"
+          data-example="2:62"
+        >
+          2:62
+        </button>
+
+        <button
+          type="button"
+          data-example="righteous"
+        >
+          righteous
+        </button>
+
+        <button
+          type="button"
+          data-example="those who believe"
+        >
+          those who believe
+        </button>
+      </div>
+    </section>
+
+    <section
+      id="evidenceStatus"
+      class="evidence-status"
+      aria-live="polite"
+    >
+      Veri hazırlanıyor...
+    </section>
+
+    <section
+      id="evidenceSummary"
+      class="evidence-summary hidden"
+    ></section>
+
+    <section
+      id="evidenceResults"
+      class="evidence-results"
+    ></section>
+
+    <nav
+      id="evidencePagination"
+      class="evidence-pagination hidden"
+      aria-label="Arama sonuçları sayfaları"
+    >
+      <button
+        id="evidencePreviousPage"
+        type="button"
+      >
+        ← Önceki
+      </button>
+
+      <span id="evidencePageInfo"></span>
+
+      <button
+        id="evidenceNextPage"
+        type="button"
+      >
+        Sonraki →
+      </button>
+    </nav>
+  </main>
+
+  <script
+    type="module"
+    src="./js/evidence.js?v=50"
+  ></script>
+</body>
+</html>

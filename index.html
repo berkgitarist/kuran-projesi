@@ -369,6 +369,40 @@
       }
     }
   </style>
+
+  <style id="analysisCopyStyles">
+    .analysis-copy-section {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      padding: 18px 0 8px;
+    }
+
+    .analysis-copy-btn {
+      min-width: 210px;
+      padding: 11px 24px;
+      font-weight: 800;
+    }
+
+    .analysis-copy-btn:disabled {
+      opacity: 0.68;
+      cursor: wait;
+      transform: none;
+    }
+
+    .analysis-copy-status {
+      margin: 0;
+      color: var(--light-text);
+      font-size: 0.88rem;
+      line-height: 1.4;
+      text-align: center;
+    }
+
+    .analysis-copy-status.error {
+      color: #fca5a5;
+    }
+  </style>
 </head>
 
 <body class="dark-theme">
@@ -657,7 +691,7 @@
   <!-- Uygulama -->
   <script
   type="module"
-  src="./js/script.js?v=50"
+  src="./js/script.js?v=51"
 ></script>
 </body>
 </html>

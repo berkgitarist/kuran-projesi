@@ -174,6 +174,11 @@ const TOPIC_INDEX = {
   en: new Map()
 };
 
+const EVIDENCE_COPY_CACHE = {
+  dataRoot: './data/evidence',
+  suraPromises: new Map()
+};
+
 const NAVIGATION_STATE = {
   applyingHistory: false,
   initialized: false,
@@ -2397,6 +2402,622 @@ function buildAnalysisContext(suraNum, verseNum) {
   };
 }
 
+function compareEvidenceVerseIds(left, right) {
+  const [leftSura, leftVerse] = String(left).split(':').map(Number);
+  const [rightSura, rightVerse] = String(right).split(':').map(Number);
+
+  if (leftSura !== rightSura) return leftSura - rightSura;
+  return leftVerse - rightVerse;
+}
+
+function collectEvidenceVerseIds(value) {
+  const result = new Set();
+
+  function visit(currentValue, depth = 0) {
+    if (
+      currentValue === null ||
+      currentValue === undefined ||
+      depth > 8
+    ) {
+      return;
+    }
+
+    if (typeof currentValue === 'string') {
+      const matches = currentValue.match(/\b\d{1,3}:\d{1,3}\b/g);
+      matches?.forEach((match) => result.add(match));
+      return;
+    }
+
+    if (Array.isArray(currentValue)) {
+      currentValue.forEach((item) => visit(item, depth + 1));
+      return;
+    }
+
+    if (typeof currentValue === 'object') {
+      Object.entries(currentValue).forEach(([key, item]) => {
+        if (/^\d{1,3}:\d{1,3}$/.test(key)) result.add(key);
+        visit(item, depth + 1);
+      });
+    }
+  }
+
+  visit(value);
+  return [...result].sort(compareEvidenceVerseIds);
+}
+
+async function loadEvidenceSuraForCopy(suraNumber) {
+  const normalizedSura = String(Number(suraNumber));
+
+  if (!/^\d{1,3}$/.test(normalizedSura) || normalizedSura === '0') {
+    throw new Error(`Geçersiz sure numarası: ${suraNumber}`);
+  }
+
+  if (!EVIDENCE_COPY_CACHE.suraPromises.has(normalizedSura)) {
+    const loadPromise = fetch(
+      `${EVIDENCE_COPY_CACHE.dataRoot}/suras/${normalizedSura}.json`,
+      { cache: 'no-cache' }
+    )
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(
+            `${normalizedSura}. sure araştırma verisi yüklenemedi (${response.status})`
+          );
+        }
+
+        return response.json();
+      })
+      .catch((error) => {
+        EVIDENCE_COPY_CACHE.suraPromises.delete(normalizedSura);
+        throw error;
+      });
+
+    EVIDENCE_COPY_CACHE.suraPromises.set(normalizedSura, loadPromise);
+  }
+
+  return EVIDENCE_COPY_CACHE.suraPromises.get(normalizedSura);
+}
+
+async function loadEvidenceVerseForCopy(verseId) {
+  const match = String(verseId || '').match(/^(\d{1,3}):(\d{1,3})$/);
+  if (!match) return null;
+
+  const suraNumber = String(Number(match[1]));
+  const verseNumber = String(Number(match[2]));
+  const suraData = await loadEvidenceSuraForCopy(suraNumber);
+
+  return suraData?.verses?.[verseNumber] || null;
+}
+
+function getEvidenceCopyGroups(verse) {
+  if (!verse || typeof verse !== 'object') return [];
+
+  const sourceVerseId = verse.id || `${verse.sura}:${verse.verse}`;
+  const groups = [];
+  const uniqueIds = (ids) => ids
+    .filter(Boolean)
+    .filter((verseId) => verseId !== sourceVerseId)
+    .filter((verseId, index, array) => array.indexOf(verseId) === index);
+
+  const previousAndNext = uniqueIds([
+    verse.previous_verse,
+    verse.next_verse
+  ]);
+
+  if (previousAndNext.length) {
+    groups.push({
+      title: 'Önceki ve sonraki ayet',
+      ids: previousAndNext,
+      experimental: false
+    });
+  }
+
+  const lexicalIds = uniqueIds(
+    collectEvidenceVerseIds(verse.lexical_neighbors)
+  ).slice(0, 10);
+
+  if (lexicalIds.length) {
+    groups.push({
+      title: 'Sözcüksel bağlantılar',
+      ids: lexicalIds,
+      experimental: false
+    });
+  }
+
+  const clauseIds = uniqueIds(
+    collectEvidenceVerseIds(verse.similar_phrase_patterns)
+  ).slice(0, 10);
+
+  if (clauseIds.length) {
+    groups.push({
+      title: 'Benzer cümlecik kalıpları',
+      ids: clauseIds,
+      experimental: false
+    });
+  }
+
+  const themeIds = uniqueIds([
+    ...collectEvidenceVerseIds(verse.filtered_theme_neighbors),
+    ...collectEvidenceVerseIds(verse.topic_candidates)
+  ]).slice(0, 10);
+
+  if (themeIds.length) {
+    groups.push({
+      title: 'Deneysel tema bağlantıları',
+      ids: themeIds,
+      experimental: true
+    });
+  }
+
+  return groups;
+}
+
+async function loadEvidenceCopyContext(verseId) {
+  const sourceVerse = await loadEvidenceVerseForCopy(verseId);
+
+  if (!sourceVerse) {
+    throw new Error(`${verseId} için ayet araştırma verisi bulunamadı.`);
+  }
+
+  const groups = getEvidenceCopyGroups(sourceVerse);
+  const relatedIds = [
+    ...new Set(groups.flatMap((group) => group.ids))
+  ];
+
+  const relatedEntries = await Promise.all(
+    relatedIds.map(async (relatedVerseId) => {
+      try {
+        return [
+          relatedVerseId,
+          await loadEvidenceVerseForCopy(relatedVerseId)
+        ];
+      } catch (error) {
+        console.warn(
+          `${relatedVerseId} araştırma bağlantısı yüklenemedi:`,
+          error
+        );
+
+        return [relatedVerseId, null];
+      }
+    })
+  );
+
+  const relatedVerseMap = new Map(relatedEntries);
+
+  return {
+    sourceVerse,
+    groups: groups.map((group) => ({
+      ...group,
+      verses: group.ids.map((relatedVerseId) => ({
+        verseId: relatedVerseId,
+        verse: relatedVerseMap.get(relatedVerseId) || null
+      }))
+    }))
+  };
+}
+
+function getCopyValue(value, fallback = '—') {
+  const normalized = String(value ?? '').trim();
+  return normalized || fallback;
+}
+
+function buildTopicCopyItems(topics) {
+  return topics.map((topic) => ({
+    title: getCopyValue(topic.title, 'Başlıksız konu'),
+    verses: topic.refs.slice(0, 12).map((ref) => {
+      const [sura, verse] = String(ref).split(':');
+      const verseData = findVerseData(sura, verse);
+
+      return {
+        verseId: ref,
+        turkish: getCopyValue(
+          verseData.turkish,
+          'Türkçe çeviri bulunamadı.'
+        )
+      };
+    })
+  }));
+}
+
+function buildAnalysisCopyPayload(context, evidenceContext, evidenceError = null) {
+  const title = `Ayet Analizi ${context.mainVerse.verseId}`;
+  const turkishTopics = buildTopicCopyItems(context.topics.tr);
+  const englishTopics = buildTopicCopyItems(context.topics.en);
+  const plainLines = [
+    title.toLocaleUpperCase('tr-TR'),
+    '',
+    'ANA AYET',
+    `Ayet: ${context.mainVerse.verseId}`,
+    `Arapça: ${getCopyValue(context.mainVerse.arabic)}`,
+    `TR: ${getCopyValue(context.mainVerse.turkish)}`,
+    `EN: ${getCopyValue(context.mainVerse.english)}`,
+    `Okunuş: ${getCopyValue(context.mainVerse.transliteration)}`,
+    '',
+    'İLGİLİ KONULAR',
+    '',
+    'TÜRKÇE KONULAR'
+  ];
+
+  const appendPlainTopics = (topics, emptyText) => {
+    if (!topics.length) {
+      plainLines.push(emptyText);
+      return;
+    }
+
+    topics.forEach((topic) => {
+      plainLines.push(topic.title);
+      topic.verses.forEach((verse) => {
+        plainLines.push(`  ${verse.verseId} — ${verse.turkish}`);
+      });
+      plainLines.push('');
+    });
+  };
+
+  appendPlainTopics(turkishTopics, 'Konu bulunamadı.');
+  plainLines.push('İNGİLİZCE KONULAR');
+  appendPlainTopics(englishTopics, 'Topic bulunamadı.');
+  plainLines.push('AYET ARAŞTIRMA SONUÇLARI');
+  plainLines.push(`Arama: ${context.mainVerse.verseId}`);
+  plainLines.push('Arama türü: Ayet numarası');
+  plainLines.push(`Bulunan ayet: ${evidenceContext ? 1 : 0}`);
+  plainLines.push('');
+
+  const baseStyle = [
+    'font-family:Arial,Helvetica,sans-serif',
+    'font-size:11pt',
+    'line-height:1.5',
+    'color:#111827',
+    'max-width:900px'
+  ].join(';');
+  const sectionHeadingStyle = [
+    'margin:24px 0 10px',
+    'padding-bottom:5px',
+    'border-bottom:2px solid #2563eb',
+    'font-size:16pt',
+    'color:#1e3a8a'
+  ].join(';');
+  const subHeadingStyle = [
+    'margin:16px 0 8px',
+    'font-size:13pt',
+    'color:#1f2937'
+  ].join(';');
+  const cardStyle = [
+    'margin:0 0 14px',
+    'padding:12px 14px',
+    'border:1px solid #94a3b8',
+    'border-radius:6px',
+    'background:#f8fafc'
+  ].join(';');
+
+  const renderHtmlTopics = (topics, emptyText) => {
+    if (!topics.length) return `<p>${escapeHtml(emptyText)}</p>`;
+
+    return topics.map((topic) => `
+      <div style="${cardStyle}">
+        <p style="margin:0 0 7px;"><strong>${escapeHtml(topic.title)}</strong></p>
+        <ul style="margin:0;padding-left:22px;">
+          ${topic.verses.map((verse) => `
+            <li style="margin:3px 0;">
+              <strong>${escapeHtml(verse.verseId)}</strong>
+              — ${escapeHtml(verse.turkish)}
+            </li>
+          `).join('')}
+        </ul>
+      </div>
+    `).join('');
+  };
+
+  let html = `
+    <div style="${baseStyle}">
+      <h1 style="margin:0 0 18px;font-size:20pt;color:#0f172a;">
+        ${escapeHtml(title)}
+      </h1>
+
+      <h2 style="${sectionHeadingStyle}">Ana Ayet</h2>
+      <div style="${cardStyle}">
+        <p style="margin:0 0 10px;"><strong>Ayet:</strong> ${escapeHtml(context.mainVerse.verseId)}</p>
+        <p dir="rtl" style="margin:0 0 12px;text-align:right;font-size:18pt;line-height:1.9;font-family:'Traditional Arabic','Arial',sans-serif;">
+          ${escapeHtml(getCopyValue(context.mainVerse.arabic))}
+        </p>
+        <p style="margin:6px 0;"><strong>TR:</strong> ${escapeHtml(getCopyValue(context.mainVerse.turkish))}</p>
+        <p style="margin:6px 0;"><strong>EN:</strong> ${escapeHtml(getCopyValue(context.mainVerse.english))}</p>
+        <p style="margin:6px 0;"><strong>Okunuş:</strong> ${escapeHtml(getCopyValue(context.mainVerse.transliteration))}</p>
+      </div>
+
+      <h2 style="${sectionHeadingStyle}">İlgili Konular</h2>
+      <h3 style="${subHeadingStyle}">Türkçe Konular</h3>
+      ${renderHtmlTopics(turkishTopics, 'Konu bulunamadı.')}
+      <h3 style="${subHeadingStyle}">İngilizce Konular</h3>
+      ${renderHtmlTopics(englishTopics, 'Topic bulunamadı.')}
+
+      <h2 style="${sectionHeadingStyle}">Ayet Araştırma Sonuçları</h2>
+      <div style="${cardStyle}">
+        <p style="margin:4px 0;"><strong>Arama:</strong> ${escapeHtml(context.mainVerse.verseId)}</p>
+        <p style="margin:4px 0;"><strong>Arama türü:</strong> Ayet numarası</p>
+        <p style="margin:4px 0;"><strong>Bulunan ayet:</strong> ${evidenceContext ? '1' : '0'}</p>
+      </div>
+  `;
+
+  if (evidenceContext) {
+    const sourceVerse = evidenceContext.sourceVerse;
+    const sourceVerseId = sourceVerse.id ||
+      `${sourceVerse.sura}:${sourceVerse.verse}`;
+
+    plainLines.push('KAYNAK AYET');
+    plainLines.push(sourceVerseId);
+    plainLines.push(`Arapça: ${getCopyValue(sourceVerse.text_ar)}`);
+    plainLines.push(`English: ${getCopyValue(sourceVerse.text_en)}`);
+    plainLines.push(`Türkçe: ${getCopyValue(sourceVerse.text_tr)}`);
+    plainLines.push('');
+
+    html += `
+      <h3 style="${subHeadingStyle}">Kaynak Ayet — ${escapeHtml(sourceVerseId)}</h3>
+      <div style="${cardStyle}">
+        <p dir="rtl" style="margin:0 0 12px;text-align:right;font-size:18pt;line-height:1.9;font-family:'Traditional Arabic','Arial',sans-serif;">
+          ${escapeHtml(getCopyValue(sourceVerse.text_ar))}
+        </p>
+        <p style="margin:6px 0;"><strong>English:</strong> ${escapeHtml(getCopyValue(sourceVerse.text_en))}</p>
+        <p style="margin:6px 0;"><strong>Türkçe:</strong> ${escapeHtml(getCopyValue(sourceVerse.text_tr))}</p>
+      </div>
+    `;
+
+    evidenceContext.groups.forEach((group) => {
+      plainLines.push(group.title.toLocaleUpperCase('tr-TR'));
+
+      group.verses.forEach(({ verseId, verse }) => {
+        plainLines.push(
+          `${verseId} — ${getCopyValue(
+            verse?.text_tr,
+            'Türkçe çeviri bulunamadı.'
+          )}`
+        );
+      });
+
+      if (group.experimental) {
+        plainLines.push(
+          'Not: Deneysel tema bağlantıları istatistiksel bağlantı adaylarıdır; kesin hüküm veya kesin anlam kanıtı değildir.'
+        );
+      }
+
+      plainLines.push('');
+
+      html += `
+        <h3 style="${subHeadingStyle}">${escapeHtml(group.title)}</h3>
+        <div style="${cardStyle}">
+          <ul style="margin:0;padding-left:22px;">
+            ${group.verses.map(({ verseId, verse }) => `
+              <li style="margin:5px 0;">
+                <strong>${escapeHtml(verseId)}</strong>
+                — ${escapeHtml(getCopyValue(
+                  verse?.text_tr,
+                  'Türkçe çeviri bulunamadı.'
+                ))}
+              </li>
+            `).join('')}
+          </ul>
+          ${group.experimental
+            ? `
+              <p style="margin:10px 0 0;padding:8px;border-left:4px solid #d97706;background:#fffbeb;">
+                <strong>Not:</strong> Deneysel tema bağlantıları istatistiksel bağlantı adaylarıdır;
+                kesin hüküm veya kesin anlam kanıtı değildir.
+              </p>
+            `
+            : ''}
+        </div>
+      `;
+    });
+  } else {
+    const errorMessage = getCopyValue(
+      evidenceError?.message,
+      'Ayet araştırma verisi yüklenemedi.'
+    );
+
+    plainLines.push(errorMessage);
+    html += `
+      <div style="${cardStyle};border-color:#dc2626;background:#fef2f2;">
+        <strong>Ayet araştırma verisi yüklenemedi:</strong>
+        ${escapeHtml(errorMessage)}
+      </div>
+    `;
+  }
+
+  html += '</div>';
+
+  return {
+    html,
+    text: plainLines.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+  };
+}
+
+function copyHtmlWithSelection(html) {
+  const copyArea = document.createElement('div');
+  copyArea.contentEditable = 'true';
+  copyArea.setAttribute('aria-hidden', 'true');
+  copyArea.style.position = 'fixed';
+  copyArea.style.left = '-100000px';
+  copyArea.style.top = '0';
+  copyArea.style.width = '900px';
+  copyArea.style.opacity = '0';
+  copyArea.innerHTML = html;
+  document.body.appendChild(copyArea);
+
+  const selection = window.getSelection();
+  const range = document.createRange();
+  range.selectNodeContents(copyArea);
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+
+  let copied = false;
+
+  try {
+    copied = document.execCommand('copy');
+  } catch (error) {
+    console.warn('Biçimli kopyalama yöntemi çalışmadı:', error);
+  }
+
+  selection?.removeAllRanges();
+  copyArea.remove();
+  return copied;
+}
+
+function copyPlainTextWithTextarea(text) {
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.setAttribute('aria-hidden', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-100000px';
+  textarea.style.top = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+
+  let copied = false;
+
+  try {
+    copied = document.execCommand('copy');
+  } catch (error) {
+    console.warn('Düz metin kopyalama yöntemi çalışmadı:', error);
+  }
+
+  textarea.remove();
+  return copied;
+}
+
+async function writeAnalysisClipboard(html, text) {
+  if (
+    navigator.clipboard?.write &&
+    typeof ClipboardItem !== 'undefined'
+  ) {
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          'text/html': new Blob([html], { type: 'text/html' }),
+          'text/plain': new Blob([text], { type: 'text/plain' })
+        })
+      ]);
+      return;
+    } catch (error) {
+      console.warn('Modern biçimli pano API kullanılamadı:', error);
+    }
+  }
+
+  if (copyHtmlWithSelection(html)) return;
+
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch (error) {
+      console.warn('Düz metin pano API kullanılamadı:', error);
+    }
+  }
+
+  if (copyPlainTextWithTextarea(text)) return;
+  throw new Error('Tarayıcı panoya erişim izni vermedi.');
+}
+
+function prepareAnalysisCopyButton(panel, context) {
+  const button = panel.querySelector('[data-action="copy-analysis"]');
+  const status = panel.querySelector('.analysis-copy-status');
+
+  panel.analysisCopyState = {
+    ready: false,
+    context,
+    evidenceContext: null,
+    evidenceError: null
+  };
+
+  loadEvidenceCopyContext(context.mainVerse.verseId)
+    .then((evidenceContext) => {
+      if (!panel.isConnected) return;
+
+      panel.analysisCopyState = {
+        ready: true,
+        context,
+        evidenceContext,
+        evidenceError: null
+      };
+
+      if (button) {
+        button.disabled = false;
+        button.textContent = 'Kopyala';
+      }
+
+      if (status) {
+        status.classList.remove('error');
+        status.textContent = 'Word için biçimli kopyalama hazır.';
+      }
+    })
+    .catch((error) => {
+      console.error('Ayet araştırma kopyalama verisi hazırlanamadı:', error);
+      if (!panel.isConnected) return;
+
+      panel.analysisCopyState = {
+        ready: true,
+        context,
+        evidenceContext: null,
+        evidenceError: error
+      };
+
+      if (button) {
+        button.disabled = false;
+        button.textContent = 'Kopyala';
+      }
+
+      if (status) {
+        status.classList.add('error');
+        status.textContent =
+          'Araştırma verisi yüklenemedi; analiz bölümleri yine kopyalanabilir.';
+      }
+    });
+}
+
+async function copyAnalysisPanelContent(panel, button) {
+  const copyState = panel.analysisCopyState;
+
+  if (!copyState?.ready) {
+    showNotification(
+      'Kopyalama verisi henüz hazırlanıyor. Lütfen kısa bir süre bekleyin.',
+      'warning'
+    );
+    return;
+  }
+
+  const originalText = button.textContent;
+  button.disabled = true;
+  button.textContent = 'Kopyalanıyor...';
+
+  try {
+    const payload = buildAnalysisCopyPayload(
+      copyState.context,
+      copyState.evidenceContext,
+      copyState.evidenceError
+    );
+
+    await writeAnalysisClipboard(payload.html, payload.text);
+
+    button.textContent = 'Kopyalandı ✓';
+    showNotification(
+      'Ana ayet, ilgili konular ve ayet araştırma sonuçları Word için kopyalandı.',
+      'success',
+      5000
+    );
+  } catch (error) {
+    console.error('Ayet analizi kopyalanamadı:', error);
+    button.textContent = 'Kopyalanamadı';
+    showNotification(
+      'Kopyalama başarısız oldu. Tarayıcı veya uygulama pano iznini kontrol edin.',
+      'error',
+      6000
+    );
+  } finally {
+    setTimeout(() => {
+      if (!button.isConnected) return;
+      button.disabled = false;
+      button.textContent = originalText || 'Kopyala';
+    }, 1600);
+  }
+}
+
 function flattenMapTopics(mapObj, lang = 'tr') {
   const results = [];
 
@@ -2669,10 +3290,34 @@ async function openAnalysisPanel(suraNum, verseNum, options = {}) {
             `).join('')
           : '<p>Referans ayet bulunamadı.</p>'}
       </div>
+
+      <div class="analysis-copy-section">
+        <button
+          type="button"
+          class="toggle-btn analysis-copy-btn"
+          data-action="copy-analysis"
+          data-sura="${escapeHtml(context.mainVerse.sura)}"
+          data-verse="${escapeHtml(context.mainVerse.verse)}"
+          disabled
+        >Kopyalama verisi hazırlanıyor...</button>
+
+        <p class="analysis-copy-status" role="status" aria-live="polite">
+          Ayet Araştırma sonuçları hazırlanıyor.
+        </p>
+      </div>
     </div>
   `;
 
   panel.addEventListener('click', (event) => {
+    const copyButton = event.target.closest('[data-action="copy-analysis"]');
+
+    if (copyButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      copyAnalysisPanelContent(panel, copyButton);
+      return;
+    }
+
     const target = event.target.closest('.analysis-verse-link');
     if (!target) return;
     openVerseFromAnalysis(target.dataset.sura, target.dataset.verse);
@@ -2682,6 +3327,7 @@ async function openAnalysisPanel(suraNum, verseNum, options = {}) {
 
   document.body.appendChild(panel);
   document.body.classList.add('analysis-open');
+  prepareAnalysisCopyButton(panel, context);
 
   const currentHistoryState = history.state;
   const currentHistoryRoute = currentHistoryState?.route;

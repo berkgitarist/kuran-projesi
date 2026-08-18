@@ -1,86 +1,59 @@
-# 🕌 Kuran Çalışma Uygulaması
+# Kuran Teyit
 
-Firebase entegreli modern Kuran çalışma uygulaması. Ayetler üzerinden not alabilir, notlarınızı Google hesabınızla senkronize edebilirsiniz.
+Kuran Teyit; Kuran metinlerini okuma, karşılaştırma, kelime/ayet araştırması ve kişisel not alma amacıyla geliştirilen web ve Android uygulamasıdır.
 
-## ✨ Özellikler
+## Canlı Site
 
-- 📖 **Kuran Ayetleri**: Arapça, transkripsiyon, İngilizce ve Türkçe çeviriler
-- ✍️ **Not Alma**: Her ayet için detaylı not alma sistemi
-- ☁️ **Cloud Sync**: Google hesabı ile otomatik senkronizasyon
-- 📱 **Responsive**: Mobil ve masaüstü uyumlu tasarım
-- 🔄 **Offline Support**: İnternet olmadığında da çalışır
-- 📊 **İstatistikler**: Not alma istatistikleri ve analiz
-- 🎨 **Modern UI**: Glassmorphism ve modern tasarım
+https://kuranteyit.com
 
-## 🚀 Hızlı Başlangıç
+## Başlıca Özellikler
 
-### 1. Dosyaları İndirin
+- İngilizce ana metin öncelikli Kuran araştırması
+- Türkçe destekli kelime araştırması
+- Virgülle çoklu kelime / kavram araştırması
+- İngilizce, Türkçe ve transliterasyon metinleri
+- Arapça metin karşılaştırmaları
+- Kelime sözlüğü ve bağlamsal sözlük desteği
+- Ayet Analizi
+- Kelime & Ayet Araştırma
+- 38 Ek / Appendix içeriği
+- Biçimli metin destekli Not Al sistemi
+- Sesli okuma
+- Tema seçenekleri
+- PWA / Service Worker desteği
+- Android / Capacitor sürümü
 
-```bash
-git clone https://github.com/kullaniciadi/kuran-calismasi.git
-cd kuran-calismasi
-```
+## Web Yayın Sistemi
 
-### 2. Firebase Projesi Oluşturun
+Web sürümü GitHub üzerinden Cloudflare Workers Static Assets altyapısına otomatik olarak yayınlanır.
 
-1. [Firebase Console](https://console.firebase.google.com/)'a gidin
-2. "Create a project" ile yeni proje oluşturun
-3. Proje adını girin (örn: `kuran-calismasi`)
+Canlı web sürümündeki:
 
-### 3. Firebase Servislerini Aktifleştirin
+`data/quran_tr.json`
 
-#### Authentication
+dosyası build sırasında aşağıdaki açık kaynak depodan alınır:
 
-- Authentication > Get started
-- Sign-in method > Google > Enable
-- Authorized domains'e domain'inizi ekleyin
+`SubmitterTech/quran-tft`
 
-#### Firestore Database
+Kaynak yol:
 
-- Firestore Database > Create database
-- Start in test mode (başlangıç için)
-- Location: `europe-west3` (Türkiye için önerilen)
+`app/src/assets/translations/tr/quran_tr.json`
 
-### 4. Web App Yapılandırması
+Kaynak dosya doğrulanamazsa build durdurulur ve mevcut çalışan sürüm korunur.
 
-1. Project Settings (⚙️) > General
-2. Your apps > Web app (+) tıklayın
-3. App nickname girin
-4. Config object'i kopyalayın
+Ayrı bir Cloudflare Cron Worker, kaynak Türkçe Kuran dosyasını düzenli olarak kontrol eder. Kaynak değişmişse Kuran Teyit yeniden build edilerek güncel dosya otomatik olarak yayınlanır.
 
-### 5. Yapılandırma Dosyasını Güncelleyin
+## Android
 
-`firebase-config.js` dosyasındaki `firebaseConfig` değişkenini güncelleyin:
+Android kaynakları ve imzalama süreçleri web repository'sinden ayrı yönetilir.
 
-```javascript
-const firebaseConfig = {
-  apiKey: "your-actual-api-key",
-  authDomain: "your-project.firebaseapp.com",
-  projectId: "your-project-id",
-  storageBucket: "your-project.appspot.com",
-  messagingSenderId: "123456789012",
-  appId: "your-app-id",
-};
-```
+Keystore, APK/AAB, Android build çıktıları ve diğer hassas dosyalar bu public repository'ye dahil edilmez.
 
-### 6. Firestore Güvenlik Kuralları
+## Lisanslar
 
-Firestore Database > Rules bölümüne şu kuralları ekleyin:
+Üçüncü taraf kaynaklar ve ilgili bildirimler için:
 
-```javascript
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    // Kullanıcılar sadece kendi notlarını görebilir/düzenleyebilir
-    match /notes/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+- `licenses.html`
+- `THIRD_PARTY_NOTICES.txt`
 
-      match /verses/{verseId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
-      }
-    }
-  }
-}
-```
-
-### 7
+dosyalarına bakınız.

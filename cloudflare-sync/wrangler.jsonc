@@ -1,0 +1,11 @@
+{
+  "name": "kuranteyit-quran-sync",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-18",
+  "workers_dev": false,
+  "triggers": {
+    "crons": [
+      "7 * * * *"
+    ]
+  }
+}

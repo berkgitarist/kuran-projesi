@@ -12,6 +12,7 @@
     "@capacitor/core": "^8.5.0"
   },
   "devDependencies": {
-    "@capacitor/cli": "^8.5.0"
+    "@capacitor/cli": "^8.5.0",
+    "wrangler": "^4.124.0"
   }
 }

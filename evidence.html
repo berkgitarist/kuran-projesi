@@ -8,7 +8,7 @@
     content="width=device-width, initial-scale=1.0"
   >
 
-  <title>Ayet Araştırma | Kuran Teyit</title>
+  <title>Kelime ve Ayet Araştırma | Kuran Teyit</title>
 
   <link
     rel="icon"
@@ -21,14 +21,16 @@
     content="#0f172a"
   >
 
+  <link rel="manifest" href="./manifest.webmanifest">
+
   <link
     rel="stylesheet"
-    href="./css/style.css?v=50"
+    href="./css/style.css?v=54"
   >
 
   <link
     rel="stylesheet"
-    href="./css/evidence.css?v=50"
+    href="./css/evidence.css?v=62"
   >
 </head>
 
@@ -36,8 +38,9 @@
   <header class="evidence-header">
     <a
       href="./index.html"
+      id="evidenceBackButton"
       class="evidence-home-button"
-      aria-label="Kuran Teyit ana sayfasına dön"
+      aria-label="Kuran Teyit içinde geldiğin ayete dön"
     >
       ← Kuran Teyit
     </a>
@@ -51,10 +54,10 @@
       >
 
       <div>
-        <h1>Ayet Araştırma</h1>
+        <h1>Kelime & Ayet Araştırma</h1>
 
         <p>
-          Numbered Verse Evidence Graph v2.1
+          AI'sız kaynak içi araştırma
         </p>
       </div>
     </div>
@@ -64,11 +67,11 @@
     <section class="evidence-source-notice">
       <strong>Kaynak sınırı:</strong>
 
-      İngilizce ve Arapça ayet metinleri, arama indeksleri ve
-      bağlantılar Numbered Verse Evidence Graph v2.1 veri setinden
-      alınır. Türkçe ayet metinleri mevcut Kuran Teyit
-      <code>quran_tr.json</code> verisiyle eşleştirilir.
-      İnternet, hadis, tefsir veya haricî dinî kaynak kullanılmaz.
+      İngilizce ana metin Rashad Khalifa çevirisidir. Arama ve bağlantılar
+      yalnızca Kuran Teyit içindeki ayet verilerinden türetilir; Türkçe metin
+      <code>quran_tr.json</code> ile eşleştirilir. Rashad dipnotları da yalnızca
+      uygulamadaki kaynak dosyasından gösterilir. <strong>Yapay zekâ, internet,
+      hadis, tefsir veya haricî dinî kaynak kullanılmaz.</strong>
     </section>
 
     <section class="evidence-search-panel">
@@ -117,17 +120,23 @@
     </section>
 
     <section
+      id="evidenceSummary"
+      class="evidence-summary hidden"
+    ></section>
+
+    <section
+      id="evidenceContext"
+      class="evidence-context hidden"
+      aria-live="polite"
+    ></section>
+
+    <section
       id="evidenceStatus"
       class="evidence-status"
       aria-live="polite"
     >
       Veri hazırlanıyor...
     </section>
-
-    <section
-      id="evidenceSummary"
-      class="evidence-summary hidden"
-    ></section>
 
     <section
       id="evidenceResults"
@@ -159,7 +168,7 @@
 
   <script
     type="module"
-    src="./js/evidence.js?v=50"
+    src="./js/evidence.js?v=64"
   ></script>
 </body>
 </html>

@@ -1,0 +1,45 @@
+KURAN TEYIT - EKLER GORSEL KAYNAGI
+
+Kaynak depo:
+https://github.com/SubmitterTech/quran-tft
+
+Orijinal klasor:
+app/src/assets/pictures
+
+Yerel hedef klasor:
+assets/images/appendices/
+
+Esleme:
+appendices.json ve appendices_tr.json icindeki picture.no degeri, orijinal JPG dosya adiyla eslesir.
+Ornek: no=4 -> 4.jpg
+Ozel grup: no=22 -> 22.jpg; alt kayitlar 22-1.jpg ... 22-7.jpg
+
+Bu klasorde kullanilan gerekli dosyalar:
+- 4.jpg
+- 5.jpg
+- 9.jpg
+- 10.jpg
+- 13.jpg
+- 14.jpg
+- 15.jpg
+- 16.jpg
+- 17.jpg
+- 18.jpg
+- 19.jpg
+- 20.jpg
+- 21.jpg
+- 22.jpg
+- 22-1.jpg
+- 22-2.jpg
+- 22-3.jpg
+- 22-4.jpg
+- 22-5.jpg
+- 22-6.jpg
+- 22-7.jpg
+- 23.jpg
+- 24.jpg
+- 25.jpg
+- 26.jpg
+- 27.jpg
+
+Not: Kaynak GitHub deposu Apache-2.0 lisansi beyan etmektedir. Projenizde kaynak/lisans atfini koruyun.

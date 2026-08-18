@@ -211,6 +211,65 @@
   text-decoration: underline;
 }
 
+
+.evidence-card-header-actions,
+.evidence-context-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.evidence-arabic-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    transform 140ms ease;
+}
+
+.evidence-arabic-toggle::after {
+  content: "▾";
+  font-size: 10px;
+  opacity: 0.8;
+}
+
+.evidence-arabic-toggle.is-open::after {
+  content: "▴";
+}
+
+.evidence-arabic-toggle:hover,
+.evidence-arabic-toggle:focus-visible,
+.evidence-arabic-toggle.is-open {
+  border-color: currentColor;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.evidence-arabic-toggle:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.evidence-arabic-toggle:active {
+  transform: translateY(1px);
+}
+
 .evidence-badge {
   padding: 4px 9px;
   border-radius: 999px;
@@ -252,6 +311,10 @@
     Arial,
     serif;
   font-size: var(--verse-arabic-size, 28px);
+}
+
+.evidence-arabic-panel[hidden] {
+  display: none !important;
 }
 
 .evidence-language-en {
@@ -306,7 +369,7 @@
   gap: 7px;
 }
 
-.evidence-related-links a {
+.evidence-related-links a:not(.evidence-related-verse) {
   padding: 6px 10px;
   border: 1px solid var(--border-color);
   border-radius: 999px;
@@ -316,7 +379,7 @@
   font-weight: 700;
 }
 
-.evidence-related-links a:hover {
+.evidence-related-links a:not(.evidence-related-verse):hover {
   border-color: var(--button-primary);
 }
 
@@ -349,6 +412,22 @@
 }
 
 @media (max-width: 700px) {
+  .evidence-card-header {
+    gap: 8px;
+  }
+
+  .evidence-card-header-actions,
+  .evidence-context-actions {
+    gap: 6px;
+  }
+
+  .evidence-arabic-toggle {
+    min-height: 28px;
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+
+
   .evidence-header {
     align-items: flex-start;
     gap: 12px;
@@ -819,5 +898,409 @@ body.blackyellow-theme
   .evidence-related-verse-text {
     grid-column: 1 / -1;
     padding-top: 3px;
+  }
+}
+/* =====================================================
+   AI'SIZ KELIME ARASTIRMA BAGLAMI
+===================================================== */
+.evidence-context {
+  margin: 18px 0;
+}
+
+.evidence-context-card {
+  padding: 18px;
+  border: 2px solid var(--verse-border);
+  border-radius: 16px;
+  background: var(--card-bg);
+  box-shadow: var(--shadow);
+}
+
+.evidence-context-kicker {
+  margin-bottom: 8px;
+  color: var(--light-text);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.evidence-context-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.evidence-context-heading h2 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.evidence-context-heading a {
+  color: var(--link-color);
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.evidence-context-heading a:hover {
+  text-decoration: underline;
+}
+
+.evidence-context-error {
+  padding: 14px;
+  border: 1px solid var(--error-color);
+  border-radius: 12px;
+  background: var(--card-bg);
+  color: var(--error-color);
+}
+
+.evidence-card--source {
+  border-width: 2px;
+  border-color: var(--verse-border);
+}
+
+.evidence-summary-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.evidence-summary-warning,
+.evidence-insight-note {
+  color: var(--light-text);
+  font-size: 13px;
+}
+
+.evidence-insights {
+  display: grid;
+  gap: 13px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-color);
+}
+
+.evidence-insight-group,
+.evidence-verse-phrases,
+.evidence-notes {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--card-bg) 92%, var(--verse-bg) 8%);
+}
+
+.evidence-insight-group {
+  margin-top: 0;
+}
+
+.evidence-insight-group h3,
+.evidence-verse-phrases h3,
+.evidence-notes h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.evidence-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.evidence-query-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--transliteration-bg);
+  color: var(--transliteration-text);
+  text-decoration: none;
+  font-weight: 800;
+}
+
+.evidence-query-chip:hover,
+.evidence-query-chip:focus-visible {
+  border-color: var(--button-primary);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.evidence-query-chip small {
+  opacity: 0.78;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.evidence-chip-list--phrases .evidence-query-chip {
+  border-radius: 10px;
+  white-space: normal;
+}
+
+.evidence-note-card {
+  margin-top: 10px;
+  padding: 12px;
+  border-left: 4px solid var(--verse-border);
+  border-radius: 10px;
+  background: var(--note-bg);
+  color: var(--note-text);
+}
+
+.evidence-note-card:first-of-type {
+  margin-top: 0;
+}
+
+.evidence-note-label {
+  margin-bottom: 8px;
+  font-weight: 900;
+}
+
+.evidence-note-card p {
+  margin: 8px 0;
+  line-height: 1.65;
+  white-space: pre-line;
+}
+
+.evidence-note-refs,
+.evidence-note-appendices {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.evidence-note-refs a,
+.evidence-note-appendices span {
+  display: inline-flex;
+  padding: 4px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--verse-bg);
+  color: var(--text-color);
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.evidence-note-refs a:hover {
+  border-color: var(--button-primary);
+}
+
+@media (max-width: 700px) {
+  .evidence-context-card {
+    padding: 13px;
+  }
+
+  .evidence-context-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .evidence-context-heading h2 {
+    font-size: 21px;
+  }
+
+  .evidence-summary-meta {
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .evidence-insight-group,
+  .evidence-verse-phrases,
+  .evidence-notes {
+    padding: 11px;
+  }
+}
+
+
+/* =====================================================
+   V54 — ARASTIRMA OZETI VE GERI DONUS
+===================================================== */
+.evidence-summary {
+  border: 1px solid var(--verse-border);
+  border-left-width: 5px;
+  box-shadow: var(--shadow);
+}
+
+.evidence-summary-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.evidence-summary-kicker {
+  margin-bottom: 4px;
+  color: var(--light-text);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.evidence-summary-count {
+  flex: 0 0 auto;
+  padding: 7px 11px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--verse-number-bg);
+  color: var(--verse-number-text);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.evidence-overview {
+  margin: 0 0 14px;
+  padding: 13px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--card-bg) 82%, var(--verse-bg) 18%);
+}
+
+.evidence-overview p {
+  margin: 0 0 8px;
+  line-height: 1.65;
+}
+
+.evidence-overview p:last-child {
+  margin-bottom: 0;
+}
+
+.evidence-overview-note {
+  padding-top: 9px;
+  border-top: 1px dashed var(--border-color);
+  color: var(--light-text);
+  font-size: 13px;
+}
+
+@media (max-width: 700px) {
+  .evidence-summary-heading {
+    gap: 10px;
+  }
+
+  .evidence-summary-count {
+    padding: 6px 9px;
+  }
+
+  .evidence-overview {
+    padding: 11px;
+  }
+}
+
+
+/* =====================================================
+   V62 - MOBIL BAGLANTILI AYET TASMA DUZELTMESI
+===================================================== */
+
+/*
+ * Eski .evidence-related-links a kuralinin 999px pill stili
+ * ayet kartlarini ezmemesi icin yukaridaki secici daraltildi.
+ * Bu blok mobilde uzun ayetleri guvenli tek sutun duzenine alir.
+ */
+@media (max-width: 700px) {
+  body.evidence-page {
+    overflow-x: hidden;
+  }
+
+  .evidence-main,
+  .evidence-results,
+  .evidence-card,
+  .evidence-card-body,
+  .evidence-related,
+  .evidence-related-sections,
+  .evidence-related-group,
+  .evidence-related-links {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .evidence-related-group {
+    overflow: hidden;
+    padding: 10px;
+    border-radius: 14px;
+  }
+
+  .evidence-related-group-title {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .evidence-related-links {
+    width: 100%;
+    overflow: hidden;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 9px;
+  }
+
+  .evidence-related-links > .evidence-related-verse {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 6px;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 10px 11px !important;
+    overflow: hidden;
+    box-sizing: border-box;
+    border-radius: 13px !important;
+    white-space: normal !important;
+  }
+
+  .evidence-related-verse-id {
+    justify-self: start;
+    width: auto;
+    min-width: 0;
+    max-width: 100%;
+    padding: 5px 9px;
+    border-radius: 999px;
+    font-size: 12px;
+    line-height: 1.2;
+  }
+
+  .evidence-related-verse-separator {
+    display: none !important;
+  }
+
+  .evidence-related-verse-text {
+    grid-column: 1 / -1 !important;
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    padding: 0 !important;
+    font-size: 13px;
+    line-height: 1.55;
+    font-weight: 600;
+    white-space: normal !important;
+    overflow: visible;
+    overflow-wrap: anywhere !important;
+    word-break: normal;
+    hyphens: auto;
+  }
+}
+
+@media (max-width: 420px) {
+  .evidence-main {
+    width: calc(100% - 10px);
+  }
+
+  .evidence-related-group {
+    padding: 8px;
+  }
+
+  .evidence-related-links > .evidence-related-verse {
+    padding: 9px !important;
+    border-radius: 11px !important;
+  }
+
+  .evidence-related-verse-text {
+    font-size: 12.5px;
+    line-height: 1.5;
   }
 }

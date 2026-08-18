@@ -1,0 +1,45 @@
+# Node
+node_modules/
+
+# Editor / IDE
+.idea/
+.vscode/
+
+# Web ve deploy icin uretilen klasorler
+www/
+dist/
+.wrangler/
+
+# Android uretilen dosyalar
+android/.gradle/
+android/.idea/
+android/build/
+android/app/build/
+android/app/release/
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+android/local.properties
+
+# Yerel yedekler
+_backup-android-*/
+
+# Imzalama / gizli dosyalar
+*.jks
+*.keystore
+*.aab
+*.apk
+.env
+.env.*
+
+# Sistem dosyalari
+.DS_Store
+Thumbs.db
+# Android kaynaklari ayri private repoda tutuluyor
+android/
+
+# Yerel VS Code workspace
+Kuranteyit.code-workspace
+
+# Android/Capacitor ayari Android private repoda tutuluyor
+capacitor.config.json

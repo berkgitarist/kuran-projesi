@@ -1,0 +1,232 @@
+{
+  "source_repository": "https://github.com/SubmitterTech/quran-tft",
+  "source_directory": "app/src/assets/pictures",
+  "local_directory": "assets/images/appendices",
+  "mapping_rule": "appendices*.json picture.no -> <no>.jpg; object keys such as 22-1 -> 22-1.jpg",
+  "required_files": [
+    "4.jpg",
+    "5.jpg",
+    "9.jpg",
+    "10.jpg",
+    "13.jpg",
+    "14.jpg",
+    "15.jpg",
+    "16.jpg",
+    "17.jpg",
+    "18.jpg",
+    "19.jpg",
+    "20.jpg",
+    "21.jpg",
+    "22.jpg",
+    "22-1.jpg",
+    "22-2.jpg",
+    "22-3.jpg",
+    "22-4.jpg",
+    "22-5.jpg",
+    "22-6.jpg",
+    "22-7.jpg",
+    "23.jpg",
+    "24.jpg",
+    "25.jpg",
+    "26.jpg",
+    "27.jpg"
+  ],
+  "entries": [
+    {
+      "page": 402,
+      "slot": "7",
+      "no": "4",
+      "file": "4.jpg",
+      "caption_en": "Photocopy from the Tashkent Quran.",
+      "caption_tr": "Taşkent Kuran’ından fotokopi."
+    },
+    {
+      "page": 402,
+      "slot": "8",
+      "no": "5",
+      "file": "5.jpg",
+      "caption_en": "",
+      "caption_tr": ""
+    },
+    {
+      "page": 405,
+      "slot": "9",
+      "no": "9",
+      "file": "9.jpg",
+      "caption_en": "Table 7: Gematrical Values of the Arabic Alphabet",
+      "caption_tr": "Tablo 7: Arap Alfabesinin Sayısal Değerleri"
+    },
+    {
+      "page": 415,
+      "slot": "7",
+      "no": "10",
+      "file": "10.jpg",
+      "caption_en": "The four words of Basmalah are shown on the left side, and the only four divine names whose gematrical values are divisible by 19 are on the right side. The numbers in the middle are the frequencies of occurrence of the words of Basmalah, and, at the same time, the gematrical values of the four divine names.",
+      "caption_tr": "Besmelenin dört kelimesi sol tarafta gösterilir ve sayısal değerleri 19’a bölünebilen yegâne dört göksel isim sağ taraftadır. Ortadaki sayılar Besmele kelimelerinin geçiş sıklıklarıdır ve aynı zamanda dört göksel ismin sayısal değerleridir."
+    },
+    {
+      "page": 433,
+      "slot": "2",
+      "no": "13",
+      "file": "13.jpg",
+      "caption_en": "“JAA’AKUM RASOOLUN MUSADDIQUN LEMAA MA‘AKUM”",
+      "caption_tr": "“CAEKUM RESULUN MUSADDİKUN LİMA ME‘AKUM”"
+    },
+    {
+      "page": 435,
+      "slot": "11",
+      "no": "14",
+      "file": "14.jpg",
+      "caption_en": "(Only the Messenger that He chooses).",
+      "caption_tr": "(Sadece O’nun seçtiği Elçi)."
+    },
+    {
+      "page": 436,
+      "slot": "1",
+      "no": "15",
+      "file": "15.jpg",
+      "caption_en": "",
+      "caption_tr": ""
+    },
+    {
+      "page": 441,
+      "slot": "7",
+      "no": "16",
+      "file": "16.jpg",
+      "caption_en": "",
+      "caption_tr": ""
+    },
+    {
+      "page": 448,
+      "slot": "6",
+      "no": "17",
+      "file": "17.jpg",
+      "caption_en": "The Prophet said, “Do not write down anything from me except the Quran.” [Ahmed, Vol. 1, Page 171, and Sahih Muslim]",
+      "caption_tr": "Peygamber dedi ki: “Kuran dışında benden hiçbir şey kağıda dökmeyin.” [Ahmed, Cilt 1, Sayfa 171 ve Sahih-i Müslim]"
+    },
+    {
+      "page": 448,
+      "slot": "7",
+      "no": "18",
+      "file": "18.jpg",
+      "caption_en": "This Hadith states that the Prophet maintained his anti-Hadith stand until death. [Ahmed, Vol. 1, Page 192]",
+      "caption_tr": "Bu Hadis, Peygamberin Hadis karşıtı duruşunu ölümüne kadar sürdürdüğünü belirtir. [Ahmed, Cilt 1, Sayfa 192]"
+    },
+    {
+      "page": 449,
+      "slot": "10",
+      "no": "19",
+      "file": "19.jpg",
+      "caption_en": "Typical Example of the Distorted Islam",
+      "caption_tr": "Tahrif Edilmiş İslam’ın Tipik Örneği"
+    },
+    {
+      "page": 456,
+      "slot": "2",
+      "no": "20",
+      "file": "20.jpg",
+      "caption_en": "Translation of this false statement: “God has cursed the Jews and Christians for turning the tombs of their prophets into mosques.” [Bukhari, Nawawi Edition, Vol. 6, Page 14]",
+      "caption_tr": "Bu yanlış ifadenin çevirisi: “Tanrı, peygamberlerinin kabirlerini mescitlere çevirdikleri için Yahudileri ve Hristiyanları lanetledi.” [Buhari, Nevevî Nüshası, Cilt. 6, Sayfa 14]"
+    },
+    {
+      "page": 458,
+      "slot": "2",
+      "no": "22",
+      "file": "22.jpg",
+      "caption_en": "",
+      "caption_tr": "",
+      "subimages": [
+        {
+          "key": "22-1",
+          "file": "22-1.jpg",
+          "caption_en": "Give good news to those who believe and work righteousness that they will have gardens with flowing streams. When provided with provisions of fruits therein, they will say, “This is what was given to us in the past.” They will be given similar provisions, and they will have pure spouses therein. They abide therein forever. (2:25)",
+          "caption_tr": "İnanan ve doğruluğa çalışanlara, akan nehirler bulunan bahçelere sahip olacaklarını müjdele. Oradaki ürünlerden rızıklar sunulduğunda onlar, “Bize geçmişte verilmiş olan da buydu” diyecekler. Onlara benzer rızıklar verilecek ve orada tertemiz eşlere sahip olacaklar. Orada sonsuza dek kalırlar. (2:25)"
+        },
+        {
+          "key": "22-2",
+          "file": "22-2.jpg",
+          "caption_en": "Do not think that those who are killed in the cause of God are dead; they are alive at their Lord, being provided for. (3:169)",
+          "caption_tr": "Tanrı uğrunda öldürülmüş olanları ölü sanmayın; onlar Rableri katında diridirler, rızıklandırılıyorlar. (3:169)"
+        },
+        {
+          "key": "22-3",
+          "file": "22-3.jpg",
+          "caption_en": "Do NOT say about those who are killed in the cause of God, “They ar dead.” For they are alive, but you do not perceive. (2:154)",
+          "caption_tr": "Tanrı uğrunda öldürülmüş olanlar hakkında “Onlar ölü” DEMEYİN. Zira onlar diridirler, ancak siz algılamazsınız. (2:154)"
+        },
+        {
+          "key": "22-4",
+          "file": "22-4.jpg",
+          "caption_en": "O you who believe, you shall respond to God and the messenger when he invites to what keeps you alive. (8:24)",
+          "caption_tr": "Ey inananlar, sizi hayatta tutan şeye sizi davet ettiğinde Tanrı’ya ve elçiye yanıt verin. (8:24)"
+        },
+        {
+          "key": "22-5",
+          "file": "22-5.jpg",
+          "caption_en": "Those who emigrate in the cause of God, then get killed or die, God will surely provide for them a good provision. (22:58)",
+          "caption_tr": "Tanrı uğrunda göç edip sonra öldürülen ya da ölenler; Tanrı mutlaka onlara güzel bir rızık temin edecektir. (22:58)"
+        },
+        {
+          "key": "22-6",
+          "file": "22-6.jpg",
+          "caption_en": "They do not taste death, beyond the first death, and God spares them the retribution of Hell. (44:56)",
+          "caption_tr": "Orada ilk ölümün ötesinde ölüm tatmazlar ve Tanrı onları Cehennem azabından esirger. (44:56)"
+        },
+        {
+          "key": "22-7",
+          "file": "22-7.jpg",
+          "caption_en": "He was told, “Enter Paradise.” He said, “I wish my people (on earth) know; that my Lord has forgiven me and honored me.” (36:26-27)",
+          "caption_tr": "Ona, “Cennete gir” denildi. Dedi ki: “Keşke (yeryüzündeki) halkım, Rabbimin beni bağışladığını ve beni şerefli kıldığını bilseydi.” (36:26-27)"
+        }
+      ]
+    },
+    {
+      "page": 458,
+      "slot": "3",
+      "no": "21",
+      "file": "21.jpg",
+      "caption_en": "",
+      "caption_tr": ""
+    },
+    {
+      "page": 460,
+      "slot": "3",
+      "no": "23",
+      "file": "23.jpg",
+      "caption_en": "“We did not leave anything out of this book,” is in Verse 38 (19 x 2) and consists of 19 Arabic letters (6:38).",
+      "caption_tr": "“Bu kitapta hiçbir şeyi eksik bırakmadık,” 38. ayettedir (19 x 2) ve 19 Arapça harften oluşur (6:38)."
+    },
+    {
+      "page": 460,
+      "slot": "4",
+      "no": "24",
+      "file": "24.jpg",
+      "caption_en": "“He sent down this book fully detailed,” is in Verse 114 (19 x 6) and consists of 19 Arabic letters (6:114).",
+      "caption_tr": "“O, bu kitabı tamamen detaylandırılmış olarak indirdi,” 114. ayettedir (19 x 6) ve 19 Arapça harften oluşur (6:114)."
+    },
+    {
+      "page": 466,
+      "slot": "2",
+      "no": "25",
+      "file": "25.jpg",
+      "caption_en": "Translation: ‘Ali was asked: “Why are you staying home?” He said, “Something has been added to the Quran, and I have pledged never to put on my street clothes, except for the prayer, until the Quran is restored.” [ Insert 1 ]",
+      "caption_tr": "Çevirisi: Ali’ye soruldu: “Neden evde kalıyorsun?” Dedi ki: “Kuran’a bir şeyler eklendi ve ben, Kuran eski hâline geri döndürülene kadar namaz hariç gündelik giysilerimi asla giymemeye söz verdim.” [İlave 1]"
+    },
+    {
+      "page": 467,
+      "slot": "3",
+      "no": "26",
+      "file": "26.jpg",
+      "caption_en": "The Title Figure of Sura 9 from a standard Quran, showing that this sura is Medinan, “except for the last two verses; they are Meccan”!!! [Insert 2 ]",
+      "caption_tr": "Standart bir Kuran’dan Sure 9’un Başlık Görseli; bu surenin Medine dönemine ait olduğunu, “son iki ayet hariç; onlar Mekke dönemine aittir” diye gösteriyor!!! [İlave 2]"
+    },
+    {
+      "page": 485,
+      "slot": "10",
+      "no": "27",
+      "file": "27.jpg",
+      "caption_en": "",
+      "caption_tr": ""
+    }
+  ]
+}

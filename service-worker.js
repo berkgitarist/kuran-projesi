@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'kuran-teyit-v45';
+const CACHE_VERSION = 'kuran-teyit-v64';
 
 const STATIC_CACHE =
   `${CACHE_VERSION}-static`;
@@ -10,19 +10,24 @@ const APP_SHELL = [
   './',
   './index.html',
   './guide.html',
+  './evidence.html',
   './privacy.html',
   './licenses.html',
   './manifest.webmanifest',
 
-  './css/style.css?v=45',
+  './css/style.css?v=61',
+  './css/style.css?v=63',
+  './css/evidence.css?v=62',
 
-  './js/script.js?v=45',
-  './js/guide.js',
+  './js/script.js?v=64',
+  './js/evidence.js?v=64',
+  './js/guide.js?v=64',
 
   './js/modules/core-utils.js',
   './js/modules/navigation-utils.js',
   './js/modules/meal-normalizer.js',
   './js/modules/note-validator.js',
+  './js/modules/platform-utils.js',
 
   './assets/images/logo-main.png',
   './assets/images/logo-icon.png'

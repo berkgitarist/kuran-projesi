@@ -1,3 +1,8 @@
+import {
+  setupNativeBackButton,
+  setupNativeSameWindowInternalLinks
+} from './modules/platform-utils.js';
+
 const SETTINGS_KEY = 'quranAppSettings';
 const RETURN_URL_KEY = 'kuranTeyitGuideReturnUrl';
 
@@ -174,6 +179,8 @@ function setupNavigation() {
 }
 
 applySavedAppearance();
+setupNativeSameWindowInternalLinks();
+await setupNativeBackButton();
 setupGuideSearch();
 setupSectionControls();
 setupNavigation();

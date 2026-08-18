@@ -15,8 +15,10 @@ import {
   normalizeMealData
 } from './modules/meal-normalizer.js';
 import {
-  sanitizeImportedNotes
-} from './modules/note-validator.js';
+  openInternalPage,
+  setupNativeBackButton,
+  setupNativeSameWindowInternalLinks
+} from './modules/platform-utils.js';
 
 /* =========================================================
    KURAN TEYİT — VERİ KAYNAĞI VE HAK BİLDİRİMİ
@@ -77,11 +79,13 @@ const CONFIG = {
     translit: './data/Turkce_Transkript.json',
     ai: './data/yapayzekaceviri.json',
     dictionary: './data/manual-dictionary.json',
+    contextualDictionary: './data/contextual-dictionary.json',
     arabic2: './data/mealler/quran_arapca2.json',
     erhanArabic: './data/mealler/kuran_erhan_aktas.json',
     wordTranslations: './data/word-translations.json',
     mapTr: './data/map_tr.json',
-    mapEn: './data/map.json'
+    mapEn: './data/map.json',
+    appendicesTr: './data/appendices_tr.json'
   }
 };
 
@@ -99,6 +103,7 @@ const STATE = {
     ai: {},
     meals: {},
     dictionary: {},
+    contextualDictionary: {},
     arabic2: {},
     erhanArabic: {},
     wordTranslations: {},
@@ -146,6 +151,37 @@ const SEARCH_INDEX = {
   mealsReady: false
 };
 
+
+/* =========================
+   İngilizce öncelikli araştırma
+   - Tek kelimede mevcut sözlük ters yönde kullanılır.
+   - Türkçe giriş ayrıca Türkçe ana metinde birebir aranır; İngilizce sonuçlar önceliklidir.
+   - Virgül, iki veya daha fazla araştırma kavramını ayırır.
+   - Eski arama hiçbir zaman kaldırılmaz; çözülemeyen sorgu mevcut aramaya geri döner.
+========================= */
+const RESEARCH_SEARCH_STATE = {
+  manualSource: null,
+  contextualSource: null,
+  reverseTurkishToEnglish: new Map(),
+  englishTerms: new Map()
+};
+
+const RESEARCH_SEARCH_LIMITS = {
+  maxTerms: 10,
+  maxActiveCandidatesPerConcept: 3,
+  maxVisibleAlternativeCandidates: 4,
+  candidatePriorityWindow: 12,
+  maxAggregateCards: 180,
+  maxConceptCards: 80
+};
+
+const RESEARCH_ENGLISH_STOPWORDS = new Set([
+  'a', 'an', 'the', 'and', 'or', 'of', 'to', 'in', 'on', 'for', 'from',
+  'with', 'by', 'as', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+  'he', 'she', 'it', 'they', 'we', 'you', 'i', 'his', 'her', 'their',
+  'our', 'your', 'my', 'this', 'that', 'these', 'those'
+]);
+
 const SURA_SEARCH_CACHE = {
   exact: new Map(),
   items: [],
@@ -169,9 +205,26 @@ const FEATURE_STATE = {
   analysis: { status: 'idle', promise: null }
 };
 
+/*
+  contextual-dictionary.json icindeki _alias_index buyuk/kucuk harf
+  ayrimlarini koruyabilir (ornegin GOD / god). Bu nedenle exact alias
+  aramasi her zaman once yapilir; case-insensitive arama yalnizca tek
+  bir canonical kayda giden, cakismasiz alias ailelerinde kullanilir.
+*/
+const CONTEXTUAL_DICTIONARY_LOOKUP = {
+  source: null,
+  foldedAliasIndex: new Map(),
+  foldedConflicts: new Set()
+};
+
 const TOPIC_INDEX = {
   tr: new Map(),
   en: new Map()
+};
+
+const EVIDENCE_COPY_CACHE = {
+  dataRoot: './data/evidence',
+  suraPromises: new Map()
 };
 
 const NAVIGATION_STATE = {
@@ -188,9 +241,58 @@ let activeAnalysisRequestId = 0;
 let lastDialogTrigger = null;
 let loadingOperationCount = 0;
 
+// Arama sonucundan bir ayete gidildiğinde sol üst geri düğmesiyle
+// aynı arama sonuçlarına dönmek için geçici gezinme bilgisi.
+const SEARCH_RETURN_STATE = {
+  pending: null,
+  active: null,
+  fallbackTimer: null
+};
+
 // Analiz panelinden bir ayete gidildiğinde, geri dönüş için
 // analiz edilen ayeti ve panelin kaydırma konumunu saklar.
 let analysisReturnState = null;
+
+const QURAN_READER_STATE = {
+  html: '',
+  suras: [],
+  fontLevel: 0
+};
+
+const APPENDIX_READER_STATE = {
+  status: 'idle',
+  promise: null,
+  data: null,
+  appendices: [],
+  html: '',
+  previewHoverReady: false,
+  fontLevel: 0
+};
+
+const APPENDIX_FONT_STORAGE_KEY = 'kuranTeyitAppendixFontLevel';
+const APPENDIX_FONT_MIN_LEVEL = -2;
+const APPENDIX_FONT_MAX_LEVEL = 3;
+
+const QURAN_READER_FONT_STORAGE_KEY = 'kuranTeyitQuranReaderFontLevel';
+const QURAN_READER_FONT_MIN_LEVEL = -2;
+const QURAN_READER_FONT_MAX_LEVEL = 3;
+
+function parseApplicationRoute(hash = window.location.hash) {
+  const normalizedHash = String(hash || '')
+    .replace(/^#/, '')
+    .trim()
+    .toLowerCase();
+
+  if (normalizedHash === 'reader') {
+    return { view: 'reader' };
+  }
+
+  if (normalizedHash === 'appendices') {
+    return { view: 'appendices' };
+  }
+
+  return parseRouteHash(hash);
+}
 
 /* =========================
    Başlangıç
@@ -221,8 +323,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     buildSuraSearchCache();
     buildSuraMenu();
     setupEventListeners();
+    setupFloatingBackToTopButton();
+    setupAppendixImageFallback();
+    setupNativeSameWindowInternalLinks();
+    await setupNativeBackButton();
 
-    const initialRoute = parseRouteHash(window.location.hash);
+    const initialRoute = parseApplicationRoute(window.location.hash);
     await applyRoute(initialRoute, {
       historyMode: 'replace',
       restoreScroll: true
@@ -747,6 +853,9 @@ function updateLoadingProgress(percent) {
    Eventler
 ========================= */
 function prepareStaticView() {
+  setQuranReaderNavigationMode(false);
+  STATE.currentView = 'static';
+
   const currentRoute = history.state?.route;
   const fallbackRoute = currentRoute?.view === 'analysis'
     ? history.state?.parentRoute || { view: 'page', page: STATE.currentPage }
@@ -760,11 +869,25 @@ function prepareStaticView() {
 
 function setupEventListeners() {
   document.getElementById('prevPage')?.addEventListener('click', () => {
+    if (restoreSearchResultsFromHistory()) return;
+
+    if (history.state?.readerReturn === true || history.state?.appendicesReturn === true) {
+      history.back();
+      return;
+    }
+
+    if (STATE.currentView === 'reader' || STATE.currentView === 'appendices') {
+      if (history.length > 1) history.back();
+      else goToPage(STATE.currentPage || FIRST_QURAN_DATA_PAGE, { historyMode: 'replace' });
+      return;
+    }
+
     if (restoreAnalysisPanelFromHistory()) return;
     navigateAdjacent('previous');
   });
 
   document.getElementById('nextPage')?.addEventListener('click', () => {
+    if (STATE.currentView === 'reader' || STATE.currentView === 'appendices') return;
     clearAnalysisReturnState();
     navigateAdjacent('next');
   });
@@ -809,6 +932,43 @@ function setupEventListeners() {
     closeSidebar();
   });
 
+  document.getElementById('quranTeyitPage')?.addEventListener('click', () => {
+    activeSearchQuery = '';
+
+    if (DOM.searchInput) {
+      DOM.searchInput.value = '';
+    }
+
+    if (DOM.autocomplete) {
+      DOM.autocomplete.innerHTML = '';
+      DOM.autocomplete.style.display = 'none';
+    }
+
+    closeSidebar();
+
+    goToPage(FIRST_QURAN_DATA_PAGE, {
+      historyMode: 'push'
+    });
+  });
+
+  document.getElementById('quranReadPage')?.addEventListener('click', () => {
+    prepareStaticView();
+    displayQuranReaderPage({
+      historyMode: 'push',
+      scrollTop: 0
+    });
+    closeSidebar();
+  });
+
+  document.getElementById('appendicesReadPage')?.addEventListener('click', async () => {
+    prepareStaticView();
+    closeSidebar();
+    await displayAppendicesReaderPage({
+      historyMode: 'push',
+      scrollTop: 0
+    });
+  });
+
   document.getElementById('notesPage')?.addEventListener('click', () => {
     prepareStaticView();
     displayNotesPage();
@@ -819,6 +979,23 @@ function setupEventListeners() {
     prepareStaticView();
     displayGuidePage();
     closeSidebar();
+  });
+  document
+  .getElementById('evidencePage')
+  ?.addEventListener('click', () => {
+    const query = String(
+      DOM.searchInput?.value || ''
+    ).trim();
+
+    const targetUrl = query
+      ? `./evidence.html?q=${encodeURIComponent(query)}`
+      : './evidence.html';
+
+    closeSidebar();
+
+    openInternalPage(targetUrl, {
+      newTabOnWeb: true
+    });
   });
 
   document.getElementById('privacyPage')?.addEventListener('click', () => {
@@ -850,14 +1027,30 @@ function setupEventListeners() {
   });
 
   window.addEventListener('popstate', async (event) => {
-    const route = event.state?.route || parseRouteHash(window.location.hash);
+    const pendingSearchReturn = SEARCH_RETURN_STATE.pending;
+
+    if (SEARCH_RETURN_STATE.fallbackTimer) {
+      clearTimeout(SEARCH_RETURN_STATE.fallbackTimer);
+      SEARCH_RETURN_STATE.fallbackTimer = null;
+    }
+
+    SEARCH_RETURN_STATE.pending = null;
+    SEARCH_RETURN_STATE.active = null;
+
+    const route = event.state?.route || parseApplicationRoute(window.location.hash);
     await applyRoute(route, { historyMode: 'none', restoreScroll: true });
+
+    if (pendingSearchReturn) {
+      await reopenSearchResultsFromReturnState(pendingSearchReturn);
+    }
+
+    updatePreviousButtonState();
   });
 
   window.addEventListener('hashchange', async () => {
     if (NAVIGATION_STATE.applyingHistory) return;
 
-    const route = parseRouteHash(window.location.hash);
+    const route = parseApplicationRoute(window.location.hash);
     const currentStateRoute = history.state?.route;
 
     if (JSON.stringify(route) === JSON.stringify(currentStateRoute)) return;
@@ -886,6 +1079,32 @@ function setupEventListeners() {
 
   setupSearch();
   setupWordTooltipDelegation();
+}
+
+function setupFloatingBackToTopButton() {
+  if (document.getElementById('floatingBackToTopButton')) return;
+
+  const button = document.createElement('button');
+  button.id = 'floatingBackToTopButton';
+  button.type = 'button';
+  button.className = 'floating-back-to-top';
+  button.setAttribute('aria-label', 'Sayfan\u0131n en \u00fcst\u00fcne \u00e7\u0131k');
+  button.setAttribute('title', 'Yukar\u0131 \u00e7\u0131k');
+  button.innerHTML = '<span aria-hidden="true">&#8593;</span>';
+
+  const prefersReducedMotion = window.matchMedia(
+    '(prefers-reduced-motion: reduce)'
+  );
+
+  button.addEventListener('click', () => {
+    window.scrollTo({
+      top: 0,
+      behavior: prefersReducedMotion.matches ? 'auto' : 'smooth'
+    });
+  });
+
+  document.body.appendChild(button);
+  button.classList.add('is-visible');
 }
 
 function handleDelegatedToggle(event) {
@@ -955,6 +1174,34 @@ function handleDelegatedAction(event) {
       break;
     case 'remove-note':
       removeLocalNote(sura, verse);
+      break;
+    case 'reader-open-verse':
+      openVerseFromQuranReader(sura, verse);
+      break;
+    case 'reader-font-decrease':
+      changeQuranReaderFontLevel(-1);
+      break;
+    case 'reader-font-increase':
+      changeQuranReaderFontLevel(1);
+      break;
+    case 'reader-font-reset':
+      setQuranReaderFontLevel(0);
+      break;
+    case 'reader-top':
+    case 'appendices-top':
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      break;
+    case 'appendices-toggle-verse-preview':
+      toggleAppendixVersePreview(target, { pinned: true });
+      break;
+    case 'appendices-font-decrease':
+      changeAppendixFontLevel(-1);
+      break;
+    case 'appendices-font-increase':
+      changeAppendixFontLevel(1);
+      break;
+    case 'appendices-font-reset':
+      setAppendixFontLevel(0);
       break;
     case 'notes-go-verse':
       goToVerseFromNotes(sura, verse);
@@ -1115,7 +1362,38 @@ async function ensureFeatureLoaded(featureName) {
       if (featureName === 'ai') {
         await loadDataFile(CONFIG.dataPaths.ai, 'ai');
       } else if (featureName === 'dictionary') {
-        await loadDataFile(CONFIG.dataPaths.dictionary, 'dictionary');
+        const results = await Promise.allSettled([
+          loadDataFile(
+            CONFIG.dataPaths.contextualDictionary,
+            'contextualDictionary'
+          ),
+          loadDataFile(
+            CONFIG.dataPaths.dictionary,
+            'dictionary'
+          )
+        ]);
+
+        const [contextualResult, manualResult] = results;
+
+        if (contextualResult.status === 'rejected') {
+          console.warn(
+            'Bağlamsal sözlük yüklenemedi; mevcut sözlük kullanılacak:',
+            contextualResult.reason
+          );
+          STATE.data.contextualDictionary = {};
+        }
+
+        if (manualResult.status === 'rejected') {
+          console.warn(
+            'Mevcut manual sözlük yüklenemedi; bağlamsal sözlük kullanılacak:',
+            manualResult.reason
+          );
+          STATE.data.dictionary = {};
+        }
+
+        if (results.every((result) => result.status === 'rejected')) {
+          throw new Error('Kelime sözlükleri yüklenemedi.');
+        }
       } else if (featureName === 'arabicComparisons') {
         const results = await Promise.allSettled([
           loadDataFile(CONFIG.dataPaths.arabic2, 'arabic2'),
@@ -1465,6 +1743,7 @@ function buildSuraMenu() {
 ========================= */
 function showFirstRevealedVersePage() {
   ensureQuranView();
+  setQuranReaderNavigationMode(false);
   closeSearchResultsPanel({ restoreFocus: false });
   STATE.currentView = 'first-revelation';
 
@@ -1733,6 +2012,28 @@ async function applyRoute(route, options = {}) {
       });
     }
 
+    if (targetRoute.view === 'reader') {
+      displayQuranReaderPage({
+        historyMode,
+        scrollTop: restoreScroll
+          ? history.state?.pageScrollTop
+          : 0,
+        focusVerseId: history.state?.readerVerseId || ''
+      });
+      return true;
+    }
+
+    if (targetRoute.view === 'appendices') {
+      await displayAppendicesReaderPage({
+        historyMode,
+        scrollTop: restoreScroll
+          ? history.state?.pageScrollTop
+          : 0,
+        focusAppendix: history.state?.appendixNumber || ''
+      });
+      return true;
+    }
+
     if (targetRoute.view === 'first-revelation') {
       return goToFirstRevealedVersePage({
         historyMode
@@ -1758,6 +2059,7 @@ function renderQuranPage(pageNum, options = {}) {
   const { scrollTop = null } = options;
 
   ensureQuranView();
+  setQuranReaderNavigationMode(false);
   closeSearchResultsPanel({ restoreFocus: false });
 
   if (!validatePageNumber(pageNum)) {
@@ -1832,6 +2134,17 @@ function goToVerse(suraNum, verseNum, options = {}) {
 
   const sura = String(suraNum);
   const verse = String(verseNum);
+  const returnToReader = history.state?.route?.view === 'reader';
+  const returnToAppendices = history.state?.route?.view === 'appendices';
+
+  if (returnToReader) {
+    saveQuranReaderPosition(`${sura}:${verse}`);
+  }
+
+  if (returnToAppendices) {
+    saveAppendicesReaderPosition(history.state?.appendixNumber || '');
+  }
+
   const page = getVersePage(sura, verse);
 
   if (!page || !verseExists(sura, verse)) {
@@ -1865,6 +2178,30 @@ function goToVerse(suraNum, verseNum, options = {}) {
     historyMode,
     { pageScrollTop: window.scrollY }
   );
+
+  if (returnToReader && historyMode === 'push') {
+    history.replaceState(
+      {
+        ...history.state,
+        readerReturn: true,
+        readerVerseId: `${sura}:${verse}`
+      },
+      '',
+      window.location.href
+    );
+  }
+
+  if (returnToAppendices && historyMode === 'push') {
+    history.replaceState(
+      {
+        ...history.state,
+        appendicesReturn: true,
+        appendixNumber: String(history.state?.appendixNumber || '')
+      },
+      '',
+      window.location.href
+    );
+  }
 
   return true;
 }
@@ -2280,6 +2617,622 @@ function buildAnalysisContext(suraNum, verseNum) {
   };
 }
 
+function compareEvidenceVerseIds(left, right) {
+  const [leftSura, leftVerse] = String(left).split(':').map(Number);
+  const [rightSura, rightVerse] = String(right).split(':').map(Number);
+
+  if (leftSura !== rightSura) return leftSura - rightSura;
+  return leftVerse - rightVerse;
+}
+
+function collectEvidenceVerseIds(value) {
+  const result = new Set();
+
+  function visit(currentValue, depth = 0) {
+    if (
+      currentValue === null ||
+      currentValue === undefined ||
+      depth > 8
+    ) {
+      return;
+    }
+
+    if (typeof currentValue === 'string') {
+      const matches = currentValue.match(/\b\d{1,3}:\d{1,3}\b/g);
+      matches?.forEach((match) => result.add(match));
+      return;
+    }
+
+    if (Array.isArray(currentValue)) {
+      currentValue.forEach((item) => visit(item, depth + 1));
+      return;
+    }
+
+    if (typeof currentValue === 'object') {
+      Object.entries(currentValue).forEach(([key, item]) => {
+        if (/^\d{1,3}:\d{1,3}$/.test(key)) result.add(key);
+        visit(item, depth + 1);
+      });
+    }
+  }
+
+  visit(value);
+  return [...result].sort(compareEvidenceVerseIds);
+}
+
+async function loadEvidenceSuraForCopy(suraNumber) {
+  const normalizedSura = String(Number(suraNumber));
+
+  if (!/^\d{1,3}$/.test(normalizedSura) || normalizedSura === '0') {
+    throw new Error(`Geçersiz sure numarası: ${suraNumber}`);
+  }
+
+  if (!EVIDENCE_COPY_CACHE.suraPromises.has(normalizedSura)) {
+    const loadPromise = fetch(
+      `${EVIDENCE_COPY_CACHE.dataRoot}/suras/${normalizedSura}.json`,
+      { cache: 'no-cache' }
+    )
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(
+            `${normalizedSura}. sure araştırma verisi yüklenemedi (${response.status})`
+          );
+        }
+
+        return response.json();
+      })
+      .catch((error) => {
+        EVIDENCE_COPY_CACHE.suraPromises.delete(normalizedSura);
+        throw error;
+      });
+
+    EVIDENCE_COPY_CACHE.suraPromises.set(normalizedSura, loadPromise);
+  }
+
+  return EVIDENCE_COPY_CACHE.suraPromises.get(normalizedSura);
+}
+
+async function loadEvidenceVerseForCopy(verseId) {
+  const match = String(verseId || '').match(/^(\d{1,3}):(\d{1,3})$/);
+  if (!match) return null;
+
+  const suraNumber = String(Number(match[1]));
+  const verseNumber = String(Number(match[2]));
+  const suraData = await loadEvidenceSuraForCopy(suraNumber);
+
+  return suraData?.verses?.[verseNumber] || null;
+}
+
+function getEvidenceCopyGroups(verse) {
+  if (!verse || typeof verse !== 'object') return [];
+
+  const sourceVerseId = verse.id || `${verse.sura}:${verse.verse}`;
+  const groups = [];
+  const uniqueIds = (ids) => ids
+    .filter(Boolean)
+    .filter((verseId) => verseId !== sourceVerseId)
+    .filter((verseId, index, array) => array.indexOf(verseId) === index);
+
+  const previousAndNext = uniqueIds([
+    verse.previous_verse,
+    verse.next_verse
+  ]);
+
+  if (previousAndNext.length) {
+    groups.push({
+      title: 'Önceki ve sonraki ayet',
+      ids: previousAndNext,
+      experimental: false
+    });
+  }
+
+  const lexicalIds = uniqueIds(
+    collectEvidenceVerseIds(verse.lexical_neighbors)
+  ).slice(0, 10);
+
+  if (lexicalIds.length) {
+    groups.push({
+      title: 'Sözcüksel bağlantılar',
+      ids: lexicalIds,
+      experimental: false
+    });
+  }
+
+  const clauseIds = uniqueIds(
+    collectEvidenceVerseIds(verse.similar_phrase_patterns)
+  ).slice(0, 10);
+
+  if (clauseIds.length) {
+    groups.push({
+      title: 'Benzer cümlecik kalıpları',
+      ids: clauseIds,
+      experimental: false
+    });
+  }
+
+  const themeIds = uniqueIds([
+    ...collectEvidenceVerseIds(verse.filtered_theme_neighbors),
+    ...collectEvidenceVerseIds(verse.topic_candidates)
+  ]).slice(0, 10);
+
+  if (themeIds.length) {
+    groups.push({
+      title: 'Deneysel tema bağlantıları',
+      ids: themeIds,
+      experimental: true
+    });
+  }
+
+  return groups;
+}
+
+async function loadEvidenceCopyContext(verseId) {
+  const sourceVerse = await loadEvidenceVerseForCopy(verseId);
+
+  if (!sourceVerse) {
+    throw new Error(`${verseId} için ayet araştırma verisi bulunamadı.`);
+  }
+
+  const groups = getEvidenceCopyGroups(sourceVerse);
+  const relatedIds = [
+    ...new Set(groups.flatMap((group) => group.ids))
+  ];
+
+  const relatedEntries = await Promise.all(
+    relatedIds.map(async (relatedVerseId) => {
+      try {
+        return [
+          relatedVerseId,
+          await loadEvidenceVerseForCopy(relatedVerseId)
+        ];
+      } catch (error) {
+        console.warn(
+          `${relatedVerseId} araştırma bağlantısı yüklenemedi:`,
+          error
+        );
+
+        return [relatedVerseId, null];
+      }
+    })
+  );
+
+  const relatedVerseMap = new Map(relatedEntries);
+
+  return {
+    sourceVerse,
+    groups: groups.map((group) => ({
+      ...group,
+      verses: group.ids.map((relatedVerseId) => ({
+        verseId: relatedVerseId,
+        verse: relatedVerseMap.get(relatedVerseId) || null
+      }))
+    }))
+  };
+}
+
+function getCopyValue(value, fallback = '—') {
+  const normalized = String(value ?? '').trim();
+  return normalized || fallback;
+}
+
+function buildTopicCopyItems(topics) {
+  return topics.map((topic) => ({
+    title: getCopyValue(topic.title, 'Başlıksız konu'),
+    verses: topic.refs.slice(0, 12).map((ref) => {
+      const [sura, verse] = String(ref).split(':');
+      const verseData = findVerseData(sura, verse);
+
+      return {
+        verseId: ref,
+        turkish: getCopyValue(
+          verseData.turkish,
+          'Türkçe çeviri bulunamadı.'
+        )
+      };
+    })
+  }));
+}
+
+function buildAnalysisCopyPayload(context, evidenceContext, evidenceError = null) {
+  const title = `Ayet Analizi ${context.mainVerse.verseId}`;
+  const turkishTopics = buildTopicCopyItems(context.topics.tr);
+  const englishTopics = buildTopicCopyItems(context.topics.en);
+  const plainLines = [
+    title.toLocaleUpperCase('tr-TR'),
+    '',
+    'ANA AYET',
+    `Ayet: ${context.mainVerse.verseId}`,
+    `Arapça: ${getCopyValue(context.mainVerse.arabic)}`,
+    `TR: ${getCopyValue(context.mainVerse.turkish)}`,
+    `EN: ${getCopyValue(context.mainVerse.english)}`,
+    `Okunuş: ${getCopyValue(context.mainVerse.transliteration)}`,
+    '',
+    'İLGİLİ KONULAR',
+    '',
+    'TÜRKÇE KONULAR'
+  ];
+
+  const appendPlainTopics = (topics, emptyText) => {
+    if (!topics.length) {
+      plainLines.push(emptyText);
+      return;
+    }
+
+    topics.forEach((topic) => {
+      plainLines.push(topic.title);
+      topic.verses.forEach((verse) => {
+        plainLines.push(`  ${verse.verseId} — ${verse.turkish}`);
+      });
+      plainLines.push('');
+    });
+  };
+
+  appendPlainTopics(turkishTopics, 'Konu bulunamadı.');
+  plainLines.push('İNGİLİZCE KONULAR');
+  appendPlainTopics(englishTopics, 'Topic bulunamadı.');
+  plainLines.push('AYET ARAŞTIRMA SONUÇLARI');
+  plainLines.push(`Arama: ${context.mainVerse.verseId}`);
+  plainLines.push('Arama türü: Ayet numarası');
+  plainLines.push(`Bulunan ayet: ${evidenceContext ? 1 : 0}`);
+  plainLines.push('');
+
+  const baseStyle = [
+    'font-family:Arial,Helvetica,sans-serif',
+    'font-size:11pt',
+    'line-height:1.5',
+    'color:#111827',
+    'max-width:900px'
+  ].join(';');
+  const sectionHeadingStyle = [
+    'margin:24px 0 10px',
+    'padding-bottom:5px',
+    'border-bottom:2px solid #2563eb',
+    'font-size:16pt',
+    'color:#1e3a8a'
+  ].join(';');
+  const subHeadingStyle = [
+    'margin:16px 0 8px',
+    'font-size:13pt',
+    'color:#1f2937'
+  ].join(';');
+  const cardStyle = [
+    'margin:0 0 14px',
+    'padding:12px 14px',
+    'border:1px solid #94a3b8',
+    'border-radius:6px',
+    'background:#f8fafc'
+  ].join(';');
+
+  const renderHtmlTopics = (topics, emptyText) => {
+    if (!topics.length) return `<p>${escapeHtml(emptyText)}</p>`;
+
+    return topics.map((topic) => `
+      <div style="${cardStyle}">
+        <p style="margin:0 0 7px;"><strong>${escapeHtml(topic.title)}</strong></p>
+        <ul style="margin:0;padding-left:22px;">
+          ${topic.verses.map((verse) => `
+            <li style="margin:3px 0;">
+              <strong>${escapeHtml(verse.verseId)}</strong>
+              — ${escapeHtml(verse.turkish)}
+            </li>
+          `).join('')}
+        </ul>
+      </div>
+    `).join('');
+  };
+
+  let html = `
+    <div style="${baseStyle}">
+      <h1 style="margin:0 0 18px;font-size:20pt;color:#0f172a;">
+        ${escapeHtml(title)}
+      </h1>
+
+      <h2 style="${sectionHeadingStyle}">Ana Ayet</h2>
+      <div style="${cardStyle}">
+        <p style="margin:0 0 10px;"><strong>Ayet:</strong> ${escapeHtml(context.mainVerse.verseId)}</p>
+        <p dir="rtl" style="margin:0 0 12px;text-align:right;font-size:18pt;line-height:1.9;font-family:'Traditional Arabic','Arial',sans-serif;">
+          ${escapeHtml(getCopyValue(context.mainVerse.arabic))}
+        </p>
+        <p style="margin:6px 0;"><strong>TR:</strong> ${escapeHtml(getCopyValue(context.mainVerse.turkish))}</p>
+        <p style="margin:6px 0;"><strong>EN:</strong> ${escapeHtml(getCopyValue(context.mainVerse.english))}</p>
+        <p style="margin:6px 0;"><strong>Okunuş:</strong> ${escapeHtml(getCopyValue(context.mainVerse.transliteration))}</p>
+      </div>
+
+      <h2 style="${sectionHeadingStyle}">İlgili Konular</h2>
+      <h3 style="${subHeadingStyle}">Türkçe Konular</h3>
+      ${renderHtmlTopics(turkishTopics, 'Konu bulunamadı.')}
+      <h3 style="${subHeadingStyle}">İngilizce Konular</h3>
+      ${renderHtmlTopics(englishTopics, 'Topic bulunamadı.')}
+
+      <h2 style="${sectionHeadingStyle}">Ayet Araştırma Sonuçları</h2>
+      <div style="${cardStyle}">
+        <p style="margin:4px 0;"><strong>Arama:</strong> ${escapeHtml(context.mainVerse.verseId)}</p>
+        <p style="margin:4px 0;"><strong>Arama türü:</strong> Ayet numarası</p>
+        <p style="margin:4px 0;"><strong>Bulunan ayet:</strong> ${evidenceContext ? '1' : '0'}</p>
+      </div>
+  `;
+
+  if (evidenceContext) {
+    const sourceVerse = evidenceContext.sourceVerse;
+    const sourceVerseId = sourceVerse.id ||
+      `${sourceVerse.sura}:${sourceVerse.verse}`;
+
+    plainLines.push('KAYNAK AYET');
+    plainLines.push(sourceVerseId);
+    plainLines.push(`Arapça: ${getCopyValue(sourceVerse.text_ar)}`);
+    plainLines.push(`English: ${getCopyValue(sourceVerse.text_en)}`);
+    plainLines.push(`Türkçe: ${getCopyValue(sourceVerse.text_tr)}`);
+    plainLines.push('');
+
+    html += `
+      <h3 style="${subHeadingStyle}">Kaynak Ayet — ${escapeHtml(sourceVerseId)}</h3>
+      <div style="${cardStyle}">
+        <p dir="rtl" style="margin:0 0 12px;text-align:right;font-size:18pt;line-height:1.9;font-family:'Traditional Arabic','Arial',sans-serif;">
+          ${escapeHtml(getCopyValue(sourceVerse.text_ar))}
+        </p>
+        <p style="margin:6px 0;"><strong>English:</strong> ${escapeHtml(getCopyValue(sourceVerse.text_en))}</p>
+        <p style="margin:6px 0;"><strong>Türkçe:</strong> ${escapeHtml(getCopyValue(sourceVerse.text_tr))}</p>
+      </div>
+    `;
+
+    evidenceContext.groups.forEach((group) => {
+      plainLines.push(group.title.toLocaleUpperCase('tr-TR'));
+
+      group.verses.forEach(({ verseId, verse }) => {
+        plainLines.push(
+          `${verseId} — ${getCopyValue(
+            verse?.text_tr,
+            'Türkçe çeviri bulunamadı.'
+          )}`
+        );
+      });
+
+      if (group.experimental) {
+        plainLines.push(
+          'Not: Deneysel tema bağlantıları istatistiksel bağlantı adaylarıdır; kesin hüküm veya kesin anlam kanıtı değildir.'
+        );
+      }
+
+      plainLines.push('');
+
+      html += `
+        <h3 style="${subHeadingStyle}">${escapeHtml(group.title)}</h3>
+        <div style="${cardStyle}">
+          <ul style="margin:0;padding-left:22px;">
+            ${group.verses.map(({ verseId, verse }) => `
+              <li style="margin:5px 0;">
+                <strong>${escapeHtml(verseId)}</strong>
+                — ${escapeHtml(getCopyValue(
+                  verse?.text_tr,
+                  'Türkçe çeviri bulunamadı.'
+                ))}
+              </li>
+            `).join('')}
+          </ul>
+          ${group.experimental
+            ? `
+              <p style="margin:10px 0 0;padding:8px;border-left:4px solid #d97706;background:#fffbeb;">
+                <strong>Not:</strong> Deneysel tema bağlantıları istatistiksel bağlantı adaylarıdır;
+                kesin hüküm veya kesin anlam kanıtı değildir.
+              </p>
+            `
+            : ''}
+        </div>
+      `;
+    });
+  } else {
+    const errorMessage = getCopyValue(
+      evidenceError?.message,
+      'Ayet araştırma verisi yüklenemedi.'
+    );
+
+    plainLines.push(errorMessage);
+    html += `
+      <div style="${cardStyle};border-color:#dc2626;background:#fef2f2;">
+        <strong>Ayet araştırma verisi yüklenemedi:</strong>
+        ${escapeHtml(errorMessage)}
+      </div>
+    `;
+  }
+
+  html += '</div>';
+
+  return {
+    html,
+    text: plainLines.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+  };
+}
+
+function copyHtmlWithSelection(html) {
+  const copyArea = document.createElement('div');
+  copyArea.contentEditable = 'true';
+  copyArea.setAttribute('aria-hidden', 'true');
+  copyArea.style.position = 'fixed';
+  copyArea.style.left = '-100000px';
+  copyArea.style.top = '0';
+  copyArea.style.width = '900px';
+  copyArea.style.opacity = '0';
+  copyArea.innerHTML = html;
+  document.body.appendChild(copyArea);
+
+  const selection = window.getSelection();
+  const range = document.createRange();
+  range.selectNodeContents(copyArea);
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+
+  let copied = false;
+
+  try {
+    copied = document.execCommand('copy');
+  } catch (error) {
+    console.warn('Biçimli kopyalama yöntemi çalışmadı:', error);
+  }
+
+  selection?.removeAllRanges();
+  copyArea.remove();
+  return copied;
+}
+
+function copyPlainTextWithTextarea(text) {
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.setAttribute('aria-hidden', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-100000px';
+  textarea.style.top = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+
+  let copied = false;
+
+  try {
+    copied = document.execCommand('copy');
+  } catch (error) {
+    console.warn('Düz metin kopyalama yöntemi çalışmadı:', error);
+  }
+
+  textarea.remove();
+  return copied;
+}
+
+async function writeAnalysisClipboard(html, text) {
+  if (
+    navigator.clipboard?.write &&
+    typeof ClipboardItem !== 'undefined'
+  ) {
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          'text/html': new Blob([html], { type: 'text/html' }),
+          'text/plain': new Blob([text], { type: 'text/plain' })
+        })
+      ]);
+      return;
+    } catch (error) {
+      console.warn('Modern biçimli pano API kullanılamadı:', error);
+    }
+  }
+
+  if (copyHtmlWithSelection(html)) return;
+
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch (error) {
+      console.warn('Düz metin pano API kullanılamadı:', error);
+    }
+  }
+
+  if (copyPlainTextWithTextarea(text)) return;
+  throw new Error('Tarayıcı panoya erişim izni vermedi.');
+}
+
+function prepareAnalysisCopyButton(panel, context) {
+  const button = panel.querySelector('[data-action="copy-analysis"]');
+  const status = panel.querySelector('.analysis-copy-status');
+
+  panel.analysisCopyState = {
+    ready: false,
+    context,
+    evidenceContext: null,
+    evidenceError: null
+  };
+
+  loadEvidenceCopyContext(context.mainVerse.verseId)
+    .then((evidenceContext) => {
+      if (!panel.isConnected) return;
+
+      panel.analysisCopyState = {
+        ready: true,
+        context,
+        evidenceContext,
+        evidenceError: null
+      };
+
+      if (button) {
+        button.disabled = false;
+        button.textContent = 'Kopyala';
+      }
+
+      if (status) {
+        status.classList.remove('error');
+        status.textContent = 'Word için biçimli kopyalama hazır.';
+      }
+    })
+    .catch((error) => {
+      console.error('Ayet araştırma kopyalama verisi hazırlanamadı:', error);
+      if (!panel.isConnected) return;
+
+      panel.analysisCopyState = {
+        ready: true,
+        context,
+        evidenceContext: null,
+        evidenceError: error
+      };
+
+      if (button) {
+        button.disabled = false;
+        button.textContent = 'Kopyala';
+      }
+
+      if (status) {
+        status.classList.add('error');
+        status.textContent =
+          'Araştırma verisi yüklenemedi; analiz bölümleri yine kopyalanabilir.';
+      }
+    });
+}
+
+async function copyAnalysisPanelContent(panel, button) {
+  const copyState = panel.analysisCopyState;
+
+  if (!copyState?.ready) {
+    showNotification(
+      'Kopyalama verisi henüz hazırlanıyor. Lütfen kısa bir süre bekleyin.',
+      'warning'
+    );
+    return;
+  }
+
+  const originalText = button.textContent;
+  button.disabled = true;
+  button.textContent = 'Kopyalanıyor...';
+
+  try {
+    const payload = buildAnalysisCopyPayload(
+      copyState.context,
+      copyState.evidenceContext,
+      copyState.evidenceError
+    );
+
+    await writeAnalysisClipboard(payload.html, payload.text);
+
+    button.textContent = 'Kopyalandı ✓';
+    showNotification(
+      'Ana ayet, ilgili konular ve ayet araştırma sonuçları Word için kopyalandı.',
+      'success',
+      5000
+    );
+  } catch (error) {
+    console.error('Ayet analizi kopyalanamadı:', error);
+    button.textContent = 'Kopyalanamadı';
+    showNotification(
+      'Kopyalama başarısız oldu. Tarayıcı veya uygulama pano iznini kontrol edin.',
+      'error',
+      6000
+    );
+  } finally {
+    setTimeout(() => {
+      if (!button.isConnected) return;
+      button.disabled = false;
+      button.textContent = originalText || 'Kopyala';
+    }, 1600);
+  }
+}
+
 function flattenMapTopics(mapObj, lang = 'tr') {
   const results = [];
 
@@ -2365,7 +3318,17 @@ function updatePreviousButtonState() {
   const previousButton = document.getElementById('prevPage');
   if (!previousButton) return;
 
-  const label = analysisReturnState ? 'Ayet analizine dön' : 'Önceki sayfa';
+  const hasSearchReturn = Boolean(
+    history.state?.route?.view === 'verse' &&
+    (history.state?.searchReturn?.query || SEARCH_RETURN_STATE.active?.query)
+  );
+
+  const label = hasSearchReturn
+    ? 'Arama sonuçlarına dön'
+    : analysisReturnState
+      ? 'Ayet analizine dön'
+      : 'Önceki sayfa';
+
   previousButton.setAttribute('aria-label', label);
   previousButton.title = label;
 }
@@ -2552,10 +3515,34 @@ async function openAnalysisPanel(suraNum, verseNum, options = {}) {
             `).join('')
           : '<p>Referans ayet bulunamadı.</p>'}
       </div>
+
+      <div class="analysis-copy-section">
+        <button
+          type="button"
+          class="toggle-btn analysis-copy-btn"
+          data-action="copy-analysis"
+          data-sura="${escapeHtml(context.mainVerse.sura)}"
+          data-verse="${escapeHtml(context.mainVerse.verse)}"
+          disabled
+        >Kopyalama verisi hazırlanıyor...</button>
+
+        <p class="analysis-copy-status" role="status" aria-live="polite">
+          Ayet Araştırma sonuçları hazırlanıyor.
+        </p>
+      </div>
     </div>
   `;
 
   panel.addEventListener('click', (event) => {
+    const copyButton = event.target.closest('[data-action="copy-analysis"]');
+
+    if (copyButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      copyAnalysisPanelContent(panel, copyButton);
+      return;
+    }
+
     const target = event.target.closest('.analysis-verse-link');
     if (!target) return;
     openVerseFromAnalysis(target.dataset.sura, target.dataset.verse);
@@ -2565,6 +3552,7 @@ async function openAnalysisPanel(suraNum, verseNum, options = {}) {
 
   document.body.appendChild(panel);
   document.body.classList.add('analysis-open');
+  prepareAnalysisCopyButton(panel, context);
 
   const currentHistoryState = history.state;
   const currentHistoryRoute = currentHistoryState?.route;
@@ -2890,41 +3878,9 @@ function buildPageHtml(pageNum) {
           </div>
         `;
       }
-
       html += `
         <div id="user-note-${suraNum}-${verseNum}" class="note-box hidden"></div>
         <div id="meal-${suraNum}-${verseNum}" class="note-box hidden" aria-live="polite"></div>
-
-        <div id="note-input-box-${suraNum}-${verseNum}" class="note-input-box hidden">
-          <label class="visually-hidden" for="note-input-${suraNum}-${verseNum}">
-            ${escapeHtml(verseKey)} için not
-          </label>
-
-          <textarea
-            id="note-input-${suraNum}-${verseNum}"
-            placeholder="Notunuzu buraya yazın..."
-            rows="4"
-            maxlength="10000"
-          ></textarea>
-
-          <div class="note-actions">
-            <button
-              type="button"
-              class="save-note-btn"
-              data-action="save-note"
-              data-sura="${escapeHtml(suraNum)}"
-              data-verse="${escapeHtml(verseNum)}"
-            >💾 Kaydet</button>
-
-            <button
-              type="button"
-              class="cancel-note-btn"
-              data-action="cancel-note"
-              data-sura="${escapeHtml(suraNum)}"
-              data-verse="${escapeHtml(verseNum)}"
-            >❌ İptal</button>
-          </div>
-        </div>
       </article>
       `;
     }
@@ -3127,6 +4083,153 @@ function getDictionaryCandidates(rawWord) {
 }
 
 
+function getContextualSurfaceCandidates(rawWord) {
+  const raw = String(rawWord || '').trim();
+  if (!raw) return [];
+
+  const normalizedMarks = raw
+    .replace(/[’‘`´ʼʻ＇]/g, "'")
+    .replace(/[‐‒–—﹘﹣－]/g, '-');
+
+  const candidates = [raw, normalizedMarks];
+
+  const stripOuterPunctuation = (value) => String(value || '')
+    .replace(/^[^A-Za-z0-9]+/g, '')
+    .replace(/[^A-Za-z0-9]+$/g, '')
+    .trim();
+
+  candidates.push(
+    stripOuterPunctuation(raw),
+    stripOuterPunctuation(normalizedMarks)
+  );
+
+  return [...new Set(candidates.filter(Boolean))];
+}
+
+
+function prepareContextualDictionaryLookup() {
+  const source = STATE.data.contextualDictionary;
+
+  if (
+    !source ||
+    typeof source !== 'object' ||
+    !source.entries ||
+    typeof source.entries !== 'object'
+  ) {
+    CONTEXTUAL_DICTIONARY_LOOKUP.source = source || null;
+    CONTEXTUAL_DICTIONARY_LOOKUP.foldedAliasIndex = new Map();
+    CONTEXTUAL_DICTIONARY_LOOKUP.foldedConflicts = new Set();
+    return;
+  }
+
+  if (CONTEXTUAL_DICTIONARY_LOOKUP.source === source) {
+    return;
+  }
+
+  const foldedAliasIndex = new Map();
+  const foldedConflicts = new Set();
+
+  const registerFoldedAlias = (alias, canonicalKey) => {
+    const folded = normalizeDictionaryWord(alias);
+    const canonical = String(canonicalKey || '').trim();
+
+    if (!folded || !canonical || foldedConflicts.has(folded)) {
+      return;
+    }
+
+    const existing = foldedAliasIndex.get(folded);
+
+    if (existing && existing !== canonical) {
+      foldedAliasIndex.delete(folded);
+      foldedConflicts.add(folded);
+      return;
+    }
+
+    foldedAliasIndex.set(folded, canonical);
+  };
+
+  Object.entries(source._alias_index || {}).forEach(
+    ([alias, canonicalKey]) => {
+      registerFoldedAlias(alias, canonicalKey);
+    }
+  );
+
+  Object.entries(source.entries).forEach(
+    ([canonicalKey, entry]) => {
+      registerFoldedAlias(canonicalKey, canonicalKey);
+
+      if (Array.isArray(entry?.aliases)) {
+        entry.aliases.forEach((alias) => {
+          registerFoldedAlias(alias, canonicalKey);
+        });
+      }
+    }
+  );
+
+  CONTEXTUAL_DICTIONARY_LOOKUP.source = source;
+  CONTEXTUAL_DICTIONARY_LOOKUP.foldedAliasIndex = foldedAliasIndex;
+  CONTEXTUAL_DICTIONARY_LOOKUP.foldedConflicts = foldedConflicts;
+}
+
+
+function resolveContextualDictionaryEntry(rawWord) {
+  const source = STATE.data.contextualDictionary;
+  const entries = source?.entries;
+
+  if (!entries || typeof entries !== 'object') {
+    return null;
+  }
+
+  const aliasIndex = source?._alias_index || {};
+  const exactCandidates = getContextualSurfaceCandidates(rawWord);
+
+  for (const candidate of exactCandidates) {
+    if (Object.prototype.hasOwnProperty.call(entries, candidate)) {
+      return {
+        canonicalKey: candidate,
+        entry: entries[candidate],
+        matchedAlias: candidate,
+        matchType: 'exact'
+      };
+    }
+
+    const canonicalKey = aliasIndex[candidate];
+
+    if (
+      canonicalKey &&
+      Object.prototype.hasOwnProperty.call(entries, canonicalKey)
+    ) {
+      return {
+        canonicalKey,
+        entry: entries[canonicalKey],
+        matchedAlias: candidate,
+        matchType: 'alias'
+      };
+    }
+  }
+
+  prepareContextualDictionaryLookup();
+
+  const folded = normalizeDictionaryWord(rawWord);
+  const canonicalKey =
+    CONTEXTUAL_DICTIONARY_LOOKUP.foldedAliasIndex.get(folded);
+
+  if (
+    canonicalKey &&
+    Object.prototype.hasOwnProperty.call(entries, canonicalKey)
+  ) {
+    return {
+      canonicalKey,
+      entry: entries[canonicalKey],
+      matchedAlias: folded,
+      matchType: 'folded'
+    };
+  }
+
+  return null;
+}
+
+
 function decorateVerseWords() {
   /*
     İngilizce sözlük yardımının çalışacağı alanlar:
@@ -3230,9 +4333,9 @@ function setupWordTooltipDelegation() {
   Object.assign(tooltip.style, {
     position: 'fixed',
     display: 'none',
-    pointerEvents: 'none',
+    pointerEvents: 'auto',
     zIndex: '99999',
-    maxWidth: '380px',
+    maxWidth: '420px',
     maxHeight: '65vh',
     overflowY: 'auto',
     boxSizing: 'border-box'
@@ -3380,6 +4483,218 @@ function setupWordTooltipDelegation() {
     `;
   }
 
+  function getTokenVerseId(token) {
+    const verseElement = token?.closest?.('.verse');
+    const verseId = String(
+      verseElement?.dataset?.verseId || ''
+    ).trim();
+
+    return /^\d{1,3}:\d{1,3}$/.test(verseId)
+      ? verseId
+      : '';
+  }
+
+  function getContextualConfidenceLabel(confidence) {
+    switch (String(confidence || '').toLowerCase()) {
+      case 'high':
+        return 'Yüksek güven';
+      case 'medium':
+        return 'Orta güven';
+      case 'low':
+        return 'Düşük güven';
+      default:
+        return '';
+    }
+  }
+
+  function getContextualTranslationHtml(token) {
+    const displayedWord = String(
+      token?.textContent || ''
+    ).trim();
+
+    const resolved =
+      resolveContextualDictionaryEntry(displayedWord);
+
+    if (!resolved?.entry) {
+      return '';
+    }
+
+    const entry = resolved.entry;
+    const verseId = getTokenVerseId(token);
+    const verseOverrides =
+      entry?.verse_overrides &&
+      typeof entry.verse_overrides === 'object'
+        ? entry.verse_overrides
+        : {};
+
+    const overrideTranslation = verseId
+      ? String(verseOverrides[verseId] || '').trim()
+      : '';
+
+    const defaultTranslation =
+      entry.default_translation == null
+        ? ''
+        : String(entry.default_translation).trim();
+
+    const translations = Array.isArray(entry.translations)
+      ? entry.translations
+          .map((item) => String(item || '').trim())
+          .filter(Boolean)
+      : [];
+
+    const primaryTranslation =
+      overrideTranslation ||
+      defaultTranslation ||
+      translations[0] ||
+      '';
+
+    const confidenceLabel =
+      getContextualConfidenceLabel(entry.confidence);
+
+    const confidenceClass = [
+      'high',
+      'medium',
+      'low'
+    ].includes(String(entry.confidence || '').toLowerCase())
+      ? `is-${String(entry.confidence).toLowerCase()}`
+      : '';
+
+    if (!primaryTranslation) {
+      return `
+        <section class="word-contextual-section is-fallback">
+          <div class="word-contextual-heading">
+            <span class="word-contextual-title">
+              Kuran bağlamı
+            </span>
+            ${confidenceLabel
+              ? `<span class="word-contextual-confidence ${confidenceClass}">${escapeHtml(confidenceLabel)}</span>`
+              : ''}
+          </div>
+
+          <div class="word-contextual-empty">
+            Bu kelime için güvenilir bir bağlamsal karşılık kesinleştirilmedi.
+            Mevcut sözlük sonucu aşağıda gösteriliyor.
+          </div>
+        </section>
+      `;
+    }
+
+    const alternativeTranslations = [];
+    const seenTranslations = new Set([
+      primaryTranslation
+    ]);
+
+    if (
+      overrideTranslation &&
+      defaultTranslation &&
+      defaultTranslation !== primaryTranslation
+    ) {
+      alternativeTranslations.push(defaultTranslation);
+      seenTranslations.add(defaultTranslation);
+    }
+
+    translations.forEach((translation) => {
+      if (seenTranslations.has(translation)) return;
+      seenTranslations.add(translation);
+      alternativeTranslations.push(translation);
+    });
+
+    const alternativesHtml = alternativeTranslations.length
+      ? `
+        <div class="word-contextual-alternatives">
+          <span class="word-contextual-label">Diğer uygun karşılıklar</span>
+          <div class="word-contextual-chips">
+            ${alternativeTranslations
+              .map((translation) => `
+                <span class="word-contextual-chip">
+                  ${escapeHtml(translation)}
+                </span>
+              `)
+              .join('')}
+          </div>
+        </div>
+      `
+      : '';
+
+    const generalHtml =
+      overrideTranslation &&
+      defaultTranslation &&
+      defaultTranslation !== overrideTranslation
+        ? `
+          <div class="word-contextual-general">
+            <span class="word-contextual-label">Kuran genelinde</span>
+            <strong>${escapeHtml(defaultTranslation)}</strong>
+          </div>
+        `
+        : '';
+
+    const contextNote = String(
+      entry.context_note || ''
+    ).trim();
+
+    const distinctions = Array.isArray(entry.distinctions)
+      ? entry.distinctions.filter((item) => item?.note)
+      : [];
+
+    const conceptualDetailsHtml =
+      contextNote || distinctions.length
+        ? `
+          <details class="word-contextual-details">
+            <summary>Kavramsal not</summary>
+            ${contextNote
+              ? `<p>${escapeHtml(contextNote)}</p>`
+              : ''}
+            ${distinctions.length
+              ? `
+                <ul>
+                  ${distinctions
+                    .slice(0, 6)
+                    .map((item) => `
+                      <li>
+                        ${item?.from
+                          ? `<strong>${escapeHtml(item.from)}:</strong> `
+                          : ''}
+                        ${escapeHtml(item.note)}
+                      </li>
+                    `)
+                    .join('')}
+                </ul>
+              `
+              : ''}
+          </details>
+        `
+        : '';
+
+    return `
+      <section class="word-contextual-section">
+        <div class="word-contextual-heading">
+          <span class="word-contextual-title">
+            Kuran bağlamı
+          </span>
+          ${confidenceLabel
+            ? `<span class="word-contextual-confidence ${confidenceClass}">${escapeHtml(confidenceLabel)}</span>`
+            : ''}
+        </div>
+
+        <div class="word-contextual-primary">
+          <span class="word-contextual-label">
+            ${overrideTranslation && verseId
+              ? `${escapeHtml(verseId)} ayetinde`
+              : 'Önerilen karşılık'}
+          </span>
+          <strong>
+            <span aria-hidden="true">★</span>
+            ${escapeHtml(primaryTranslation)}
+          </strong>
+        </div>
+
+        ${generalHtml}
+        ${alternativesHtml}
+        ${conceptualDetailsHtml}
+      </section>
+    `;
+  }
+
   function calculateTooltipPosition(
     clientX,
     clientY
@@ -3484,6 +4799,7 @@ function setupWordTooltipDelegation() {
     tooltip.innerHTML = html;
     tooltip.style.visibility = 'hidden';
     tooltip.style.display = 'block';
+    tooltip.setAttribute('aria-hidden', 'false');
 
     requestAnimationFrame(() => {
       const position =
@@ -3516,6 +4832,7 @@ function setupWordTooltipDelegation() {
     tooltip.innerHTML = html;
     tooltip.style.visibility = 'hidden';
     tooltip.style.display = 'block';
+    tooltip.setAttribute('aria-hidden', 'false');
 
     requestAnimationFrame(() => {
       const tooltipWidth =
@@ -3579,6 +4896,7 @@ function setupWordTooltipDelegation() {
 
     tooltip.style.display = 'none';
     tooltip.style.visibility = 'hidden';
+    tooltip.setAttribute('aria-hidden', 'true');
 
     activeToken = null;
     pinnedToken = null;
@@ -3593,16 +4911,85 @@ function setupWordTooltipDelegation() {
     );
   }
 
+  function getResearchActionHtml(token) {
+    const displayedWord = String(token?.textContent || '').trim();
+    const query = normalizeDictionaryWord(
+      token?.dataset?.original || displayedWord
+    );
+
+    if (!query) return '';
+
+    const verseElement = token.closest('.verse');
+    const verseId = String(
+      verseElement?.dataset?.verseId || ''
+    ).trim();
+
+    const params = new URLSearchParams();
+    params.set('q', query);
+
+    if (/^\d{1,3}:\d{1,3}$/.test(verseId)) {
+      params.set('verse', verseId);
+      params.set('return', `./index.html#ayet=${verseId}`);
+    }
+
+    const researchUrl = `./evidence.html?${params.toString()}`;
+
+    return `
+      <div class="word-research-action">
+        <a
+          class="word-more-info-link"
+          href="${escapeHtml(researchUrl)}"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="${escapeHtml(displayedWord)} kelimesini Kuran içinde araştır"
+        >
+          <span aria-hidden="true">🔎</span>
+          Daha fazla bilgi
+        </a>
+
+        <span class="word-research-caption">
+          ${verseId
+            ? `${escapeHtml(verseId)} bağlamıyla Kuran içinde araştır`
+            : 'Kuran içinde araştır'}
+        </span>
+      </div>
+    `;
+  }
+
   async function getReadyTranslationHtml(token) {
+    let loadErrorHtml = '';
+
     if (FEATURE_STATE.dictionary.status !== 'ready') {
       try {
         await ensureFeatureLoaded('dictionary');
       } catch (error) {
-        return '<span class="word-translation-empty">Sözlük verisi yüklenemedi.</span>';
+        loadErrorHtml =
+          '<span class="word-translation-empty">Sözlük verisi yüklenemedi.</span>';
       }
     }
 
-    return getTranslationHtml(token);
+    if (loadErrorHtml) {
+      return `${loadErrorHtml}${getResearchActionHtml(token)}`;
+    }
+
+    const contextualHtml =
+      getContextualTranslationHtml(token);
+
+    const manualHtml = getTranslationHtml(token);
+
+    const translationHtml = contextualHtml
+      ? `
+        ${contextualHtml}
+        <section class="word-manual-section">
+          <div class="word-manual-heading">
+            Mevcut sözlük
+          </div>
+          ${manualHtml}
+        </section>
+      `
+      : manualHtml;
+
+    return `${translationHtml}${getResearchActionHtml(token)}`;
   }
 
   DOM.content.addEventListener(
@@ -3641,7 +5028,7 @@ function setupWordTooltipDelegation() {
       showTooltipAt(
         event.clientX,
         event.clientY,
-        '<span class="word-translation-loading">Sözlük yükleniyor...</span>'
+        '<span class="word-translation-loading">Bağlamsal sözlük yükleniyor...</span>'
       );
 
       const html = await getReadyTranslationHtml(token);
@@ -3693,8 +5080,9 @@ function setupWordTooltipDelegation() {
 
       if (
         event.relatedTarget &&
-        token.contains(
-          event.relatedTarget
+        (
+          token.contains(event.relatedTarget) ||
+          tooltip.contains(event.relatedTarget)
         )
       ) {
         return;
@@ -3702,6 +5090,7 @@ function setupWordTooltipDelegation() {
 
       tooltip.style.display = 'none';
       tooltip.style.visibility = 'hidden';
+      tooltip.setAttribute('aria-hidden', 'true');
       activeToken = null;
     }
   );
@@ -3720,8 +5109,6 @@ function setupWordTooltipDelegation() {
       ) {
         return;
       }
-
-      if (!isTouchDevice()) return;
 
       event.preventDefault();
       event.stopPropagation();
@@ -3759,6 +5146,22 @@ function setupWordTooltipDelegation() {
 
     const html = await getReadyTranslationHtml(token);
     if (pinnedToken === token) showTooltipNearElement(token, html);
+  });
+
+  tooltip.addEventListener('mouseleave', (event) => {
+    if (pinnedToken) return;
+
+    if (
+      event.relatedTarget &&
+      activeToken?.contains(event.relatedTarget)
+    ) {
+      return;
+    }
+
+    tooltip.style.display = 'none';
+    tooltip.style.visibility = 'hidden';
+    tooltip.setAttribute('aria-hidden', 'true');
+    activeToken = null;
   });
 
   document.addEventListener(
@@ -3807,10 +5210,23 @@ function setupWordTooltipDelegation() {
    Notlar
 ========================= */
 /* =========================
-   Yerel Not Sistemi
+   Yerel Not Sistemi + HTML Not Düzenleyici
 ========================= */
 
 const LOCAL_NOTES_KEY = 'kuranTeyitNotesV1';
+const NOTE_EXPORT_VERSION = 2;
+const NOTE_EDITOR_MAX_TEXT_LENGTH = 30000;
+const NOTE_EDITOR_MAX_HTML_LENGTH = 120000;
+
+const NOTE_ALLOWED_TAGS = new Set([
+  'A', 'B', 'BLOCKQUOTE', 'BR', 'DIV', 'EM', 'H2', 'H3', 'H4', 'HR',
+  'I', 'LI', 'OL', 'P', 'S', 'SPAN', 'STRONG', 'SUB', 'SUP', 'U', 'UL'
+]);
+
+const NOTE_DROP_TAGS = new Set([
+  'BASE', 'BUTTON', 'EMBED', 'FORM', 'IFRAME', 'INPUT', 'LINK', 'MATH',
+  'META', 'OBJECT', 'OPTION', 'SCRIPT', 'SELECT', 'STYLE', 'SVG', 'TEXTAREA'
+]);
 
 function getAllLocalNotes() {
   try {
@@ -3864,16 +5280,274 @@ function getLocalNote(sura, verse) {
   return notes[verseId] || null;
 }
 
-function saveLocalNote(sura, verse, content) {
-  const normalizedContent = String(content || '').trim();
+function getNoteSourceMap(exportObject) {
+  if (!exportObject || typeof exportObject !== 'object' || Array.isArray(exportObject)) {
+    return {};
+  }
+
+  if (
+    exportObject.notes &&
+    typeof exportObject.notes === 'object' &&
+    !Array.isArray(exportObject.notes)
+  ) {
+    return exportObject.notes;
+  }
+
+  return exportObject;
+}
+
+function sanitizeNotesForImport(exportObject) {
+  const sourceNotes = getNoteSourceMap(exportObject);
+
+  if (!sourceNotes || typeof sourceNotes !== 'object' || Array.isArray(sourceNotes)) {
+    throw new Error('Not dosyasındaki notes alanı geçersiz.');
+  }
+
+  const entries = Object.entries(sourceNotes);
+
+  if (entries.length > 10000) {
+    throw new Error('Not dosyası 10.000 kayıt sınırını aşıyor.');
+  }
+
+  const sanitized = {};
+
+  entries.forEach(([rawVerseId, rawNote]) => {
+    if (!rawNote || typeof rawNote !== 'object' || Array.isArray(rawNote)) return;
+
+    const verseId = String(rawVerseId || '').trim();
+    const match = verseId.match(/^(\d{1,3}):(\d{1,3})$/);
+    if (!match) return;
+
+    const [, sura, verse] = match;
+    if (!verseExists(sura, verse)) return;
+
+    const rawContent = typeof rawNote.content === 'string'
+      ? rawNote.content
+      : '';
+
+    const format = rawNote.format === 'html' ? 'html' : 'plain';
+    const content = format === 'html'
+      ? sanitizeNoteHtml(rawContent)
+      : rawContent.trim();
+
+    const plainText = format === 'html'
+      ? noteHtmlToPlainText(content)
+      : content;
+
+    if (!plainText || plainText.length > NOTE_EDITOR_MAX_TEXT_LENGTH) return;
+    if (format === 'html' && content.length > NOTE_EDITOR_MAX_HTML_LENGTH) return;
+
+    const parsedDate = Date.parse(String(rawNote.updatedAt || ''));
+
+    sanitized[verseId] = {
+      sura: String(sura),
+      verse: String(verse),
+      content,
+      ...(format === 'html' ? { format: 'html' } : {}),
+      updatedAt: Number.isFinite(parsedDate)
+        ? new Date(parsedDate).toISOString()
+        : new Date().toISOString()
+    };
+  });
+
+  if (entries.length > 0 && Object.keys(sanitized).length === 0) {
+    throw new Error('Dosyada içe aktarılabilecek geçerli not bulunamadı.');
+  }
+
+  return sanitized;
+}
+
+function normalizeNoteHref(rawHref) {
+  const href = String(rawHref || '').trim();
+  if (!href) return '';
+
+  try {
+    const url = new URL(href, window.location.href);
+    if (!['http:', 'https:', 'mailto:'].includes(url.protocol)) return '';
+    return url.href;
+  } catch (error) {
+    return '';
+  }
+}
+
+function sanitizeNoteStyle(rawStyle) {
+  const style = String(rawStyle || '');
+  const safe = [];
+
+  style.split(';').forEach((declaration) => {
+    const [rawProperty, ...valueParts] = declaration.split(':');
+    const property = String(rawProperty || '').trim().toLowerCase();
+    const value = valueParts.join(':').trim().toLowerCase();
+
+    if (!property || !value) return;
+
+    if (
+      property === 'text-align' &&
+      ['left', 'center', 'right', 'justify'].includes(value)
+    ) {
+      safe.push(`text-align:${value}`);
+      return;
+    }
+
+    if (
+      property === 'font-weight' &&
+      ['bold', '600', '700', '800', '900'].includes(value)
+    ) {
+      safe.push('font-weight:bold');
+      return;
+    }
+
+    if (property === 'font-style' && value === 'italic') {
+      safe.push('font-style:italic');
+      return;
+    }
+
+    if (
+      property === 'text-decoration' &&
+      (value.includes('underline') || value.includes('line-through'))
+    ) {
+      const decorations = [];
+      if (value.includes('underline')) decorations.push('underline');
+      if (value.includes('line-through')) decorations.push('line-through');
+      safe.push(`text-decoration:${decorations.join(' ')}`);
+    }
+  });
+
+  return safe.join(';');
+}
+
+function sanitizeNoteHtml(rawHtml) {
+  const source = String(rawHtml || '').slice(0, NOTE_EDITOR_MAX_HTML_LENGTH);
+  const template = document.createElement('template');
+  template.innerHTML = source;
+
+  const cleanNode = (node) => {
+    if (node.nodeType === Node.TEXT_NODE) return;
+
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      node.remove();
+      return;
+    }
+
+    const tagName = node.tagName.toUpperCase();
+
+    if (NOTE_DROP_TAGS.has(tagName)) {
+      node.remove();
+      return;
+    }
+
+    [...node.childNodes].forEach(cleanNode);
+
+    if (!NOTE_ALLOWED_TAGS.has(tagName)) {
+      const parent = node.parentNode;
+      if (!parent) return;
+
+      while (node.firstChild) {
+        parent.insertBefore(node.firstChild, node);
+      }
+
+      node.remove();
+      return;
+    }
+
+    const allowedHref = tagName === 'A'
+      ? normalizeNoteHref(node.getAttribute('href'))
+      : '';
+
+    const safeStyle = sanitizeNoteStyle(node.getAttribute('style'));
+
+    [...node.attributes].forEach((attribute) => {
+      node.removeAttribute(attribute.name);
+    });
+
+    if (safeStyle) {
+      node.setAttribute('style', safeStyle);
+    }
+
+    if (tagName === 'A' && allowedHref) {
+      node.setAttribute('href', allowedHref);
+      node.setAttribute('target', '_blank');
+      node.setAttribute('rel', 'noopener noreferrer');
+    }
+  };
+
+  [...template.content.childNodes].forEach(cleanNode);
+  return template.innerHTML.trim();
+}
+
+function noteHtmlToPlainText(html) {
+  const container = document.createElement('div');
+  container.innerHTML = sanitizeNoteHtml(html);
+
+  return String(container.innerText || container.textContent || '')
+    .replace(/\u00a0/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function plainTextToEditorHtml(text) {
+  const normalized = String(text || '')
+    .replace(/\r\n?/g, '\n')
+    .slice(0, NOTE_EDITOR_MAX_TEXT_LENGTH);
+
+  if (!normalized.trim()) return '<div><br></div>';
+
+  return normalized
+    .split('\n')
+    .map((line) => line
+      ? `<div>${escapeHtml(line)}</div>`
+      : '<div><br></div>')
+    .join('');
+}
+
+function renderStoredNoteContent(note) {
+  if (!note) return '';
+
+  if (note.format === 'html') {
+    return sanitizeNoteHtml(note.content || '');
+  }
+
+  return escapeHtml(String(note.content || ''))
+    .replace(/\r\n?/g, '\n')
+    .replace(/\n/g, '<br>');
+}
+
+function getNotePlainText(note) {
+  if (!note) return '';
+
+  return note.format === 'html'
+    ? noteHtmlToPlainText(note.content || '')
+    : String(note.content || '').trim();
+}
+
+function saveLocalNote(sura, verse, content, format = 'plain') {
+  const normalizedFormat = format === 'html' ? 'html' : 'plain';
+  const normalizedContent = normalizedFormat === 'html'
+    ? sanitizeNoteHtml(content)
+    : String(content || '').trim();
+
+  const plainText = normalizedFormat === 'html'
+    ? noteHtmlToPlainText(normalizedContent)
+    : normalizedContent;
 
   if (!verseExists(sura, verse)) {
     showNotification('Not kaydedilecek ayet bulunamadı.', 'warning');
     return false;
   }
 
-  if (!normalizedContent || normalizedContent.length > 10000) {
-    showNotification('Not içeriği 1-10000 karakter arasında olmalıdır.', 'warning');
+  if (!plainText || plainText.length > NOTE_EDITOR_MAX_TEXT_LENGTH) {
+    showNotification(
+      `Not içeriği 1-${NOTE_EDITOR_MAX_TEXT_LENGTH.toLocaleString('tr-TR')} karakter arasında olmalıdır.`,
+      'warning'
+    );
+    return false;
+  }
+
+  if (
+    normalizedFormat === 'html' &&
+    normalizedContent.length > NOTE_EDITOR_MAX_HTML_LENGTH
+  ) {
+    showNotification('Biçimli not çok büyük. Lütfen içeriği biraz kısaltın.', 'warning');
     return false;
   }
 
@@ -3884,6 +5558,7 @@ function saveLocalNote(sura, verse, content) {
     sura: String(sura),
     verse: String(verse),
     content: normalizedContent,
+    ...(normalizedFormat === 'html' ? { format: 'html' } : {}),
     updatedAt: new Date().toISOString()
   };
 
@@ -3903,75 +5578,50 @@ function deleteLocalNote(sura, verse) {
   return writeAllLocalNotes(notes);
 }
 
-/* =========================
-   loadNotesForCurrentPage BAŞLANGIÇ
-========================= */
-
 function loadNotesForCurrentPage() {
-    const verseElements =
-        document.querySelectorAll(
-            '.verse-number'
-        );
+  const verseElements = document.querySelectorAll('.verse-number');
 
-    verseElements.forEach((element) => {
-        const verseText =
-            element.textContent.trim();
+  verseElements.forEach((element) => {
+    const verseText = element.textContent.trim();
+    const match = verseText.match(/^(\d+)\s*:\s*(\d+)$/);
 
-        const match =
-            verseText.match(
-                /^(\d+)\s*:\s*(\d+)$/
-            );
+    if (!match) return;
 
-        if (!match) {
-            return;
-        }
+    const [, sura, verse] = match;
+    const note = getLocalNote(sura, verse);
 
-        const [, sura, verse] = match;
-
-        const note = getLocalNote(
-            sura,
-            verse
-        );
-
-        if (note?.content) {
-            displayLoadedNote(
-                sura,
-                verse,
-                note.content
-            );
-        } else {
-            updateLocalNoteUI(
-                sura,
-                verse
-            );
-        }
-    });
+    if (note?.content) {
+      displayLoadedNote(sura, verse, note);
+    } else {
+      updateLocalNoteUI(sura, verse);
+    }
+  });
 }
 
-/* =========================
-   loadNotesForCurrentPage BİTİŞ
-========================= */
-
-function displayLoadedNote(sura, verse, content) {
-  const box = document.getElementById(
-    `user-note-${sura}-${verse}`
-  );
-
+function displayLoadedNote(sura, verse, noteOrContent) {
+  const box = document.getElementById(`user-note-${sura}-${verse}`);
   if (!box) return;
 
-  const safeContent = escapeHtml(content || '');
+  const note = noteOrContent && typeof noteOrContent === 'object'
+    ? noteOrContent
+    : {
+        sura: String(sura),
+        verse: String(verse),
+        content: String(noteOrContent || ''),
+        format: 'plain'
+      };
+
+  const wasHidden = box.classList.contains('hidden');
+  const noteHtml = renderStoredNoteContent(note);
 
   box.innerHTML = `
     <div class="saved-note-card">
       <div class="saved-note-row">
         <div class="saved-note-main">
-          <strong class="saved-note-title">
-            📝 Notunuz:
-          </strong>
-
-          <span class="saved-note-content">
-            ${safeContent.replace(/\n/g, '<br>')}
-          </span>
+          <strong class="saved-note-title">📝 Notunuz</strong>
+          <div class="saved-note-content note-rich-content">
+            ${noteHtml}
+          </div>
         </div>
 
         <div class="saved-note-actions">
@@ -3981,9 +5631,7 @@ function displayLoadedNote(sura, verse, content) {
             data-action="edit-note"
             data-sura="${escapeHtml(String(sura))}"
             data-verse="${escapeHtml(String(verse))}"
-          >
-            ✏️ Düzenle
-          </button>
+          >✏️ Düzenle</button>
 
           <button
             type="button"
@@ -3991,20 +5639,15 @@ function displayLoadedNote(sura, verse, content) {
             data-action="remove-note"
             data-sura="${escapeHtml(String(sura))}"
             data-verse="${escapeHtml(String(verse))}"
-          >
-            🗑️ Sil
-          </button>
+          >🗑️ Sil</button>
         </div>
       </div>
     </div>
   `;
 
-  // Not kaydı hazırlanır fakat başlangıçta kapalı tutulur.
-  box.classList.add('hidden');
+  box.classList.toggle('hidden', wasHidden);
 
-  const noteButton = document.getElementById(
-    `noteBtn-${sura}-${verse}`
-  );
+  const noteButton = document.getElementById(`noteBtn-${sura}-${verse}`);
 
   if (noteButton) {
     noteButton.classList.add('has-note');
@@ -4012,455 +5655,526 @@ function displayLoadedNote(sura, verse, content) {
   }
 }
 
-/* =========================
-   updateLocalNoteUI BAŞLANGIÇ
-========================= */
-
 function updateLocalNoteUI(sura, verse) {
-  const note =
-    getLocalNote(
-      sura,
-      verse
-    );
-
-  const noteButton =
-    document.getElementById(
-      `noteBtn-${sura}-${verse}`
-    );
-
-  const noteBox =
-    document.getElementById(
-      `user-note-${sura}-${verse}`
-    );
+  const note = getLocalNote(sura, verse);
+  const noteButton = document.getElementById(`noteBtn-${sura}-${verse}`);
+  const noteBox = document.getElementById(`user-note-${sura}-${verse}`);
 
   if (note?.content) {
     if (noteButton) {
-      noteButton.classList.add(
-        'has-note'
-      );
-
-      noteButton.textContent =
-        'Notlu';
+      noteButton.classList.add('has-note');
+      noteButton.textContent = '📝 Notlu';
     }
 
     return;
   }
 
   if (noteButton) {
-    noteButton.classList.remove(
-      'has-note'
-    );
-
-    noteButton.textContent =
-      'Not Al';
+    noteButton.classList.remove('has-note');
+    noteButton.textContent = 'Not Al';
   }
 
   if (noteBox) {
     noteBox.innerHTML = '';
-
-    noteBox.classList.add(
-      'hidden'
-    );
+    noteBox.classList.add('hidden');
   }
 }
 
-/* =========================
-   updateLocalNoteUI BİTİŞ
-========================= */
+function getActiveNoteEditor() {
+  return document.getElementById('noteEditorOverlay');
+}
 
-/* =========================
-   saveNote BAŞLANGIÇ
-========================= */
+function updateNoteEditorCounter(editor, counter) {
+  if (!editor || !counter) return;
+
+  const textLength = String(editor.innerText || editor.textContent || '')
+    .replace(/\u00a0/g, ' ')
+    .trim()
+    .length;
+
+  counter.textContent = `${textLength.toLocaleString('tr-TR')} / ${NOTE_EDITOR_MAX_TEXT_LENGTH.toLocaleString('tr-TR')}`;
+  counter.classList.toggle('is-limit-near', textLength > NOTE_EDITOR_MAX_TEXT_LENGTH * 0.9);
+  counter.classList.toggle('is-limit-exceeded', textLength > NOTE_EDITOR_MAX_TEXT_LENGTH);
+}
+
+function noteEditorCommand(editor, command, value = null) {
+  if (!editor) return;
+
+  editor.focus();
+
+  try {
+    document.execCommand(command, false, value);
+  } catch (error) {
+    console.warn(`Not düzenleyici komutu çalışmadı: ${command}`, error);
+  }
+
+  editor.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function insertSafePastedNoteContent(editor, event) {
+  if (!editor || !event.clipboardData) return;
+
+  event.preventDefault();
+
+  const clipboardHtml = event.clipboardData.getData('text/html');
+  const clipboardText = event.clipboardData.getData('text/plain');
+
+  if (clipboardHtml) {
+    const safeHtml = sanitizeNoteHtml(clipboardHtml);
+    noteEditorCommand(editor, 'insertHTML', safeHtml || escapeHtml(clipboardText));
+    return;
+  }
+
+  noteEditorCommand(editor, 'insertText', clipboardText);
+}
+
+function buildNoteEditorToolbar() {
+  const button = (label, command, title, value = '') => `
+    <button
+      type="button"
+      class="note-editor-tool"
+      data-editor-command="${escapeHtml(command)}"
+      ${value ? `data-editor-value="${escapeHtml(value)}"` : ''}
+      title="${escapeHtml(title)}"
+      aria-label="${escapeHtml(title)}"
+    >${label}</button>
+  `;
+
+  return `
+    <div class="note-editor-toolbar" role="toolbar" aria-label="Not biçimlendirme araçları">
+      <div class="note-editor-tool-group">
+        ${button('↶', 'undo', 'Geri al')}
+        ${button('↷', 'redo', 'Yinele')}
+      </div>
+
+      <div class="note-editor-tool-group">
+        ${button('<strong>B</strong>', 'bold', 'Kalın')}
+        ${button('<em>I</em>', 'italic', 'İtalik')}
+        ${button('<u>U</u>', 'underline', 'Altı çizili')}
+        ${button('<s>S</s>', 'strikeThrough', 'Üstü çizili')}
+      </div>
+
+      <div class="note-editor-tool-group">
+        ${button('Başlık', 'formatBlock', 'Başlık', 'H2')}
+        ${button('Alt başlık', 'formatBlock', 'Alt başlık', 'H3')}
+        ${button('¶', 'formatBlock', 'Normal paragraf', 'P')}
+      </div>
+
+      <div class="note-editor-tool-group">
+        ${button('• Liste', 'insertUnorderedList', 'Madde işaretli liste')}
+        ${button('1. Liste', 'insertOrderedList', 'Numaralı liste')}
+        ${button('❝', 'formatBlock', 'Alıntı', 'BLOCKQUOTE')}
+        ${button('―', 'insertHorizontalRule', 'Yatay çizgi')}
+      </div>
+
+      <div class="note-editor-tool-group">
+        ${button('≡', 'justifyLeft', 'Sola hizala')}
+        ${button('≣', 'justifyCenter', 'Ortala')}
+        ${button('≡→', 'justifyRight', 'Sağa hizala')}
+      </div>
+
+      <div class="note-editor-tool-group">
+        <button
+          type="button"
+          class="note-editor-tool"
+          data-editor-link="true"
+          title="Bağlantı ekle"
+          aria-label="Bağlantı ekle"
+        >🔗</button>
+        ${button('Tx', 'removeFormat', 'Karakter biçimini temizle')}
+      </div>
+    </div>
+  `;
+}
+
+function openNoteEditor(sura, verse) {
+  if (!verseExists(sura, verse)) {
+    showNotification('Not düzenlenecek ayet bulunamadı.', 'warning');
+    return false;
+  }
+
+  const existingEditor = getActiveNoteEditor();
+  if (existingEditor) {
+    const currentSura = existingEditor.dataset.sura;
+    const currentVerse = existingEditor.dataset.verse;
+
+    if (String(currentSura) === String(sura) && String(currentVerse) === String(verse)) {
+      existingEditor.querySelector('#noteEditorContent')?.focus();
+      return true;
+    }
+
+    if (!closeNoteEditor()) return false;
+  }
+
+  const verseData = findVerseData(String(sura), String(verse));
+  const suraName = STATE.metadata.sureNames[String(sura)] || `Sure ${sura}`;
+  const note = getLocalNote(sura, verse);
+  const initialHtml = note?.format === 'html'
+    ? sanitizeNoteHtml(note.content || '')
+    : plainTextToEditorHtml(note?.content || '');
+
+  const overlay = document.createElement('section');
+  overlay.id = 'noteEditorOverlay';
+  overlay.className = 'note-editor-overlay';
+  overlay.dataset.sura = String(sura);
+  overlay.dataset.verse = String(verse);
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-labelledby', 'noteEditorTitle');
+
+  overlay.innerHTML = `
+    <div class="note-editor-topbar">
+      <button type="button" class="note-editor-close-btn" data-note-editor-close>
+        ← Kapat
+      </button>
+
+      <div class="note-editor-heading">
+        <strong id="noteEditorTitle">📝 ${escapeHtml(`${sura}:${verse}`)} Notu</strong>
+        <span>${escapeHtml(suraName)}</span>
+      </div>
+
+      <button type="button" class="note-editor-save-btn" data-note-editor-save>
+        💾 Kaydet
+      </button>
+    </div>
+
+    <div class="note-editor-scroll">
+      <div class="note-editor-document">
+        <section class="note-editor-verse-card" aria-label="Notun bağlı olduğu ayet">
+          <div class="note-editor-verse-kicker">NOTUN BAĞLI OLDUĞU AYET</div>
+          <div class="note-editor-verse-title">
+            <strong>${escapeHtml(`${sura}:${verse}`)}</strong>
+            <span>${escapeHtml(suraName)}</span>
+          </div>
+
+          <div class="note-editor-verse-text note-editor-verse-tr">
+            <span>Türkçe</span>
+            <p>${escapeHtml(verseData.turkish || 'Türkçe ayet metni bulunamadı.')}</p>
+          </div>
+
+          <div class="note-editor-verse-text note-editor-verse-en">
+            <span>English</span>
+            <p>${escapeHtml(verseData.english || 'English verse text is unavailable.')}</p>
+          </div>
+        </section>
+
+        ${buildNoteEditorToolbar()}
+
+        <section class="note-editor-paper" aria-label="Not düzenleme sayfası">
+          <div
+            id="noteEditorContent"
+            class="note-editor-content note-rich-content"
+            contenteditable="true"
+            role="textbox"
+            aria-multiline="true"
+            spellcheck="true"
+            data-placeholder="Notunuzu buraya yazın..."
+          ></div>
+
+          <div class="note-editor-meta">
+            <span id="noteEditorCharCount">0 / ${NOTE_EDITOR_MAX_TEXT_LENGTH.toLocaleString('tr-TR')}</span>
+            <span>Ctrl/Cmd + S ile kaydedebilirsiniz.</span>
+          </div>
+
+          <div class="note-editor-bottom-actions">
+            <button type="button" class="note-editor-save-btn note-editor-save-btn--large" data-note-editor-save>
+              💾 Notu Kaydet
+            </button>
+          </div>
+        </section>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+  document.body.classList.add('note-editor-open');
+
+  const editor = overlay.querySelector('#noteEditorContent');
+  const counter = overlay.querySelector('#noteEditorCharCount');
+
+  editor.innerHTML = initialHtml || '<div><br></div>';
+  overlay._initialNoteHtml = sanitizeNoteHtml(editor.innerHTML);
+
+  const onInput = () => updateNoteEditorCounter(editor, counter);
+  editor.addEventListener('input', onInput);
+  editor.addEventListener('paste', (event) => insertSafePastedNoteContent(editor, event));
+
+  overlay.querySelectorAll('[data-editor-command]').forEach((toolButton) => {
+    toolButton.addEventListener('mousedown', (event) => event.preventDefault());
+    toolButton.addEventListener('click', () => {
+      noteEditorCommand(
+        editor,
+        toolButton.dataset.editorCommand,
+        toolButton.dataset.editorValue || null
+      );
+    });
+  });
+
+  overlay.querySelector('[data-editor-link]')?.addEventListener('mousedown', (event) => {
+    event.preventDefault();
+  });
+
+  overlay.querySelector('[data-editor-link]')?.addEventListener('click', () => {
+    const selection = window.getSelection();
+
+    if (!selection || selection.isCollapsed) {
+      showNotification('Bağlantı vermek için önce metni seçin.', 'warning');
+      editor.focus();
+      return;
+    }
+
+    const href = window.prompt('Bağlantı adresi (https://...)');
+    if (!href) return;
+
+    const safeHref = normalizeNoteHref(href);
+    if (!safeHref) {
+      showNotification('Geçerli bir http/https bağlantısı girin.', 'warning');
+      return;
+    }
+
+    noteEditorCommand(editor, 'createLink', safeHref);
+  });
+
+  overlay.querySelectorAll('[data-note-editor-save]').forEach((saveButton) => {
+    saveButton.addEventListener('click', saveActiveNoteEditor);
+  });
+
+  overlay.querySelector('[data-note-editor-close]')?.addEventListener('click', () => {
+    closeNoteEditor();
+  });
+
+  overlay.addEventListener('keydown', (event) => {
+    const modifier = event.ctrlKey || event.metaKey;
+
+    if (modifier && String(event.key).toLowerCase() === 's') {
+      event.preventDefault();
+      saveActiveNoteEditor();
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      closeNoteEditor();
+    }
+  });
+
+  updateNoteEditorCounter(editor, counter);
+
+  requestAnimationFrame(() => {
+    editor.focus({ preventScroll: true });
+  });
+
+  return true;
+}
+
+function closeNoteEditor(options = {}) {
+  const { force = false } = options;
+  const overlay = getActiveNoteEditor();
+
+  if (!overlay) return true;
+
+  const editor = overlay.querySelector('#noteEditorContent');
+  const currentHtml = sanitizeNoteHtml(editor?.innerHTML || '');
+  const initialHtml = String(overlay._initialNoteHtml || '');
+
+  if (!force && currentHtml !== initialHtml) {
+    const approved = window.confirm(
+      'Kaydedilmemiş değişiklikler var. Not düzenleyiciyi kapatmak istiyor musunuz?'
+    );
+
+    if (!approved) return false;
+  }
+
+  overlay.remove();
+  document.body.classList.remove('note-editor-open');
+  return true;
+}
+
+function saveActiveNoteEditor() {
+  const overlay = getActiveNoteEditor();
+  if (!overlay) return false;
+
+  const editor = overlay.querySelector('#noteEditorContent');
+  const sura = overlay.dataset.sura;
+  const verse = overlay.dataset.verse;
+  const safeHtml = sanitizeNoteHtml(editor?.innerHTML || '');
+  const plainText = noteHtmlToPlainText(safeHtml);
+
+  if (!plainText) {
+    showNotification('⚠️ Not içeriği boş olamaz.', 'warning');
+    editor?.focus();
+    return false;
+  }
+
+  if (plainText.length > NOTE_EDITOR_MAX_TEXT_LENGTH) {
+    showNotification(
+      `Not ${NOTE_EDITOR_MAX_TEXT_LENGTH.toLocaleString('tr-TR')} karakter sınırını aşıyor.`,
+      'warning'
+    );
+    editor?.focus();
+    return false;
+  }
+
+  const success = saveLocalNote(sura, verse, safeHtml, 'html');
+  if (!success) return false;
+
+  clearPageCache();
+  const note = getLocalNote(sura, verse);
+  displayLoadedNote(sura, verse, note);
+
+  const inlineBox = document.getElementById(`user-note-${sura}-${verse}`);
+  if (inlineBox) inlineBox.classList.remove('hidden');
+
+  updateLocalNoteUI(sura, verse);
+
+  if (document.getElementById('notesList')) {
+    loadAndDisplayAllNotes();
+  }
+
+  overlay._initialNoteHtml = safeHtml;
+  closeNoteEditor({ force: true });
+
+  showNotification('✅ Biçimli not cihazınıza kaydedildi.', 'success');
+  return true;
+}
 
 function saveNote(sura, verse) {
-    const textarea = document.getElementById(
-        `note-input-${sura}-${verse}`
-    );
+  const overlay = getActiveNoteEditor();
 
-    if (!textarea) {
-        return;
-    }
+  if (overlay) {
+    return saveActiveNoteEditor();
+  }
 
-    const noteContent =
-        textarea.value.trim();
-
-    if (!noteContent) {
-        showNotification(
-            '⚠️ Not içeriği boş olamaz.',
-            'warning'
-        );
-
-        return;
-    }
-
-    const success = saveLocalNote(
-        sura,
-        verse,
-        noteContent
-    );
-
-    if (!success) {
-        return;
-    }
-
-    /*
-      Eski sayfa HTML'inin önbellekten tekrar
-      yüklenmesini engeller.
-    */
-    clearPageCache();
-
-    textarea.value = '';
-
-    const inputBox = document.getElementById(
-        `note-input-box-${sura}-${verse}`
-    );
-
-    if (inputBox) {
-        inputBox.classList.add(
-            'hidden'
-        );
-    }
-
-    displayLoadedNote(
-        sura,
-        verse,
-        noteContent
-    );
-
-    updateLocalNoteUI(
-        sura,
-        verse
-    );
-
-    showNotification(
-        '✅ Not cihazınıza kaydedildi.',
-        'success'
-    );
+  return openNoteEditor(sura, verse);
 }
 
-/* =========================
-   saveNote BİTİŞ
-========================= */
-
-function cancelNote(sura, verse) {
-  const textarea = document.getElementById(
-    `note-input-${sura}-${verse}`
-  );
-
-  const inputBox = document.getElementById(
-    `note-input-box-${sura}-${verse}`
-  );
-
-  if (textarea) {
-    textarea.value = '';
-  }
-
-  if (inputBox) {
-    inputBox.classList.add('hidden');
-  }
+function cancelNote() {
+  closeNoteEditor();
 }
 
 async function toggleNoteInput(id, sura, verse) {
-  const inputBox = document.getElementById(id);
-  const savedNoteBox = document.getElementById(
-    `user-note-${sura}-${verse}`
-  );
-
   const existingNote = getLocalNote(sura, verse);
+  const savedNoteBox = document.getElementById(`user-note-${sura}-${verse}`);
 
-  /*
-    Kayıtlı not varsa:
-    Notlu butonu, kayıtlı not alanını açıp kapatır.
-  */
-  if (existingNote?.content) {
-    if (!savedNoteBox) return;
-
+  if (existingNote?.content && savedNoteBox) {
     savedNoteBox.classList.toggle('hidden');
-
     return;
   }
 
-  /*
-    Kayıtlı not yoksa:
-    Normal not yazma alanı açılır veya kapanır.
-  */
-  if (!inputBox) return;
-
-  inputBox.classList.toggle('hidden');
-
-  if (!inputBox.classList.contains('hidden')) {
-    const textarea = document.getElementById(
-      `note-input-${sura}-${verse}`
-    );
-
-    if (!textarea) return;
-
-    textarea.value = '';
-
-    setTimeout(() => {
-      textarea.focus();
-    }, 100);
-  }
+  openNoteEditor(sura, verse);
 }
 
 function editLocalNote(sura, verse) {
-  const inputBox = document.getElementById(
-    `note-input-box-${sura}-${verse}`
-  );
-
-  const textarea = document.getElementById(
-    `note-input-${sura}-${verse}`
-  );
-
-  if (!inputBox || !textarea) return;
-
-  const note = getLocalNote(sura, verse);
-
-  textarea.value =
-    note?.content || '';
-
-  inputBox.classList.remove('hidden');
-
-  setTimeout(() => {
-    textarea.focus();
-  }, 100);
+  openNoteEditor(sura, verse);
 }
-
-/* =========================
-   removeLocalNote BAŞLANGIÇ
-========================= */
 
 function removeLocalNote(sura, verse) {
-    const approved = window.confirm(
-        'Bu not silinsin mi?'
-    );
+  const approved = window.confirm('Bu not silinsin mi?');
 
-    if (!approved) {
-        return;
-    }
+  if (!approved) return;
 
-    const deleted = deleteLocalNote(
-        sura,
-        verse
-    );
+  const deleted = deleteLocalNote(sura, verse);
 
-    if (!deleted) {
-        showNotification(
-            'Silinecek not bulunamadı.',
-            'warning'
-        );
-
-        return;
-    }
-
-    const inputBox = document.getElementById(
-        `note-input-box-${sura}-${verse}`
-    );
-
-    if (inputBox) {
-        inputBox.classList.add(
-            'hidden'
-        );
-    }
-
-    const textarea = document.getElementById(
-        `note-input-${sura}-${verse}`
-    );
-
-    if (textarea) {
-        textarea.value = '';
-    }
-
-    /*
-      Eski "Notlu" HTML'inin önbellekten
-      tekrar gelmesini engeller.
-    */
-    clearPageCache();
-
-    /*
-      Butonu ve not kutusunu güncel
-      localStorage durumuna göre sıfırlar.
-    */
-    updateLocalNoteUI(
-        sura,
-        verse
-    );
-
-    showNotification(
-        '🗑️ Not silindi.',
-        'success'
-    );
-}
-
-/* =========================
-   removeLocalNote BİTİŞ
-========================= */
-
-function loadAndDisplayAllNotes() {
-  const notesList =
-    document.getElementById('notesList');
-
-  if (!notesList) {
+  if (!deleted) {
+    showNotification('Silinecek not bulunamadı.', 'warning');
     return;
   }
+
+  clearPageCache();
+  updateLocalNoteUI(sura, verse);
+
+  if (document.getElementById('notesList')) {
+    loadAndDisplayAllNotes();
+  }
+
+  showNotification('🗑️ Not silindi.', 'success');
+}
+
+function loadAndDisplayAllNotes() {
+  const notesList = document.getElementById('notesList');
+  if (!notesList) return;
 
   const notes = Object
     .values(getAllLocalNotes())
     .sort((a, b) => {
-      const suraDifference =
-        Number(a.sura) - Number(b.sura);
-
-      if (suraDifference !== 0) {
-        return suraDifference;
-      }
-
-      return (
-        Number(a.verse) -
-        Number(b.verse)
-      );
+      const suraDifference = Number(a.sura) - Number(b.sura);
+      if (suraDifference !== 0) return suraDifference;
+      return Number(a.verse) - Number(b.verse);
     });
 
   if (notes.length === 0) {
     notesList.innerHTML = `
-      <p>
-        Henüz kaydedilmiş notunuz bulunmuyor.
-      </p>
+      <div class="notes-empty-state">
+        <strong>Henüz kaydedilmiş notunuz bulunmuyor.</strong>
+        <span>Bir ayette “Not Al” düğmesine basarak ilk notunuzu oluşturabilirsiniz.</span>
+      </div>
     `;
-
     return;
   }
 
   notesList.innerHTML = `
-    <div class="notes-table-wrapper">
-      <table class="notes-table">
-        <thead>
-          <tr>
-            <th>Sure</th>
-            <th>Ayet</th>
-            <th>Sure Adı</th>
-            <th>Not</th>
-            <th>Güncelleme</th>
-            <th>İşlemler</th>
-          </tr>
-        </thead>
+    <div class="notes-card-list">
+      ${notes.map((note) => {
+        const suraNumber = Number(note.sura);
+        const verseNumber = Number(note.verse);
+        const suraName = STATE.metadata.sureNames[String(note.sura)] || `Sure ${note.sura}`;
+        const updatedDate = note.updatedAt
+          ? new Date(note.updatedAt).toLocaleString('tr-TR')
+          : '';
+        const verseData = findVerseData(String(note.sura), String(note.verse));
+        const noteHtml = renderStoredNoteContent(note);
 
-        <tbody>
-          ${notes
-            .map((note) => {
-              const suraNumber =
-                Number(note.sura);
+        return `
+          <article class="notes-card" data-note-id="${escapeHtml(`${note.sura}:${note.verse}`)}">
+            <header class="notes-card-header">
+              <div>
+                <span class="notes-card-kicker">AYET NOTU</span>
+                <h2>${escapeHtml(`${note.sura}:${note.verse}`)} · ${escapeHtml(suraName)}</h2>
+              </div>
+              <time datetime="${escapeHtml(note.updatedAt || '')}">${escapeHtml(updatedDate)}</time>
+            </header>
 
-              const verseNumber =
-                Number(note.verse);
+            <section class="notes-card-verse">
+              <span>Türkçe ayet</span>
+              <p>${escapeHtml(verseData.turkish || 'Türkçe ayet metni bulunamadı.')}</p>
+            </section>
 
-              const suraName =
-                STATE.metadata.sureNames[
-                  String(note.sura)
-                ] ||
-                `Sure ${note.sura}`;
+            <section class="notes-card-note">
+              <div class="notes-card-note-label">NOT</div>
+              <div class="notes-card-note-content note-rich-content">
+                ${noteHtml}
+              </div>
+            </section>
 
-              const updatedDate =
-                note.updatedAt
-                  ? new Date(
-                      note.updatedAt
-                    ).toLocaleString(
-                      'tr-TR'
-                    )
-                  : '';
+            <footer class="notes-card-actions">
+              <button
+                type="button"
+                class="notes-go-btn"
+                data-action="notes-go-verse"
+                data-sura="${suraNumber}"
+                data-verse="${verseNumber}"
+              >📖 Ayete Git</button>
 
-              /*
-                Satır sonlarını boşluğa çevirir.
-                Böylece not tabloda tek satır olur.
-              */
-              const singleLineContent =
-                String(note.content || '')
-                  .replace(/\s+/g, ' ')
-                  .trim();
+              <button
+                type="button"
+                class="notes-edit-btn"
+                data-action="edit-note"
+                data-sura="${suraNumber}"
+                data-verse="${verseNumber}"
+              >✏️ Düzenle</button>
 
-              return `
-                <tr>
-                  <td class="notes-number-cell">
-                    ${escapeHtml(
-                      String(note.sura)
-                    )}
-                  </td>
-
-                  <td class="notes-number-cell">
-                    ${escapeHtml(
-                      String(note.verse)
-                    )}
-                  </td>
-
-                  <td
-                    class="notes-sura-cell"
-                    title="${escapeHtml(
-                      suraName
-                    )}"
-                  >
-                    ${escapeHtml(
-                      suraName
-                    )}
-                  </td>
-
-                  <td
-                    class="notes-content-cell"
-                    title="${escapeHtml(
-                      String(
-                        note.content || ''
-                      )
-                    )}"
-                  >
-                    <div class="notes-content-preview">
-                      ${escapeHtml(
-                        singleLineContent
-                      )}
-                    </div>
-                  </td>
-
-                  <td
-                    class="notes-date-cell"
-                    title="${escapeHtml(
-                      updatedDate
-                    )}"
-                  >
-                    ${escapeHtml(
-                      updatedDate
-                    )}
-                  </td>
-
-                  <td class="notes-actions-cell">
-                    <div class="notes-action-buttons">
-                      <button
-                        type="button"
-                        class="notes-go-btn"
-                        data-action="notes-go-verse"
-                        data-sura="${suraNumber}"
-                        data-verse="${verseNumber}"
-                        title="${suraNumber}:${verseNumber} ayetine git"
-                        aria-label="${suraNumber}:${verseNumber} ayetine git"
-                      >
-                        📖 Git
-                      </button>
-
-                      <button
-                        type="button"
-                        class="notes-delete-btn"
-                        data-action="notes-remove"
-                        data-sura="${suraNumber}"
-                        data-verse="${verseNumber}"
-                        title="${suraNumber}:${verseNumber} notunu sil"
-                        aria-label="${suraNumber}:${verseNumber} notunu sil"
-                      >
-                        🗑️ Sil
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              `;
-            })
-            .join('')}
-        </tbody>
-      </table>
+              <button
+                type="button"
+                class="notes-delete-btn"
+                data-action="notes-remove"
+                data-sura="${suraNumber}"
+                data-verse="${verseNumber}"
+              >🗑️ Sil</button>
+            </footer>
+          </article>
+        `;
+      }).join('')}
     </div>
   `;
 }
@@ -4480,100 +6194,51 @@ function goToVerseFromNotes(sura, verse) {
   });
 }
 
-/* =========================
-   removeLocalNoteFromList BAŞLANGIÇ
-========================= */
+function removeLocalNoteFromList(sura, verse) {
+  const approved = window.confirm(
+    `${sura}:${verse} ayetine ait not silinsin mi?`
+  );
 
-function removeLocalNoteFromList(
-    sura,
-    verse
-) {
-    const approved = window.confirm(
-        `${sura}:${verse} ayetine ait not silinsin mi?`
-    );
+  if (!approved) return;
 
-    if (!approved) {
-        return;
-    }
+  const deleted = deleteLocalNote(sura, verse);
 
-    const deleted = deleteLocalNote(
-        sura,
-        verse
-    );
+  if (!deleted) {
+    showNotification('Silinecek not bulunamadı.', 'warning');
+    return;
+  }
 
-    if (!deleted) {
-        showNotification(
-            'Silinecek not bulunamadı.',
-            'warning'
-        );
-
-        return;
-    }
-
-    /*
-      Eski "Notlu" butonlarının önbellekten
-      tekrar yüklenmesini engeller.
-    */
-    clearPageCache();
-
-    updateLocalNoteUI(
-        sura,
-        verse
-    );
-
-    loadAndDisplayAllNotes();
-
-    showNotification(
-        '🗑️ Not silindi.',
-        'success'
-    );
+  clearPageCache();
+  updateLocalNoteUI(sura, verse);
+  loadAndDisplayAllNotes();
+  showNotification('🗑️ Not silindi.', 'success');
 }
-
-/* =========================
-   removeLocalNoteFromList BİTİŞ
-========================= */
 
 function exportLocalNotes() {
   const notes = getAllLocalNotes();
 
   if (Object.keys(notes).length === 0) {
-    showNotification(
-      'Dışa aktarılacak not bulunamadı.',
-      'warning'
-    );
-
+    showNotification('Dışa aktarılacak not bulunamadı.', 'warning');
     return;
   }
 
   const exportData = {
     application: 'KuranTeyit',
-    version: 1,
+    version: NOTE_EXPORT_VERSION,
     exportedAt: new Date().toISOString(),
     notes
   };
 
   const blob = new Blob(
-    [
-      JSON.stringify(
-        exportData,
-        null,
-        2
-      )
-    ],
-    {
-      type: 'application/json;charset=utf-8'
-    }
+    [JSON.stringify(exportData, null, 2)],
+    { type: 'application/json;charset=utf-8' }
   );
 
-  const downloadUrl =
-    URL.createObjectURL(blob);
-
-  const anchor =
-    document.createElement('a');
+  const downloadUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
 
   anchor.href = downloadUrl;
-  anchor.download =
-    'KuranTeyit_Notlar.json';
+  anchor.download = 'KuranTeyit_Notlar.json';
 
   document.body.appendChild(anchor);
   anchor.click();
@@ -4591,21 +6256,17 @@ function openNotesImportDialog() {
     const file = input.files?.[0];
     if (!file) return;
 
-    const MAX_IMPORT_BYTES = 2 * 1024 * 1024;
+    const MAX_IMPORT_BYTES = 4 * 1024 * 1024;
 
     if (file.size > MAX_IMPORT_BYTES) {
-      showNotification('Not dosyası 2 MB sınırını aşıyor.', 'warning');
+      showNotification('Not dosyası 4 MB sınırını aşıyor.', 'warning');
       return;
     }
 
     try {
       const content = await file.text();
       const parsed = JSON.parse(content);
-      const importedNotes = sanitizeImportedNotes(parsed, {
-        maxNotes: 10000,
-        maxContentLength: 10000,
-        verseExists
-      });
+      const importedNotes = sanitizeNotesForImport(parsed);
 
       const existingNotes = getAllLocalNotes();
       const mergedNotes = {
@@ -5141,6 +6802,1013 @@ function getFastSuraSuggestions(
   return results;
 }
 
+function normalizeResearchLookupText(value) {
+  return normalizeTurkishText(String(value || ''))
+    .replace(/[“”„‟]/g, '"')
+    .replace(/[’‘`´ʼʻ＇]/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizeEnglishResearchTerm(value) {
+  return normalizeSearchText(String(value || ''))
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getResearchConfidencePriority(confidence) {
+  switch (String(confidence || '').toLowerCase()) {
+    case 'high':
+      return 35;
+    case 'medium':
+      return 25;
+    case 'low':
+      return 10;
+    default:
+      return 0;
+  }
+}
+
+function registerResearchEnglishTerm(english, meta = {}) {
+  const cleanEnglish = String(english || '').trim();
+  const key = normalizeEnglishResearchTerm(cleanEnglish);
+  if (!cleanEnglish || !key) return;
+
+  const priority = Number(meta.priority) || 0;
+  const current = RESEARCH_SEARCH_STATE.englishTerms.get(key);
+
+  if (!current || priority > current.priority) {
+    RESEARCH_SEARCH_STATE.englishTerms.set(key, {
+      english: cleanEnglish,
+      source: meta.source || 'dictionary',
+      priority
+    });
+  }
+}
+
+function registerResearchReverseTranslation(turkish, english, meta = {}) {
+  const cleanTurkish = String(turkish || '').trim();
+  const cleanEnglish = String(english || '').trim();
+  const turkishKey = normalizeResearchLookupText(cleanTurkish);
+  const englishKey = normalizeEnglishResearchTerm(cleanEnglish);
+
+  if (!cleanTurkish || !cleanEnglish || !turkishKey || !englishKey) return;
+
+  const candidates = RESEARCH_SEARCH_STATE.reverseTurkishToEnglish.get(turkishKey) || [];
+  const existing = candidates.find(
+    (candidate) => normalizeEnglishResearchTerm(candidate.english) === englishKey
+  );
+
+  const next = {
+    english: cleanEnglish,
+    source: meta.source || 'dictionary',
+    confidence: meta.confidence || '',
+    priority: Number(meta.priority) || 0
+  };
+
+  if (existing) {
+    if (next.priority > existing.priority) {
+      Object.assign(existing, next);
+    }
+  } else {
+    candidates.push(next);
+  }
+
+  candidates.sort((left, right) => {
+    if (right.priority !== left.priority) return right.priority - left.priority;
+    return left.english.localeCompare(right.english, 'en');
+  });
+
+  RESEARCH_SEARCH_STATE.reverseTurkishToEnglish.set(turkishKey, candidates);
+}
+
+function buildResearchReverseDictionaryIndex() {
+  const manualSource = STATE.data.dictionary;
+  const contextualSource = STATE.data.contextualDictionary;
+
+  if (
+    RESEARCH_SEARCH_STATE.manualSource === manualSource &&
+    RESEARCH_SEARCH_STATE.contextualSource === contextualSource &&
+    (RESEARCH_SEARCH_STATE.reverseTurkishToEnglish.size > 0 ||
+      RESEARCH_SEARCH_STATE.englishTerms.size > 0)
+  ) {
+    return;
+  }
+
+  RESEARCH_SEARCH_STATE.manualSource = manualSource || null;
+  RESEARCH_SEARCH_STATE.contextualSource = contextualSource || null;
+  RESEARCH_SEARCH_STATE.reverseTurkishToEnglish = new Map();
+  RESEARCH_SEARCH_STATE.englishTerms = new Map();
+
+  if (manualSource && typeof manualSource === 'object') {
+    Object.entries(manualSource).forEach(([english, meaning]) => {
+      const cleanEnglish = String(english || '').trim();
+      if (!cleanEnglish) return;
+
+      registerResearchEnglishTerm(cleanEnglish, {
+        source: 'manual-dictionary',
+        priority: 220
+      });
+
+      String(meaning || '')
+        .split(/\s*,\s*/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .forEach((translation) => {
+          registerResearchReverseTranslation(translation, cleanEnglish, {
+            source: 'manual-dictionary',
+            priority: 220
+          });
+        });
+    });
+  }
+
+  const entries = contextualSource?.entries;
+
+  if (entries && typeof entries === 'object') {
+    Object.entries(entries).forEach(([canonicalKey, entry]) => {
+      const cleanEnglish = String(canonicalKey || '').trim();
+      if (!cleanEnglish) return;
+
+      const confidence = String(entry?.confidence || '').toLowerCase();
+      const confidencePriority = getResearchConfidencePriority(confidence);
+
+      registerResearchEnglishTerm(cleanEnglish, {
+        source: 'contextual-dictionary',
+        priority: 360 + confidencePriority
+      });
+
+      if (Array.isArray(entry?.aliases)) {
+        entry.aliases.forEach((alias) => {
+          registerResearchEnglishTerm(alias, {
+            source: 'contextual-alias',
+            priority: 350 + confidencePriority
+          });
+        });
+      }
+
+      const defaultTranslation = String(entry?.default_translation || '').trim();
+      if (defaultTranslation) {
+        registerResearchReverseTranslation(defaultTranslation, cleanEnglish, {
+          source: 'contextual-default',
+          confidence,
+          priority: 350 + confidencePriority
+        });
+      }
+
+      if (Array.isArray(entry?.translations)) {
+        entry.translations
+          .map((item) => String(item || '').trim())
+          .filter(Boolean)
+          .forEach((translation) => {
+            registerResearchReverseTranslation(translation, cleanEnglish, {
+              source: 'contextual-alternative',
+              confidence,
+              priority: 320 + confidencePriority
+            });
+          });
+      }
+
+      const verseOverrides = entry?.verse_overrides;
+      if (verseOverrides && typeof verseOverrides === 'object') {
+        Object.values(verseOverrides)
+          .map((item) => String(item || '').trim())
+          .filter(Boolean)
+          .forEach((translation) => {
+            registerResearchReverseTranslation(translation, cleanEnglish, {
+              source: 'contextual-verse',
+              confidence,
+              priority: 245 + confidencePriority
+            });
+          });
+      }
+    });
+  }
+
+  console.log(
+    'Araştırma ters sözlük indeksi hazır:',
+    RESEARCH_SEARCH_STATE.reverseTurkishToEnglish.size,
+    'Türkçe karşılık /',
+    RESEARCH_SEARCH_STATE.englishTerms.size,
+    'İngilizce terim'
+  );
+}
+
+async function ensureResearchDictionaryReady() {
+  try {
+    await ensureFeatureLoaded('dictionary');
+  } catch (error) {
+    console.warn(
+      'Araştırma için sözlükler tam yüklenemedi; mevcut arama yedek olarak kullanılacak:',
+      error
+    );
+  }
+
+  buildResearchReverseDictionaryIndex();
+
+  return (
+    RESEARCH_SEARCH_STATE.reverseTurkishToEnglish.size > 0 ||
+    RESEARCH_SEARCH_STATE.englishTerms.size > 0
+  );
+}
+
+function parseResearchSearchInput(rawQuery) {
+  const raw = String(rawQuery || '').trim();
+  const normalizedQuotes = raw.replace(/[“”„‟]/g, '"');
+
+  const wholeQuotedMatch = normalizedQuotes.match(/^"([\s\S]*)"$/);
+  if (wholeQuotedMatch) {
+    const phrase = String(wholeQuotedMatch[1] || '').trim();
+    return {
+      raw,
+      forceLegacy: true,
+      legacyQuery: phrase,
+      terms: phrase ? [phrase] : [],
+      isMulti: false,
+      truncated: false
+    };
+  }
+
+  const terms = [];
+  let buffer = '';
+  let inQuotes = false;
+  let hadSeparator = false;
+
+  for (const character of normalizedQuotes) {
+    if (character === '"') {
+      inQuotes = !inQuotes;
+      continue;
+    }
+
+    if (character === ',' && !inQuotes) {
+      hadSeparator = true;
+      const value = buffer.trim();
+      if (value) terms.push(value);
+      buffer = '';
+      continue;
+    }
+
+    buffer += character;
+  }
+
+  const lastValue = buffer.trim();
+  if (lastValue) terms.push(lastValue);
+
+  const uniqueTerms = [];
+  const seen = new Set();
+
+  terms.forEach((term) => {
+    const key = normalizeResearchLookupText(term);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    uniqueTerms.push(term);
+  });
+
+  const truncated = uniqueTerms.length > RESEARCH_SEARCH_LIMITS.maxTerms;
+  const limitedTerms = uniqueTerms.slice(0, RESEARCH_SEARCH_LIMITS.maxTerms);
+
+  return {
+    raw,
+    forceLegacy: false,
+    legacyQuery: raw,
+    terms: limitedTerms,
+    isMulti: hadSeparator && limitedTerms.length > 1,
+    truncated
+  };
+}
+
+function isSimpleResearchTerm(term) {
+  const value = String(term || '').trim();
+  if (!value || /\s/.test(value)) return false;
+
+  return /^[\p{L}\p{N}.'’\-]+$/u.test(value);
+}
+
+function normalizeEnglishResearchPhrase(value) {
+  return normalizeSearchText(String(value || ''))
+    .replace(/[’‘`´ʼʻ＇]/g, "'")
+    .replace(/\b([\p{L}\p{N}]+)'s\b/gu, '$1')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function hasExactEnglishResearchMatch(text, query) {
+  const normalizedText = normalizeEnglishResearchPhrase(text);
+  const normalizedQuery = normalizeEnglishResearchPhrase(query);
+
+  if (!normalizedText || !normalizedQuery) return false;
+
+  return ` ${normalizedText} `.includes(` ${normalizedQuery} `);
+}
+
+function searchEnglishResearchTerm(query) {
+  const q = String(query || '').trim();
+  if (!q || !SEARCH_INDEX.ready) return [];
+
+  const results = [];
+  const seen = new Set();
+  const candidates = getIndexedSearchCandidates(
+    SEARCH_INDEX.quran,
+    SEARCH_INDEX.quranTokenMap,
+    q
+  );
+
+  candidates.forEach((item) => {
+    if (item?.source !== 'en') return;
+    if (!hasExactEnglishResearchMatch(item.text, q)) return;
+
+    const verseId = `${item.suraNum}:${item.verseNum}`;
+    if (seen.has(verseId)) return;
+    seen.add(verseId);
+
+    results.push({
+      type: 'quran',
+      source: 'en',
+      page: item.page || getVersePage(item.suraNum, item.verseNum),
+      suraNum: String(item.suraNum),
+      verseNum: String(item.verseNum),
+      text: String(item.text || ''),
+      query: q,
+      score: 100,
+      fuzzy: false
+    });
+  });
+
+  return results.sort((left, right) => {
+    const suraDifference = Number(left.suraNum) - Number(right.suraNum);
+    if (suraDifference !== 0) return suraDifference;
+
+    return Number(left.verseNum) - Number(right.verseNum);
+  });
+}
+
+function normalizeTurkishResearchPhrase(value) {
+  return normalizeTurkishText(String(value || ''))
+    .replace(/[’‘`´ʼʻ＇]/g, "'")
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function hasExactTurkishResearchMatch(text, query) {
+  const normalizedText = normalizeTurkishResearchPhrase(text);
+  const normalizedQuery = normalizeTurkishResearchPhrase(query);
+
+  if (!normalizedText || !normalizedQuery) return false;
+
+  return ` ${normalizedText} `.includes(` ${normalizedQuery} `);
+}
+
+function searchTurkishResearchTerm(query) {
+  const q = String(query || '').trim();
+  if (!q || !SEARCH_INDEX.ready) return [];
+
+  const resultsByVerse = new Map();
+
+  const addResult = (result, fallbackScore = 90) => {
+    if (!result || result.source !== 'tr') return;
+
+    const verseId = `${result.suraNum}:${result.verseNum}`;
+    const next = {
+      type: 'quran',
+      source: 'tr',
+      page: result.page || getVersePage(result.suraNum, result.verseNum),
+      suraNum: String(result.suraNum),
+      verseNum: String(result.verseNum),
+      text: String(result.text || ''),
+      query: q,
+      score: Number(result.score) || fallbackScore,
+      fuzzy: result.fuzzy === true
+    };
+
+    const current = resultsByVerse.get(verseId);
+    if (!current || next.score > current.score) {
+      resultsByVerse.set(verseId, next);
+    }
+  };
+
+  // 1) Tam kelime / tam ifade eşleşmesini her zaman koru.
+  for (const item of SEARCH_INDEX.quran) {
+    if (item?.source !== 'tr') continue;
+    if (!hasExactTurkishResearchMatch(item.text, q)) continue;
+
+    addResult({
+      ...item,
+      source: 'tr',
+      score: 100,
+      fuzzy: false
+    }, 100);
+  }
+
+  // 2) Mevcut arama motorunun Türkçe ana metinde kabul ettiği güçlü yakın
+  //    biçimleri de kullan. Böylece "hizip"; "hizipler", "hiziplere" gibi
+  //    Türkçe çekimli biçimlerde kaybolmaz. Meal/okunuş/İngilizce sonuçları
+  //    burada özellikle alınmaz; yalnız quran_tr.json kaynaklı TR alanı eklenir.
+  const existingSearchResults = searchKeywordInData(q, 10000, false);
+  existingSearchResults.forEach((result) => {
+    if (result?.type !== 'quran' || result?.source !== 'tr') return;
+    addResult(result, 85);
+  });
+
+  return Array.from(resultsByVerse.values()).sort((left, right) => {
+    if (right.score !== left.score) return right.score - left.score;
+
+    const suraDifference = Number(left.suraNum) - Number(right.suraNum);
+    if (suraDifference !== 0) return suraDifference;
+
+    return Number(left.verseNum) - Number(right.verseNum);
+  });
+}
+
+function addResearchCandidate(candidateMap, candidate, meta = {}) {
+  const cleanEnglish = String(candidate || '').trim();
+  const key = normalizeEnglishResearchTerm(cleanEnglish);
+  if (!cleanEnglish || !key) return;
+
+  const next = {
+    english: cleanEnglish,
+    source: meta.source || 'dictionary',
+    confidence: meta.confidence || '',
+    priority: Number(meta.priority) || 0
+  };
+
+  const current = candidateMap.get(key);
+  if (!current || next.priority > current.priority) {
+    candidateMap.set(key, next);
+  }
+}
+
+function isStrongResearchConfidence(candidate) {
+  const confidence = String(candidate?.confidence || '').toLowerCase();
+  return confidence === 'high' || confidence === 'medium';
+}
+
+function isUsableResearchCandidate(candidate) {
+  const normalized = normalizeEnglishResearchPhrase(candidate?.english || '');
+  if (!normalized) return false;
+
+  const tokens = normalized.split(/\s+/).filter(Boolean);
+  if (tokens.length === 1 && RESEARCH_ENGLISH_STOPWORDS.has(tokens[0])) {
+    return false;
+  }
+
+  return true;
+}
+
+function getResearchCandidateGroups(allCandidates) {
+  const groups = [
+    allCandidates.filter((candidate) => candidate.source === 'direct-english'),
+    allCandidates.filter((candidate) =>
+      candidate.source === 'contextual-default' && isStrongResearchConfidence(candidate)
+    ),
+    allCandidates.filter((candidate) => candidate.source === 'contextual-default'),
+    allCandidates.filter((candidate) =>
+      candidate.source === 'contextual-alternative' && isStrongResearchConfidence(candidate)
+    ),
+    allCandidates.filter((candidate) => candidate.source === 'contextual-alternative'),
+    allCandidates.filter((candidate) => candidate.source === 'manual-dictionary'),
+    allCandidates.filter((candidate) =>
+      !['direct-english', 'contextual-default', 'contextual-alternative', 'contextual-verse', 'manual-dictionary']
+        .includes(candidate.source)
+    )
+  ];
+
+  const seenGroupSignatures = new Set();
+
+  return groups.filter((group) => {
+    if (!group.length) return false;
+    const signature = group
+      .map((candidate) => normalizeEnglishResearchTerm(candidate.english))
+      .sort()
+      .join('|');
+    if (!signature || seenGroupSignatures.has(signature)) return false;
+    seenGroupSignatures.add(signature);
+    return true;
+  });
+}
+
+function selectResearchActiveCandidates(allCandidates) {
+  const groups = getResearchCandidateGroups(allCandidates);
+
+  for (const group of groups) {
+    const candidatesWithMatches = group
+      .filter(isUsableResearchCandidate)
+      .map((candidate) => ({
+        ...candidate,
+        researchResults: searchEnglishResearchTerm(candidate.english)
+      }))
+      .filter((candidate) => candidate.researchResults.length > 0)
+      .sort((left, right) => {
+        if (right.priority !== left.priority) return right.priority - left.priority;
+        if (right.researchResults.length !== left.researchResults.length) {
+          return right.researchResults.length - left.researchResults.length;
+        }
+        return left.english.localeCompare(right.english, 'en');
+      });
+
+    if (!candidatesWithMatches.length) continue;
+
+    const topPriority = candidatesWithMatches[0].priority;
+    return candidatesWithMatches
+      .filter((candidate) =>
+        candidate.priority >= topPriority - RESEARCH_SEARCH_LIMITS.candidatePriorityWindow
+      )
+      .slice(0, RESEARCH_SEARCH_LIMITS.maxActiveCandidatesPerConcept);
+  }
+
+  return [];
+}
+
+function resolveResearchConcept(term) {
+  const input = String(term || '').trim();
+  const lookupKey = normalizeResearchLookupText(input);
+  const englishKey = normalizeEnglishResearchTerm(input);
+  const candidateMap = new Map();
+
+  const directEnglish = RESEARCH_SEARCH_STATE.englishTerms.get(englishKey);
+  if (directEnglish) {
+    addResearchCandidate(candidateMap, directEnglish.english, {
+      source: 'direct-english',
+      priority: 520
+    });
+  }
+
+  const reverseCandidates =
+    RESEARCH_SEARCH_STATE.reverseTurkishToEnglish.get(lookupKey) || [];
+
+  reverseCandidates.forEach((candidate) => {
+    addResearchCandidate(candidateMap, candidate.english, candidate);
+  });
+
+  if (candidateMap.size === 0) {
+    const directResults = searchEnglishResearchTerm(input);
+    if (directResults.length > 0) {
+      addResearchCandidate(candidateMap, input, {
+        source: 'english-corpus',
+        priority: 480
+      });
+    }
+  }
+
+  const allCandidates = Array.from(candidateMap.values())
+    .sort((left, right) => {
+      if (right.priority !== left.priority) return right.priority - left.priority;
+      return left.english.localeCompare(right.english, 'en');
+    });
+
+  const selectedCandidates = selectResearchActiveCandidates(allCandidates);
+  const selectedKeys = new Set(
+    selectedCandidates.map((candidate) => normalizeEnglishResearchTerm(candidate.english))
+  );
+  const alternativeCandidates = allCandidates.filter(
+    (candidate) => !selectedKeys.has(normalizeEnglishResearchTerm(candidate.english))
+  );
+
+  const matches = new Map();
+
+  selectedCandidates.forEach((candidate) => {
+    const candidateResults = Array.isArray(candidate.researchResults)
+      ? candidate.researchResults
+      : searchEnglishResearchTerm(candidate.english);
+
+    candidateResults.forEach((result) => {
+      const verseId = `${result.suraNum}:${result.verseNum}`;
+      const current = matches.get(verseId) || {
+        verseId,
+        suraNum: result.suraNum,
+        verseNum: result.verseNum,
+        page: result.page,
+        score: 0,
+        matchedEnglishTerms: new Set(),
+        matchedTurkishTerms: new Set(),
+        highlightTerms: new Set(),
+        sources: new Set()
+      };
+
+      current.score = Math.max(current.score, Number(result.score) || 0);
+      current.matchedEnglishTerms.add(candidate.english);
+      current.highlightTerms.add(candidate.english);
+      current.sources.add('en');
+      matches.set(verseId, current);
+    });
+  });
+
+  // İngilizce araştırma ana kaynak olarak kalır; ancak kullanıcının yazdığı
+  // Türkçe terim de Türkçe ana metinde mevcut aramanın güçlü kelime/çekim eşleşmeleriyle aranır. Böylece örn. "hizip"
+  // İngilizce karşılıkları üzerinden araştırılırken Türkçe "hizip" ayetleri kaybolmaz.
+  const turkishDirectResults = searchTurkishResearchTerm(input);
+
+  turkishDirectResults.forEach((result) => {
+    const verseId = `${result.suraNum}:${result.verseNum}`;
+    const current = matches.get(verseId) || {
+      verseId,
+      suraNum: result.suraNum,
+      verseNum: result.verseNum,
+      page: result.page,
+      score: 0,
+      matchedEnglishTerms: new Set(),
+      matchedTurkishTerms: new Set(),
+      highlightTerms: new Set(),
+      sources: new Set()
+    };
+
+    current.score = Math.max(current.score, Number(result.score) || 0);
+    current.matchedTurkishTerms.add(input);
+    current.highlightTerms.add(input);
+    current.sources.add('tr');
+    matches.set(verseId, current);
+  });
+
+  if (matches.size > 0) {
+    return {
+      input,
+      mode: selectedCandidates.length > 0 ? 'english' : 'turkish',
+      englishCandidates: selectedCandidates,
+      alternativeCandidates,
+      allCandidateCount: allCandidates.length,
+      turkishDirectCount: turkishDirectResults.length,
+      matches,
+      totalMatches: matches.size
+    };
+  }
+
+  const legacyResults = searchKeywordInData(input, 10000, false);
+  legacyResults.forEach((result) => {
+    const verseId = `${result.suraNum}:${result.verseNum}`;
+    const current = matches.get(verseId) || {
+      verseId,
+      suraNum: result.suraNum,
+      verseNum: result.verseNum,
+      page: result.page,
+      score: 0,
+      matchedEnglishTerms: new Set(),
+      matchedTurkishTerms: new Set(),
+      highlightTerms: new Set(),
+      sources: new Set()
+    };
+
+    current.score = Math.max(current.score, Number(result.score) || 0);
+    current.highlightTerms.add(input);
+    current.sources.add(result.source || result.type || 'legacy');
+    matches.set(verseId, current);
+  });
+
+  return {
+    input,
+    mode: 'legacy',
+    englishCandidates: [],
+    alternativeCandidates: allCandidates,
+    allCandidateCount: allCandidates.length,
+    turkishDirectCount: 0,
+    matches,
+    totalMatches: matches.size
+  };
+}
+function aggregateResearchConceptMatches(concepts) {
+  const aggregates = new Map();
+
+  concepts.forEach((concept, conceptIndex) => {
+    concept.matches.forEach((match, verseId) => {
+      const current = aggregates.get(verseId) || {
+        key: verseId,
+        suraNum: String(match.suraNum),
+        verseNum: String(match.verseNum),
+        page: match.page,
+        score: 0,
+        matchedConcepts: new Set(),
+        conceptMatches: new Map(),
+        highlightTerms: new Set()
+      };
+
+      current.score = Math.max(current.score, Number(match.score) || 0);
+      current.matchedConcepts.add(conceptIndex);
+      current.conceptMatches.set(conceptIndex, match);
+      match.highlightTerms.forEach((term) => current.highlightTerms.add(term));
+      aggregates.set(verseId, current);
+    });
+  });
+
+  return Array.from(aggregates.values())
+    .map((aggregate) => {
+      let englishCoverage = 0;
+      let turkishCoverage = 0;
+
+      aggregate.conceptMatches.forEach((match) => {
+        if (match?.sources?.has('en')) englishCoverage += 1;
+        if (match?.sources?.has('tr')) turkishCoverage += 1;
+      });
+
+      return {
+        ...aggregate,
+        coverage: aggregate.matchedConcepts.size,
+        englishCoverage,
+        turkishCoverage
+      };
+    })
+    .sort((left, right) => {
+      if (right.coverage !== left.coverage) return right.coverage - left.coverage;
+      // Aynı kavram kapsamındaki sonuçlarda İngilizce ana metin eşleşmeleri önce gelir.
+      if (right.englishCoverage !== left.englishCoverage) {
+        return right.englishCoverage - left.englishCoverage;
+      }
+      if (right.score !== left.score) return right.score - left.score;
+      if (right.turkishCoverage !== left.turkishCoverage) {
+        return right.turkishCoverage - left.turkishCoverage;
+      }
+
+      const suraDifference = Number(left.suraNum) - Number(right.suraNum);
+      if (suraDifference !== 0) return suraDifference;
+
+      return Number(left.verseNum) - Number(right.verseNum);
+    });
+}
+function getResearchPairStats(concepts) {
+  const stats = [];
+
+  for (let leftIndex = 0; leftIndex < concepts.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < concepts.length; rightIndex += 1) {
+      const leftMatches = concepts[leftIndex].matches;
+      const rightMatches = concepts[rightIndex].matches;
+      const smaller = leftMatches.size <= rightMatches.size ? leftMatches : rightMatches;
+      const larger = smaller === leftMatches ? rightMatches : leftMatches;
+      let count = 0;
+
+      smaller.forEach((_, verseId) => {
+        if (larger.has(verseId)) count += 1;
+      });
+
+      stats.push({
+        leftIndex,
+        rightIndex,
+        count
+      });
+    }
+  }
+
+  return stats.sort((left, right) => right.count - left.count);
+}
+
+function highlightSearchResultTerms(text, terms) {
+  const rawText = String(text || '');
+  const cleanTerms = Array.from(
+    new Set(
+      (Array.isArray(terms) ? terms : [])
+        .map((term) => String(term || '').trim())
+        .filter(Boolean)
+    )
+  )
+    .sort((left, right) => right.length - left.length)
+    .slice(0, 24);
+
+  if (!rawText || cleanTerms.length === 0) {
+    return escapeHtml(rawText);
+  }
+
+  const regex = new RegExp(
+    `(${cleanTerms.map((term) => escapeRegExp(term)).join('|')})`,
+    'gi'
+  );
+
+  return rawText
+    .split(regex)
+    .map((part, index) => {
+      if (index % 2 === 1) {
+        return `<mark class="search-panel-highlight">${escapeHtml(part)}</mark>`;
+      }
+
+      return escapeHtml(part);
+    })
+    .join('');
+}
+
+function getResearchCandidateDisplay(concept) {
+  const turkishDirectCount = Math.max(0, Number(concept?.turkishDirectCount) || 0);
+
+  if (concept.mode === 'turkish') {
+    return `
+      <div class="research-term-active-candidates">
+        <span class="research-term-candidate-label">Türkçe ana metinde birebir kullanılıyor:</span>
+        <div class="research-term-candidates">
+          <span class="research-term-chip research-term-chip-active">${escapeHtml(concept.input)} · ${turkishDirectCount} ayet</span>
+        </div>
+      </div>
+      <span class="research-term-fallback">Güvenilir İngilizce karşılık bulunamadı; Türkçe ana metin sonuçları korundu.</span>
+    `;
+  }
+
+  if (concept.mode !== 'english' || concept.englishCandidates.length === 0) {
+    return '<span class="research-term-fallback">İngilizce/Türkçe birebir karşılık bulunamadı — mevcut arama kullanıldı</span>';
+  }
+
+  const activeHtml = concept.englishCandidates
+    .map((candidate) => `
+      <span class="research-term-chip research-term-chip-active" title="Ortaklık hesabında İngilizce ana karşılık olarak kullanılıyor">
+        ${escapeHtml(candidate.english)}
+      </span>
+    `)
+    .join('');
+
+  const turkishSupportHtml = turkishDirectCount > 0
+    ? `
+      <div class="research-term-active-candidates">
+        <span class="research-term-candidate-label">Türkçe metin desteği:</span>
+        <div class="research-term-candidates">
+          <span class="research-term-chip research-term-chip-active" title="Türkçe ana metindeki birebir eşleşmeler de sonuçlara eklenir">
+            ${escapeHtml(concept.input)} · ${turkishDirectCount} ayet
+          </span>
+        </div>
+      </div>
+    `
+    : '';
+
+  const alternatives = Array.isArray(concept.alternativeCandidates)
+    ? concept.alternativeCandidates
+    : [];
+  const visibleAlternatives = alternatives.slice(
+    0,
+    RESEARCH_SEARCH_LIMITS.maxVisibleAlternativeCandidates
+  );
+  const hiddenAlternativeCount = Math.max(0, alternatives.length - visibleAlternatives.length);
+
+  const alternativesHtml = alternatives.length
+    ? `
+      <div class="research-term-alternatives">
+        <span class="research-term-candidate-label">Diğer sözlük adayları — hesaba katılmaz:</span>
+        <div class="research-term-candidates">
+          ${visibleAlternatives.map((candidate) => `
+            <span class="research-term-chip research-term-chip-muted">${escapeHtml(candidate.english)}</span>
+          `).join('')}
+          ${hiddenAlternativeCount > 0
+            ? `<span class="research-term-chip research-term-chip-muted">+${hiddenAlternativeCount} aday</span>`
+            : ''}
+        </div>
+      </div>
+    `
+    : '';
+
+  return `
+    <div class="research-term-active-candidates">
+      <span class="research-term-candidate-label">Ana araştırmada kullanılan (EN):</span>
+      <div class="research-term-candidates">${activeHtml}</div>
+    </div>
+    ${turkishSupportHtml}
+    ${alternativesHtml}
+  `;
+}
+function createResearchVerseCard(aggregate, concepts, totalConcepts) {
+  const verseData = findVerseData(aggregate.suraNum, aggregate.verseNum);
+  const matchedConceptIndexes = Array.from(aggregate.matchedConcepts).sort((a, b) => a - b);
+  const englishTerms = new Set();
+  const turkishTerms = new Set();
+  let hasLegacyMatch = false;
+  let hasEnglishMatch = false;
+  let hasTurkishDirectMatch = false;
+
+  const matchChipHtml = matchedConceptIndexes.map((conceptIndex) => {
+    const concept = concepts[conceptIndex];
+    const match = aggregate.conceptMatches.get(conceptIndex);
+    const matchedEnglishTerms = Array.from(match?.matchedEnglishTerms || []);
+    const matchedTurkishTerms = Array.from(match?.matchedTurkishTerms || []);
+
+    matchedEnglishTerms.forEach((term) => englishTerms.add(term));
+    matchedTurkishTerms.forEach((term) => turkishTerms.add(term));
+
+    if (match?.sources?.has('en')) hasEnglishMatch = true;
+    if (match?.sources?.has('tr')) hasTurkishDirectMatch = true;
+    if (concept.mode === 'legacy') hasLegacyMatch = true;
+
+    const englishLabel = matchedEnglishTerms.length
+      ? ` → ${matchedEnglishTerms.slice(0, 3).join(' / ')}`
+      : '';
+    const turkishLabel = matchedTurkishTerms.length
+      ? `${matchedEnglishTerms.length ? ' · ' : ' → '}TR:${matchedTurkishTerms.slice(0, 2).join(' / ')}`
+      : '';
+
+    return `
+      <span class="research-match-chip">
+        ✓ ${escapeHtml(concept.input)}${escapeHtml(englishLabel)}${escapeHtml(turkishLabel)}
+      </span>
+    `;
+  }).join('');
+
+  // Türkçe satırda kullanıcı sorgusunu vurgulamaya devam et; doğrudan TR eşleşmesi
+  // varsa zaten matchedTurkishTerms içinde bulunur.
+  matchedConceptIndexes.forEach((conceptIndex) => {
+    const concept = concepts[conceptIndex];
+    if (concept?.input) turkishTerms.add(concept.input);
+  });
+
+  const highlightTerms = Array.from(aggregate.highlightTerms || []);
+  const primaryHighlight =
+    Array.from(englishTerms)[0] ||
+    Array.from(turkishTerms)[0] ||
+    highlightTerms[0] ||
+    '';
+
+  const sourceLabel = hasEnglishMatch && hasTurkishDirectMatch
+    ? 'İngilizce ana + Türkçe doğrudan eşleşme'
+    : hasEnglishMatch
+      ? 'Ana eşleşme: İngilizce metin'
+      : hasTurkishDirectMatch
+        ? 'Destek eşleşmesi: Türkçe ana metin'
+        : hasLegacyMatch
+          ? 'Mevcut arama desteği'
+          : 'Araştırma eşleşmesi';
+
+  const suraName = STATE.metadata.sureNames[aggregate.suraNum] || `Sure ${aggregate.suraNum}`;
+  const allMatched = aggregate.coverage === totalConcepts;
+
+  return `
+    <article class="search-result-card research-result-card ${allMatched ? 'research-result-card-all' : ''}">
+      <div class="search-result-card-header">
+        <div class="search-result-card-heading-line">
+          <strong class="search-result-reference">${escapeHtml(aggregate.key)}</strong>
+          <span class="search-result-sura-name">${escapeHtml(suraName)}</span>
+          <span class="search-result-source">${sourceLabel}</span>
+        </div>
+        <span class="research-coverage-badge">${aggregate.coverage}/${totalConcepts}</span>
+      </div>
+
+      <div class="research-match-chips">${matchChipHtml}</div>
+
+      ${verseData.english
+        ? `<div class="search-result-language search-result-language-en research-result-primary"><strong>EN:</strong><span>${highlightSearchResultTerms(verseData.english, Array.from(englishTerms).length ? Array.from(englishTerms) : highlightTerms)}</span></div>`
+        : ''}
+
+      ${verseData.turkish
+        ? `<div class="search-result-language search-result-language-tr"><strong>TR:</strong><span>${highlightSearchResultTerms(verseData.turkish, Array.from(turkishTerms))}</span></div>`
+        : ''}
+
+      <div class="search-result-actions">
+        <button type="button" class="search-result-action" data-search-action="verse" data-highlight-query="${escapeHtml(primaryHighlight)}" data-sura="${escapeHtml(aggregate.suraNum)}" data-verse="${escapeHtml(aggregate.verseNum)}">📖 Ayete Git</button>
+        <button type="button" class="search-result-action" data-search-action="meal" data-highlight-query="${escapeHtml(primaryHighlight)}" data-sura="${escapeHtml(aggregate.suraNum)}" data-verse="${escapeHtml(aggregate.verseNum)}">📚 Mealler</button>
+        <button type="button" class="search-result-action" data-search-action="analysis" data-highlight-query="${escapeHtml(primaryHighlight)}" data-sura="${escapeHtml(aggregate.suraNum)}" data-verse="${escapeHtml(aggregate.verseNum)}">🔎 Analiz</button>
+      </div>
+    </article>
+  `;
+}
+function createResearchConceptDetail(concept) {
+  const sortedMatches = Array.from(concept.matches.values())
+    .sort((left, right) => {
+      const leftEnglish = left?.sources?.has('en') ? 1 : 0;
+      const rightEnglish = right?.sources?.has('en') ? 1 : 0;
+      if (rightEnglish !== leftEnglish) return rightEnglish - leftEnglish;
+      if (right.score !== left.score) return right.score - left.score;
+      const suraDifference = Number(left.suraNum) - Number(right.suraNum);
+      if (suraDifference !== 0) return suraDifference;
+      return Number(left.verseNum) - Number(right.verseNum);
+    });
+
+  const visibleMatches = sortedMatches.slice(0, RESEARCH_SEARCH_LIMITS.maxConceptCards);
+  const cards = visibleMatches.map((match) => {
+    const aggregate = {
+      key: match.verseId,
+      suraNum: match.suraNum,
+      verseNum: match.verseNum,
+      page: match.page,
+      score: match.score,
+      coverage: 1,
+      matchedConcepts: new Set([0]),
+      conceptMatches: new Map([[0, match]]),
+      highlightTerms: new Set(match.highlightTerms)
+    };
+
+    return createResearchVerseCard(aggregate, [concept], 1);
+  }).join('');
+
+  const hiddenCount = Math.max(0, sortedMatches.length - visibleMatches.length);
+
+  return `
+    <details class="research-concept-details">
+      <summary>
+        <span><strong>${escapeHtml(concept.input)}</strong> — ${concept.totalMatches} ayet</span>
+        <span class="research-concept-summary-secondary">
+          ${concept.mode === 'english'
+            ? 'English-first + TR destek'
+            : concept.mode === 'turkish'
+              ? 'Türkçe metin desteği'
+              : 'Mevcut arama'}
+        </span>
+      </summary>
+
+      <div class="research-concept-detail-toolbar">
+        ${getResearchCandidateDisplay(concept)}
+        <button
+          type="button"
+          class="research-legacy-btn"
+          data-research-legacy-query="${escapeHtml(concept.input)}"
+        >Mevcut aramada aç</button>
+      </div>
+
+      <div class="search-results-list">${cards}</div>
+      ${hiddenCount > 0
+        ? `<div class="research-results-limit-note">İlk ${visibleMatches.length} sonuç gösteriliyor. ${hiddenCount} sonuç daha var.</div>`
+        : ''}
+    </details>
+  `;
+}
+
 function getSearchWordSuggestions(
   query,
   limit = 5
@@ -5249,6 +7917,180 @@ function getSearchSourceLabel(source) {
   return labels[source] || source || 'Ayet';
 }
 
+
+function cloneSearchParentRoute(route) {
+  if (!route || typeof route !== 'object' || !route.view) return null;
+
+  try {
+    return JSON.parse(JSON.stringify(route));
+  } catch (error) {
+    return { ...route };
+  }
+}
+
+function normalizeSearchReturnState(returnState) {
+  const query = String(returnState?.query || '').trim();
+  if (!query) return null;
+
+  return {
+    query,
+    mode: String(returnState?.mode || 'auto'),
+    scrollTop: Math.max(0, Number(returnState?.scrollTop) || 0),
+    englishExpanded: returnState?.englishExpanded === true,
+    sharedVisibleCount: Math.max(0, Number(returnState?.sharedVisibleCount) || 0),
+    parentRoute: cloneSearchParentRoute(returnState?.parentRoute),
+    parentPageScrollTop: Math.max(0, Number(returnState?.parentPageScrollTop) || 0)
+  };
+}
+
+function captureSearchReturnState(query) {
+  const cleanQuery = String(query || '').trim();
+  if (!cleanQuery) return null;
+
+  const panel = document.getElementById('searchResultsPanel');
+  const body = panel?.querySelector('#searchResultsPanelBody');
+  const englishToggle = panel?.querySelector('[data-search-english-toggle]');
+
+  return normalizeSearchReturnState({
+    query: cleanQuery,
+    mode: panel?.dataset.searchMode || 'auto',
+    scrollTop: Number(body?.scrollTop) || 0,
+    englishExpanded: englishToggle?.getAttribute('aria-pressed') === 'true',
+    sharedVisibleCount: Number(panel?.dataset.sharedVisibleCount) || 0,
+    parentRoute: history.state?.route || null,
+    parentPageScrollTop: window.scrollY
+  });
+}
+
+function attachSearchReturnToCurrentHistory(returnState) {
+  const normalized = normalizeSearchReturnState(returnState);
+  if (!normalized) return;
+
+  SEARCH_RETURN_STATE.active = normalized;
+
+  if (history.state?.route?.view === 'verse') {
+    history.replaceState(
+      {
+        ...history.state,
+        searchReturn: normalized
+      },
+      '',
+      window.location.href
+    );
+  }
+
+  updatePreviousButtonState();
+}
+
+async function reopenSearchResultsFromReturnState(returnState) {
+  const normalized = normalizeSearchReturnState(returnState);
+  if (!normalized) return false;
+
+  const query = normalized.query;
+  activeSearchQuery = query;
+
+  if (DOM.searchInput) {
+    DOM.searchInput.value = query;
+  }
+
+  if (normalized.mode === 'research') {
+    await openResearchSearchResultsPanel(
+      query,
+      parseResearchSearchInput(query),
+      { initialSharedVisibleCount: normalized.sharedVisibleCount }
+    );
+  } else if (normalized.mode === 'legacy') {
+    await openLegacySearchResultsPanel(query);
+  } else {
+    await openSearchResultsPanel(query);
+  }
+
+  const panel = document.getElementById('searchResultsPanel');
+  const body = panel?.querySelector('#searchResultsPanelBody');
+
+  if (!panel || !body) return false;
+
+  const englishToggle = panel.querySelector('[data-search-english-toggle]');
+
+  if (
+    normalized.englishExpanded === true &&
+    englishToggle &&
+    englishToggle.getAttribute('aria-pressed') !== 'true'
+  ) {
+    englishToggle.click();
+  }
+
+  const targetScrollTop = normalized.scrollTop;
+
+  requestAnimationFrame(() => {
+    body.scrollTop = targetScrollTop;
+  });
+
+  return true;
+}
+
+async function restoreSearchParentRouteAndReopen(returnState) {
+  const normalized = normalizeSearchReturnState(returnState);
+  if (!normalized) return false;
+
+  const parentRoute = normalized.parentRoute;
+
+  if (parentRoute?.view) {
+    await applyRoute(parentRoute, {
+      historyMode: 'replace',
+      restoreScroll: false
+    });
+
+    requestAnimationFrame(() => {
+      window.scrollTo({
+        top: normalized.parentPageScrollTop,
+        behavior: 'auto'
+      });
+    });
+  } else if (history.state?.searchReturn) {
+    const nextState = { ...history.state };
+    delete nextState.searchReturn;
+    history.replaceState(nextState, '', window.location.href);
+  }
+
+  SEARCH_RETURN_STATE.pending = null;
+  SEARCH_RETURN_STATE.active = null;
+  updatePreviousButtonState();
+
+  return reopenSearchResultsFromReturnState(normalized);
+}
+
+function restoreSearchResultsFromHistory() {
+  const returnState = normalizeSearchReturnState(
+    history.state?.searchReturn || SEARCH_RETURN_STATE.active
+  );
+
+  if (
+    history.state?.route?.view !== 'verse' ||
+    !returnState
+  ) {
+    return false;
+  }
+
+  // Uygulamanın sol üst geri düğmesinde browser history zincirine güvenme.
+  // Aramanın açıldığı ana rotayı doğrudan geri yükleyip aynı sonuç panelini
+  // yeniden açmak, PWA/WebView ve normal tarayıcıda daha deterministiktir.
+  if (SEARCH_RETURN_STATE.fallbackTimer) {
+    clearTimeout(SEARCH_RETURN_STATE.fallbackTimer);
+    SEARCH_RETURN_STATE.fallbackTimer = null;
+  }
+
+  SEARCH_RETURN_STATE.pending = null;
+  SEARCH_RETURN_STATE.active = null;
+
+  restoreSearchParentRouteAndReopen(returnState).catch((error) => {
+    console.error('Arama sonuçlarına geri dönüş tamamlanamadı:', error);
+    showNotification('Arama sonuçlarına geri dönülemedi.', 'warning');
+  });
+
+  return true;
+}
+
 function groupDetailedSearchResults(results) {
   const groups = new Map();
 
@@ -5318,7 +8160,8 @@ function groupDetailedSearchResults(results) {
     });
 }
 
-function createSearchPanelShell(query) {
+function createSearchPanelShell(query, options = {}) {
+  const panelTitle = String(options.title || '🔎 Arama Sonuçları');
   closeSearchResultsPanel({ restoreFocus: false });
 
   if (document.getElementById('analysisPanel')) {
@@ -5339,6 +8182,7 @@ function createSearchPanelShell(query) {
   const panel = document.createElement('section');
   panel.id = 'searchResultsPanel';
   panel.className = 'search-results-panel';
+  panel.dataset.searchMode = String(options.mode || 'legacy');
   panel.setAttribute('role', 'dialog');
   panel.setAttribute('aria-modal', 'true');
   panel.setAttribute('aria-labelledby', 'searchResultsTitle');
@@ -5346,7 +8190,7 @@ function createSearchPanelShell(query) {
   panel.innerHTML = `
     <header class="search-results-header">
       <div>
-        <h2 id="searchResultsTitle">🔎 Arama Sonuçları</h2>
+        <h2 id="searchResultsTitle">${escapeHtml(panelTitle)}</h2>
         <div class="search-results-query">“${escapeHtml(query)}”</div>
       </div>
 
@@ -5375,11 +8219,438 @@ function createSearchPanelShell(query) {
   return panel;
 }
 
+function openLegacySearchFromResearchQuery(query) {
+  const cleanQuery = String(query || '').trim();
+  if (!cleanQuery) return;
+
+  const parsed = parseResearchSearchInput(cleanQuery);
+  const terms = Array.from(
+    new Set(
+      (parsed.terms || [])
+        .map((term) => String(term || '').trim())
+        .filter(Boolean)
+    )
+  );
+
+  if (terms.length <= 1) {
+    const legacyQuery = terms[0] || parsed.legacyQuery || cleanQuery;
+    if (DOM.searchInput) DOM.searchInput.value = legacyQuery;
+    return openLegacySearchResultsPanel(legacyQuery);
+  }
+
+  return openLegacySearchTermPicker(cleanQuery, terms);
+}
+
+function openLegacySearchTermPicker(query, terms) {
+  const cleanQuery = String(query || '').trim();
+  const cleanTerms = Array.from(
+    new Set(
+      (Array.isArray(terms) ? terms : [])
+        .map((term) => String(term || '').trim())
+        .filter(Boolean)
+    )
+  );
+
+  if (!cleanQuery || cleanTerms.length === 0) return;
+  if (cleanTerms.length === 1) {
+    if (DOM.searchInput) DOM.searchInput.value = cleanTerms[0];
+    return openLegacySearchResultsPanel(cleanTerms[0]);
+  }
+
+  const panel = createSearchPanelShell(cleanQuery, {
+    title: '🔎 Mevcut Aramada Aç',
+    mode: 'legacy-picker'
+  });
+  const body = panel.querySelector('#searchResultsPanelBody');
+  if (!body) return;
+
+  body.innerHTML = `
+    <section class="research-search-intro">
+      <div class="research-search-title-row">
+        <div>
+          <strong>Eski arama motorunda terim seçin</strong>
+          <p>
+            Mevcut arama virgüllü sorguyu tek bir ifade olarak arar. Bu yüzden
+            <strong>${escapeHtml(cleanQuery)}</strong> sorgusunu doğrudan göndermek yerine,
+            hangi terimi mevcut aramada açmak istediğinizi seçebilirsiniz.
+          </p>
+        </div>
+      </div>
+
+      <div class="search-panel-suggestions">
+        <strong>Mevcut aramada açılacak terim:</strong>
+        <div class="search-panel-suggestion-list">
+          ${cleanTerms.map((term) => `
+            <button
+              type="button"
+              class="search-word-suggestion"
+              data-legacy-picker-term="${escapeHtml(term)}"
+            >${escapeHtml(term)}</button>
+          `).join('')}
+        </div>
+      </div>
+
+      <div class="research-concept-detail-toolbar">
+        <button
+          type="button"
+          class="research-legacy-btn"
+          data-return-to-research="true"
+        >← İngilizce öncelikli araştırmaya dön</button>
+      </div>
+    </section>
+  `;
+
+  body.addEventListener('click', (event) => {
+    const termButton = event.target.closest('[data-legacy-picker-term]');
+    if (termButton) {
+      const term = String(termButton.dataset.legacyPickerTerm || '').trim();
+      if (!term) return;
+      if (DOM.searchInput) DOM.searchInput.value = term;
+      openLegacySearchResultsPanel(term);
+      return;
+    }
+
+    const returnButton = event.target.closest('[data-return-to-research]');
+    if (returnButton) {
+      if (DOM.searchInput) DOM.searchInput.value = cleanQuery;
+      openResearchSearchResultsPanel(cleanQuery, parseResearchSearchInput(cleanQuery));
+    }
+  });
+}
+
+async function openResearchSearchResultsPanel(query, parsedInput, options = {}) {
+  const cleanQuery = String(query || '').trim();
+  const parsed = parsedInput || parseResearchSearchInput(cleanQuery);
+  if (!cleanQuery || parsed.terms.length === 0) return;
+
+  const panel = createSearchPanelShell(cleanQuery, {
+    title: '🧭 İngilizce Öncelikli Araştırma',
+    mode: 'research'
+  });
+  const requestId = ++activeSearchRequestId;
+  const body = panel.querySelector('#searchResultsPanelBody');
+  if (!body) return;
+
+  if (!SEARCH_INDEX.ready) {
+    body.innerHTML = `
+      <div class="search-panel-empty">
+        Arama dizini henüz hazırlanıyor. Birkaç saniye sonra tekrar deneyin.
+      </div>
+    `;
+    return;
+  }
+
+  body.innerHTML = `
+    <div class="search-panel-loading">
+      <strong>İngilizce öncelikli araştırma hazırlanıyor.</strong>
+      <div class="search-panel-wait-message">
+        Mevcut Kuran Teyit sözlüğü Türkçe → İngilizce yönünde okunuyor...
+      </div>
+    </div>
+  `;
+
+  await ensureResearchDictionaryReady();
+
+  if (
+    requestId !== activeSearchRequestId ||
+    !panel.isConnected ||
+    document.getElementById('searchResultsPanel') !== panel
+  ) {
+    return;
+  }
+
+  const concepts = parsed.terms.map((term) => resolveResearchConcept(term));
+
+  if (
+    concepts.length === 1 &&
+    concepts[0].mode !== 'english'
+  ) {
+    return openLegacySearchResultsPanel(concepts[0].input);
+  }
+
+  const aggregates = aggregateResearchConceptMatches(concepts);
+  const totalConcepts = concepts.length;
+  const allMatchedCount = aggregates.filter(
+    (aggregate) => aggregate.coverage === totalConcepts
+  ).length;
+  const sharedResults = totalConcepts === 1
+    ? aggregates
+    : aggregates.filter((aggregate) => aggregate.coverage >= 2);
+
+  const requestedSharedVisibleCount = Math.max(
+    RESEARCH_SEARCH_LIMITS.maxAggregateCards,
+    Number(options.initialSharedVisibleCount) || 0
+  );
+  let sharedVisibleCount = Math.min(
+    sharedResults.length,
+    requestedSharedVisibleCount
+  );
+  let visibleSharedResults = sharedResults.slice(0, sharedVisibleCount);
+  panel.dataset.sharedVisibleCount = String(sharedVisibleCount);
+
+  const pairStats = totalConcepts >= 2 ? getResearchPairStats(concepts) : [];
+
+  const mappingHtml = concepts.map((concept) => `
+    <div class="research-term-card ${concept.mode === 'legacy' ? 'is-fallback' : ''}">
+      <div class="research-term-input">${escapeHtml(concept.input)}</div>
+      <div class="research-term-arrow" aria-hidden="true">→</div>
+      <div class="research-term-resolution">
+        ${getResearchCandidateDisplay(concept)}
+        <small>${concept.totalMatches} ayet</small>
+      </div>
+    </div>
+  `).join('');
+
+  const pairHtml = pairStats.length > 0
+    ? `
+      <section class="research-section">
+        <div class="research-section-header">
+          <h3>İkili ortaklıklar</h3>
+          <span>Aynı ayette birlikte bulunan kavram grupları</span>
+        </div>
+        <div class="research-pair-grid">
+          ${pairStats.map((pair) => `
+            <div class="research-pair-chip">
+              <span>${escapeHtml(concepts[pair.leftIndex].input)} + ${escapeHtml(concepts[pair.rightIndex].input)}</span>
+              <strong>${pair.count}</strong>
+            </div>
+          `).join('')}
+        </div>
+      </section>
+    `
+    : '';
+
+  const getSharedLimitHtml = () => {
+    const totalCount = sharedResults.length;
+    const remainingCount = Math.max(0, totalCount - sharedVisibleCount);
+    if (remainingCount <= 0) return '';
+
+    const shownLabel = totalConcepts === 1 ? 'sonuç' : 'ortak sonuç';
+    return `
+      <div class="research-results-limit-note" data-research-shared-limit>
+        <span>İlk ${sharedVisibleCount} ${shownLabel} gösteriliyor. Toplam ${totalCount} ayet bulundu.</span>
+        <button
+          type="button"
+          class="research-load-more-btn"
+          data-research-load-more
+        >Devamını göster (${remainingCount})</button>
+      </div>
+    `;
+  };
+
+  const sharedHtml = totalConcepts === 1
+    ? `
+      <section class="research-section">
+        <div class="research-section-header">
+          <h3>İngilizce öncelikli + Türkçe destek sonuçları</h3>
+          <span>${aggregates.length} birleşik ayet</span>
+        </div>
+        <div class="search-results-list" data-research-shared-list>
+          ${visibleSharedResults.map((aggregate) =>
+            createResearchVerseCard(aggregate, concepts, totalConcepts)
+          ).join('')}
+        </div>
+        ${getSharedLimitHtml()}
+      </section>
+    `
+    : `
+      <section class="research-section">
+        <div class="research-section-header">
+          <h3>Bütünsel ve kısmi ortak sonuçlar</h3>
+          <span>Önce ${totalConcepts}/${totalConcepts}, sonra daha düşük ortaklıklar</span>
+        </div>
+        ${sharedResults.length
+          ? `
+            <div class="search-results-list" data-research-shared-list>
+              ${visibleSharedResults.map((aggregate) =>
+                createResearchVerseCard(aggregate, concepts, totalConcepts)
+              ).join('')}
+            </div>
+            ${getSharedLimitHtml()}
+          `
+          : `
+            <div class="research-fallback-notice">
+              İki veya daha fazla kavramın aynı ayette buluştuğu sonuç bulunamadı.
+              Tek tek sonuçlar aşağıda yine gösteriliyor.
+            </div>
+          `}
+      </section>
+    `;
+
+  const conceptDetailsHtml = concepts
+    .map((concept) => createResearchConceptDetail(concept))
+    .join('');
+
+  const turkishOnlyConceptCount = concepts.filter(
+    (concept) => concept.mode === 'turkish'
+  ).length;
+  const fallbackConceptCount = concepts.filter(
+    (concept) => concept.mode === 'legacy'
+  ).length;
+
+  body.innerHTML = `
+    <section class="research-search-intro">
+      <div class="research-search-title-row">
+        <div>
+          <strong>Ana araştırma dili: English</strong>
+          <p>
+            Türkçe terimler, Kuran Teyit'te İngilizce kelimelerin üzerinde gösterilen
+            mevcut Türkçe karşılıklardan ters yönde çözümlenir. İngilizce ana metin önceliklidir;
+            ancak kullanıcının yazdığı Türkçe terim Türkçe ana metinde de birebir aranır ve bu
+            ayetler sonuçlara eklenir. İngilizce eşleşmeler sıralamada önce gelir; diğer sözlük
+            adayları yalnız bilgi amacıyla gösterilir.
+          </p>
+        </div>
+        <button
+          type="button"
+          class="research-legacy-btn"
+          data-research-legacy-query="${escapeHtml(cleanQuery)}"
+        >Mevcut aramada aç</button>
+      </div>
+
+      ${parsed.truncated
+        ? `<div class="research-fallback-notice">En fazla ${RESEARCH_SEARCH_LIMITS.maxTerms} benzersiz terim aynı araştırmada işlenir; sonraki terimler bu çalışmada kullanılmadı.</div>`
+        : ''}
+
+      ${turkishOnlyConceptCount > 0
+        ? `<div class="research-fallback-notice">${turkishOnlyConceptCount} terim için güvenilir İngilizce karşılık bulunamadı; Türkçe ana metindeki birebir eşleşmeler korunarak kullanıldı.</div>`
+        : ''}
+
+      ${fallbackConceptCount > 0
+        ? `<div class="research-fallback-notice">${fallbackConceptCount} terim için İngilizce veya Türkçe birebir eşleşme bulunamadı. Bu terimlerde mevcut arama motoru yedek olarak kullanıldı.</div>`
+        : ''}
+
+      <div class="research-term-grid">${mappingHtml}</div>
+    </section>
+
+    <div class="research-summary-grid">
+      <div class="research-summary-stat">
+        <strong>${totalConcepts}</strong>
+        <span>Kavram</span>
+      </div>
+      <div class="research-summary-stat">
+        <strong>${allMatchedCount}</strong>
+        <span>${totalConcepts > 1 ? `${totalConcepts}/${totalConcepts} ortak ayet` : 'Birleşik sonuç'}</span>
+      </div>
+      <div class="research-summary-stat">
+        <strong>${aggregates.length}</strong>
+        <span>Benzersiz ayet</span>
+      </div>
+    </div>
+
+    ${pairHtml}
+    ${sharedHtml}
+
+    <section class="research-section">
+      <div class="research-section-header">
+        <h3>Terimleri ayrı ayrı incele</h3>
+        <span>Her kavramın kendi sonuçları</span>
+      </div>
+      <div class="research-concept-list">${conceptDetailsHtml}</div>
+    </section>
+  `;
+
+  body.addEventListener('click', (event) => {
+    const loadMoreButton = event.target.closest('[data-research-load-more]');
+    if (loadMoreButton) {
+      const list = body.querySelector('[data-research-shared-list]');
+      const limitBox = body.querySelector('[data-research-shared-limit]');
+      if (!list || !limitBox) return;
+
+      const previousCount = sharedVisibleCount;
+      sharedVisibleCount = Math.min(
+        sharedResults.length,
+        previousCount + RESEARCH_SEARCH_LIMITS.maxAggregateCards
+      );
+      visibleSharedResults = sharedResults.slice(0, sharedVisibleCount);
+      panel.dataset.sharedVisibleCount = String(sharedVisibleCount);
+
+      const nextCards = sharedResults
+        .slice(previousCount, sharedVisibleCount)
+        .map((aggregate) => createResearchVerseCard(aggregate, concepts, totalConcepts))
+        .join('');
+
+      if (nextCards) {
+        list.insertAdjacentHTML('beforeend', nextCards);
+      }
+
+      const nextLimitHtml = getSharedLimitHtml();
+      if (nextLimitHtml) {
+        limitBox.outerHTML = nextLimitHtml;
+      } else {
+        limitBox.remove();
+      }
+      return;
+    }
+
+    const legacyButton = event.target.closest('[data-research-legacy-query]');
+    if (legacyButton) {
+      const legacyQuery = String(legacyButton.dataset.researchLegacyQuery || '').trim();
+      if (legacyQuery) openLegacySearchFromResearchQuery(legacyQuery);
+      return;
+    }
+
+    const button = event.target.closest('[data-search-action]');
+    if (!button) return;
+
+    const action = button.dataset.searchAction;
+    const suraNum = button.dataset.sura;
+    const verseNum = button.dataset.verse;
+    const highlightQuery = String(button.dataset.highlightQuery || '').trim();
+    const searchReturn = captureSearchReturnState(cleanQuery);
+
+    closeSearchResultsPanel({ restoreFocus: false });
+
+    if (action === 'analysis') {
+      openAnalysisPanel(suraNum, verseNum, { trigger: DOM.searchInput });
+      return;
+    }
+
+    activeSearchQuery = highlightQuery || cleanQuery;
+    DOM.searchInput.value = '';
+    DOM.autocomplete.innerHTML = '';
+    DOM.autocomplete.style.display = 'none';
+
+    const didNavigate = goToVerse(suraNum, verseNum, {
+      source: 'research-search',
+      query: highlightQuery || '',
+      openMeal: action === 'meal'
+    });
+
+    if (didNavigate) {
+      attachSearchReturnToCurrentHistory(searchReturn);
+    }
+  });
+}
+
 async function openSearchResultsPanel(query) {
   const cleanQuery = String(query || '').trim();
   if (!cleanQuery) return;
 
-  const panel = createSearchPanelShell(cleanQuery);
+  const parsed = parseResearchSearchInput(cleanQuery);
+
+  if (parsed.forceLegacy) {
+    return openLegacySearchResultsPanel(parsed.legacyQuery || cleanQuery);
+  }
+
+  if (parsed.isMulti) {
+    return openResearchSearchResultsPanel(cleanQuery, parsed);
+  }
+
+  const singleTerm = parsed.terms[0] || cleanQuery;
+
+  if (isSimpleResearchTerm(singleTerm)) {
+    return openResearchSearchResultsPanel(cleanQuery, parsed);
+  }
+
+  return openLegacySearchResultsPanel(cleanQuery);
+}
+
+async function openLegacySearchResultsPanel(query) {
+  const cleanQuery = String(query || '').trim();
+  if (!cleanQuery) return;
+
+  const panel = createSearchPanelShell(cleanQuery, { mode: 'legacy' });
   const requestId = ++activeSearchRequestId;
   const body = panel.querySelector('#searchResultsPanelBody');
   if (!body) return;
@@ -5451,6 +8722,8 @@ async function openSearchResultsPanel(query) {
     `
     : '';
 
+  const hasEnglishResults = groupedResults.some((group) => Boolean(group.verseData.english));
+
   const resultCards = groupedResults.map((group) => {
     const suraName = STATE.metadata.sureNames[group.suraNum] || `Sure ${group.suraNum}`;
     const sources = [...group.sources];
@@ -5461,21 +8734,20 @@ async function openSearchResultsPanel(query) {
     return `
       <article class="search-result-card">
         <div class="search-result-card-header">
-          <div>
+          <div class="search-result-card-heading-line">
             <strong class="search-result-reference">${escapeHtml(group.key)}</strong>
             <span class="search-result-sura-name">${escapeHtml(suraName)}</span>
+            <span class="search-result-source">Eşleşen alan: ${escapeHtml(sourceText)}</span>
           </div>
           <span class="search-result-fuzzy ${scoreClass}">%${group.score} eşleşme</span>
         </div>
 
-        <div class="search-result-source">Eşleşen alan: ${escapeHtml(sourceText)}</div>
-
         ${group.verseData.turkish
-          ? `<div class="search-result-language"><strong>TR:</strong> <span>${highlightSearchResultText(group.verseData.turkish, cleanQuery)}</span></div>`
+          ? `<div class="search-result-language search-result-language-tr"><strong>TR:</strong><span>${highlightSearchResultText(group.verseData.turkish, cleanQuery)}</span></div>`
           : ''}
 
         ${group.verseData.english
-          ? `<div class="search-result-language"><strong>EN:</strong> <span>${highlightSearchResultText(group.verseData.english, cleanQuery)}</span></div>`
+          ? `<div class="search-result-language search-result-language-en" data-search-english-row hidden><strong>EN:</strong><span>${highlightSearchResultText(group.verseData.english, cleanQuery)}</span></div>`
           : ''}
 
         <div class="search-result-actions">
@@ -5487,11 +8759,40 @@ async function openSearchResultsPanel(query) {
     `;
   }).join('');
 
+  const englishToggleHtml = hasEnglishResults
+    ? `
+      <button
+        type="button"
+        class="search-results-english-toggle"
+        data-search-english-toggle
+        aria-pressed="false"
+      >Tüm İngilizce alanları göster</button>
+    `
+    : '';
+
   body.innerHTML = `
     ${suggestionHtml}
-    <div class="search-results-summary"><strong>${groupedResults.length}</strong> ayet sonucu bulundu.</div>
+    <div class="search-results-summary">
+      <span class="search-results-count"><strong>${groupedResults.length}</strong> ayet sonucu bulundu.</span>
+      ${englishToggleHtml}
+    </div>
     <div class="search-results-list">${resultCards}</div>
   `;
+
+  const englishToggle = body.querySelector('[data-search-english-toggle]');
+  englishToggle?.addEventListener('click', () => {
+    const englishRows = body.querySelectorAll('[data-search-english-row]');
+    const willShow = englishToggle.getAttribute('aria-pressed') !== 'true';
+
+    englishRows.forEach((row) => {
+      row.hidden = !willShow;
+    });
+
+    englishToggle.setAttribute('aria-pressed', String(willShow));
+    englishToggle.textContent = willShow
+      ? 'Tüm İngilizce alanları gizle'
+      : 'Tüm İngilizce alanları göster';
+  });
 
   body.querySelectorAll('.search-word-suggestion').forEach((button) => {
     button.addEventListener('click', () => {
@@ -5508,6 +8809,7 @@ async function openSearchResultsPanel(query) {
     const action = button.dataset.searchAction;
     const suraNum = button.dataset.sura;
     const verseNum = button.dataset.verse;
+    const searchReturn = captureSearchReturnState(cleanQuery);
 
     closeSearchResultsPanel({ restoreFocus: false });
 
@@ -5521,11 +8823,15 @@ async function openSearchResultsPanel(query) {
     DOM.autocomplete.innerHTML = '';
     DOM.autocomplete.style.display = 'none';
 
-    goToVerse(suraNum, verseNum, {
+    const didNavigate = goToVerse(suraNum, verseNum, {
       source: 'search',
       query: cleanQuery,
       openMeal: action === 'meal'
     });
+
+    if (didNavigate) {
+      attachSearchReturnToCurrentHistory(searchReturn);
+    }
   });
 }
 
@@ -5765,6 +9071,26 @@ function setupSearch() {
       return;
     }
 
+    const researchPreview = parseResearchSearchInput(value);
+
+    if (researchPreview.isMulti) {
+      addAutocompleteItem({
+        className: 'autocomplete-all-results autocomplete-research-results',
+        html: `
+          <strong>${researchPreview.terms.length} terimli İngilizce öncelikli araştırmayı başlat</strong>
+          <br>
+          <small>Virgülle ayrılan kavramlar birlikte ve ayrı ayrı incelenecek.</small>
+        `,
+        onClick: () => {
+          hideAutocomplete();
+          openSearchResultsPanel(value);
+        }
+      });
+
+      showAutocomplete();
+      return;
+    }
+
     getFastSuraSuggestions(value, 5).forEach((suggestion) => {
       addAutocompleteItem({
         className: 'autocomplete-sura-result',
@@ -5776,9 +9102,9 @@ function setupSearch() {
     addAutocompleteItem({
       className: 'autocomplete-all-results',
       html: `
-        <strong>“${escapeHtml(value)}” için yaklaşık eşleşmeleri ve tüm sonuçları göster</strong>
+        <strong>“${escapeHtml(value)}” için akıllı aramayı ve tüm sonuçları göster</strong>
         <br>
-        <small>Ayrıntılı aramayı başlatmak için seçin.</small>
+        <small>Tek kelimede İngilizce öncelikli eşleştirme denenir; bulunamazsa mevcut arama kullanılır.</small>
       `,
       onClick: () => {
         hideAutocomplete();
@@ -5869,6 +9195,1392 @@ function setupSearch() {
     const value = searchInput.value.trim();
     if (value) runLightSearch(value);
   });
+}
+
+/* =========================
+   Kuran Oku
+========================= */
+function setQuranReaderNavigationMode(isReader) {
+  const previousButton = document.getElementById('prevPage');
+  const nextButton = document.getElementById('nextPage');
+
+  if (previousButton) {
+    previousButton.title = isReader
+      ? 'Önceki ekrana dön'
+      : 'Önceki sayfa';
+
+    previousButton.setAttribute(
+      'aria-label',
+      isReader ? 'Önceki ekrana dön' : 'Önceki sayfa'
+    );
+  }
+
+  if (nextButton) {
+    nextButton.hidden = Boolean(isReader);
+    nextButton.setAttribute('aria-hidden', isReader ? 'true' : 'false');
+  }
+}
+
+function getQuranReaderSuras() {
+  if (QURAN_READER_STATE.suras.length > 0) {
+    return QURAN_READER_STATE.suras;
+  }
+
+  const suraMap = new Map();
+  const pageNumbers = Object.keys(STATE.data.tr || {})
+    .map(Number)
+    .filter(Number.isFinite)
+    .sort((left, right) => left - right);
+
+  pageNumbers.forEach((pageNumber) => {
+    const pageData = STATE.data.tr?.[pageNumber];
+    if (!pageData?.sura) return;
+
+    Object.keys(pageData.sura)
+      .sort((left, right) => Number(left) - Number(right))
+      .forEach((suraNum) => {
+        const sourceSura = pageData.sura[suraNum] || {};
+
+        if (!suraMap.has(suraNum)) {
+          suraMap.set(suraNum, {
+            number: String(suraNum),
+            title: getQuranReaderSuraTitle(suraNum),
+            verses: new Map()
+          });
+        }
+
+        const targetSura = suraMap.get(suraNum);
+
+        Object.keys(sourceSura.verses || {})
+          .sort((left, right) => Number(left) - Number(right))
+          .forEach((verseNum) => {
+            if (targetSura.verses.has(String(verseNum))) return;
+
+            targetSura.verses.set(String(verseNum), {
+              number: String(verseNum),
+              text: String(sourceSura.verses?.[verseNum] || ''),
+              passageTitle: String(sourceSura.titles?.[verseNum] || '').trim()
+            });
+          });
+      });
+  });
+
+  QURAN_READER_STATE.suras = [...suraMap.values()]
+    .sort((left, right) => Number(left.number) - Number(right.number))
+    .map((sura) => ({
+      ...sura,
+      verses: [...sura.verses.values()]
+        .sort((left, right) => Number(left.number) - Number(right.number))
+    }));
+
+  return QURAN_READER_STATE.suras;
+}
+
+function getQuranReaderSuraTitle(suraNum) {
+  const rawTitle = String(
+    STATE.metadata.sureNames?.[String(suraNum)] || `${suraNum}. Sure`
+  ).trim();
+
+  return /^\d+\s*:/.test(rawTitle)
+    ? rawTitle
+    : `${suraNum}: ${rawTitle}`;
+}
+
+function getStoredQuranReaderFontLevel() {
+  try {
+    const stored = Number(localStorage.getItem(QURAN_READER_FONT_STORAGE_KEY));
+    if (!Number.isFinite(stored)) return 0;
+
+    return Math.max(
+      QURAN_READER_FONT_MIN_LEVEL,
+      Math.min(QURAN_READER_FONT_MAX_LEVEL, Math.trunc(stored))
+    );
+  } catch (error) {
+    console.warn('Kuran okuma yaz\u0131 boyutu okunamad\u0131:', error);
+    return 0;
+  }
+}
+
+function getQuranReaderFontPercent(level = QURAN_READER_STATE.fontLevel) {
+  const normalized = Number(level) || 0;
+  return 100 + (normalized * 12);
+}
+
+function setQuranReaderFontLevel(level, options = {}) {
+  const { persist = true } = options;
+  const numericLevel = Number(level);
+  const nextLevel = Math.max(
+    QURAN_READER_FONT_MIN_LEVEL,
+    Math.min(
+      QURAN_READER_FONT_MAX_LEVEL,
+      Number.isFinite(numericLevel) ? Math.trunc(numericLevel) : 0
+    )
+  );
+
+  QURAN_READER_STATE.fontLevel = nextLevel;
+
+  const page = DOM.content.querySelector('.quran-reader-page');
+  if (page) {
+    page.dataset.fontLevel = String(nextLevel);
+  }
+
+  const status = document.getElementById('quranReaderFontStatus');
+  if (status) {
+    status.textContent = `Yaz\u0131 ${getQuranReaderFontPercent(nextLevel)}%`;
+  }
+
+  const decreaseButton = DOM.content.querySelector(
+    '[data-action="reader-font-decrease"]'
+  );
+  const increaseButton = DOM.content.querySelector(
+    '[data-action="reader-font-increase"]'
+  );
+
+  if (decreaseButton) {
+    decreaseButton.disabled = nextLevel <= QURAN_READER_FONT_MIN_LEVEL;
+  }
+
+  if (increaseButton) {
+    increaseButton.disabled = nextLevel >= QURAN_READER_FONT_MAX_LEVEL;
+  }
+
+  if (persist) {
+    try {
+      localStorage.setItem(QURAN_READER_FONT_STORAGE_KEY, String(nextLevel));
+    } catch (error) {
+      console.warn('Kuran okuma yaz\u0131 boyutu kaydedilemedi:', error);
+    }
+  }
+
+  return nextLevel;
+}
+
+function changeQuranReaderFontLevel(delta) {
+  return setQuranReaderFontLevel(
+    QURAN_READER_STATE.fontLevel + Number(delta || 0)
+  );
+}
+
+function buildQuranReaderHtml() {
+  if (QURAN_READER_STATE.html) {
+    return QURAN_READER_STATE.html;
+  }
+
+  const suras = getQuranReaderSuras();
+
+  if (suras.length === 0) {
+    return `
+      <div class="quran-reader-page">
+        <div class="page-header">
+          <h1>📖 Kuran Oku</h1>
+        </div>
+        <div class="analysis-card quran-reader-empty">
+          Kuran metni henüz yüklenemedi.
+        </div>
+      </div>
+    `;
+  }
+
+  const suraOptions = suras
+    .map((sura) => `
+      <option value="${escapeHtml(sura.number)}">
+        ${escapeHtml(sura.title)}
+      </option>
+    `)
+    .join('');
+
+  const suraSections = suras
+    .map((sura) => {
+      const versesHtml = sura.verses
+        .map((verse) => {
+          const verseId = `${sura.number}:${verse.number}`;
+          const passageTitle = verse.passageTitle
+            ? `<div class="quran-reader-passage-title">${escapeHtml(verse.passageTitle)}</div>`
+            : '';
+
+          return `
+            ${passageTitle}
+            <button
+              id="reader-verse-${escapeHtml(sura.number)}-${escapeHtml(verse.number)}"
+              type="button"
+              class="quran-reader-verse"
+              data-action="reader-open-verse"
+              data-sura="${escapeHtml(sura.number)}"
+              data-verse="${escapeHtml(verse.number)}"
+              aria-label="${escapeHtml(verseId)} ayetinin ayrıntılarını aç"
+            >
+              <span class="quran-reader-verse-ref">
+                ${escapeHtml(verseId)}
+              </span>
+
+              <span class="quran-reader-verse-text">
+                ${escapeHtml(verse.text)}
+              </span>
+            </button>
+          `;
+        })
+        .join('');
+
+      return `
+        <section
+          id="reader-sura-${escapeHtml(sura.number)}"
+          class="analysis-card quran-reader-sura"
+          aria-labelledby="reader-sura-title-${escapeHtml(sura.number)}"
+        >
+          <h2
+            id="reader-sura-title-${escapeHtml(sura.number)}"
+            class="quran-reader-sura-title"
+          >
+            ${escapeHtml(sura.title)}
+          </h2>
+
+          <div class="quran-reader-verses">
+            ${versesHtml}
+          </div>
+        </section>
+      `;
+    })
+    .join('');
+
+  QURAN_READER_STATE.html = `
+    <div class="quran-reader-page">
+      <div class="page-header">
+        <h1>📖 Kuran Oku</h1>
+      </div>
+
+      <div class="analysis-card quran-reader-intro">
+        Ayet ayrıntılarını ana sayfadaki görünümle açmak için ayetin üzerine tıklayın.
+        Geri düğmesiyle aynı okuma konumuna dönersiniz.
+      </div>
+
+      <div class="quran-reader-toolbar">
+        <label for="quranReaderSuraSelect">Sureye git</label>
+
+        <select
+          id="quranReaderSuraSelect"
+          class="quran-reader-sura-select"
+        >
+          ${suraOptions}
+        </select>
+
+        <div
+          class="appendix-reader-font-controls quran-reader-font-controls"
+          role="group"
+          aria-label="Kuran okuma yazı boyutu"
+        >
+          <button
+            type="button"
+            class="appendix-reader-font-btn quran-reader-font-btn"
+            data-action="reader-font-decrease"
+            aria-label="Kuran okuma yazısını küçült"
+            title="Yazıyı küçült"
+          >
+            A−
+          </button>
+
+          <button
+            type="button"
+            id="quranReaderFontStatus"
+            class="appendix-reader-font-status quran-reader-font-status"
+            data-action="reader-font-reset"
+            title="Varsayılan yazı boyutuna dön"
+          >
+            Yazı 100%
+          </button>
+
+          <button
+            type="button"
+            class="appendix-reader-font-btn quran-reader-font-btn"
+            data-action="reader-font-increase"
+            aria-label="Kuran okuma yazısını büyüt"
+            title="Yazıyı büyüt"
+          >
+            A+
+          </button>
+        </div>
+
+        <button
+          type="button"
+          class="quran-reader-top-btn"
+          data-action="reader-top"
+        >
+          Başa Dön
+        </button>
+      </div>
+
+      <div class="quran-reader-list">
+        ${suraSections}
+      </div>
+    </div>
+  `;
+
+  return QURAN_READER_STATE.html;
+}
+
+function updateQuranReaderHistory(mode = 'push', scrollTop = 0, verseId = '') {
+  if (mode === 'none' || NAVIGATION_STATE.applyingHistory) return;
+
+  const method = mode === 'replace' ? 'replaceState' : 'pushState';
+  const cleanUrl = `${window.location.pathname}${window.location.search}#reader`;
+
+  history[method](
+    {
+      route: { view: 'reader' },
+      pageScrollTop: Number(scrollTop) || 0,
+      readerVerseId: String(verseId || '')
+    },
+    '',
+    cleanUrl
+  );
+
+  NAVIGATION_STATE.lastRoute = { view: 'reader' };
+}
+
+function saveQuranReaderPosition(verseId = '') {
+  if (history.state?.route?.view !== 'reader') return;
+
+  history.replaceState(
+    {
+      ...history.state,
+      route: { view: 'reader' },
+      pageScrollTop: window.scrollY,
+      readerVerseId: String(verseId || history.state?.readerVerseId || '')
+    },
+    '',
+    `${window.location.pathname}${window.location.search}#reader`
+  );
+}
+
+function openVerseFromQuranReader(suraNum, verseNum) {
+  const sura = String(suraNum || '');
+  const verse = String(verseNum || '');
+
+  if (!verseExists(sura, verse)) {
+    showNotification(`${sura}:${verse} ayeti bulunamadı.`, 'warning');
+    return false;
+  }
+
+  return goToVerse(sura, verse, {
+    source: 'reader',
+    historyMode: 'push',
+    query: ''
+  });
+}
+
+function setupQuranReaderControls() {
+  const select = document.getElementById('quranReaderSuraSelect');
+
+  setQuranReaderFontLevel(getStoredQuranReaderFontLevel(), { persist: false });
+
+  select?.addEventListener('change', () => {
+    const suraNum = String(select.value || '');
+    const target = document.getElementById(`reader-sura-${suraNum}`);
+
+    target?.scrollIntoView({
+      block: 'start',
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        ? 'auto'
+        : 'smooth'
+    });
+  });
+}
+
+function displayQuranReaderPage(options = {}) {
+  const {
+    historyMode = 'none',
+    scrollTop = 0,
+    focusVerseId = ''
+  } = options;
+
+  ensureQuranView();
+  closeAnalysisPanel({ updateHistory: false, restoreFocus: false });
+  closeSearchResultsPanel({ restoreFocus: false });
+  clearAnalysisReturnState();
+
+  STATE.currentView = 'reader';
+  setQuranReaderNavigationMode(true);
+  DOM.content.innerHTML = buildQuranReaderHtml();
+  applySettings();
+  setupQuranReaderControls();
+
+  updateQuranReaderHistory(historyMode, scrollTop, focusVerseId);
+
+  requestAnimationFrame(() => {
+    const restoredScroll = Number(scrollTop);
+
+    if (Number.isFinite(restoredScroll) && restoredScroll > 0) {
+      window.scrollTo({ top: restoredScroll, behavior: 'auto' });
+      return;
+    }
+
+    if (focusVerseId) {
+      const [sura, verse] = String(focusVerseId).split(':');
+      document
+        .getElementById(`reader-verse-${sura}-${verse}`)
+        ?.scrollIntoView({ block: 'center', behavior: 'auto' });
+      return;
+    }
+
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  });
+}
+
+
+const APPENDIX_IMAGE_ROOT = './assets/images/appendices';
+
+function getAppendixImageSource(fileName) {
+  const safeFileName = String(fileName || '').trim();
+  if (!safeFileName) return '';
+  return `${APPENDIX_IMAGE_ROOT}/${encodeURIComponent(safeFileName)}`;
+}
+
+function setupAppendixImageFallback() {
+  if (setupAppendixImageFallback.ready) return;
+  setupAppendixImageFallback.ready = true;
+
+  document.addEventListener(
+    'error',
+    (event) => {
+      const image = event.target;
+      if (!(image instanceof HTMLImageElement)) return;
+      if (!image.classList.contains('appendix-reader-picture-image')) return;
+
+      image.hidden = true;
+
+      const media = image.closest('.appendix-reader-picture-media');
+      media?.classList.add('is-image-missing');
+
+      const missing = media?.querySelector('.appendix-reader-picture-missing');
+      if (missing) missing.hidden = false;
+    },
+    true
+  );
+}
+
+/* =========================
+   Ekler Oku
+========================= */
+async function ensureAppendicesReaderLoaded() {
+  if (APPENDIX_READER_STATE.status === 'ready') return true;
+  if (APPENDIX_READER_STATE.status === 'loading') return APPENDIX_READER_STATE.promise;
+
+  APPENDIX_READER_STATE.status = 'loading';
+
+  APPENDIX_READER_STATE.promise = (async () => {
+    try {
+      const response = await fetch(CONFIG.dataPaths.appendicesTr, { cache: 'no-cache' });
+
+      if (!response.ok) {
+        throw new Error(`Ekler verisi yüklenemedi (${response.status}).`);
+      }
+
+      APPENDIX_READER_STATE.data = await response.json();
+      APPENDIX_READER_STATE.appendices = buildAppendicesReaderData(
+        APPENDIX_READER_STATE.data
+      );
+      APPENDIX_READER_STATE.html = '';
+      APPENDIX_READER_STATE.status = 'ready';
+      return true;
+    } catch (error) {
+      APPENDIX_READER_STATE.status = 'error';
+      APPENDIX_READER_STATE.promise = null;
+      throw error;
+    }
+  })();
+
+  return APPENDIX_READER_STATE.promise;
+}
+
+function getAppendixEventPriority(type) {
+  const priorities = {
+    title: 0,
+    text: 1,
+    evidence: 2,
+    table: 3,
+    picture: 4
+  };
+
+  return priorities[type] ?? 9;
+}
+
+function buildAppendicesReaderData(rawData) {
+  const pages = (Array.isArray(rawData) ? rawData : Object.values(rawData || {}))
+    .filter((page) => page && Number.isFinite(Number(page.page)))
+    .sort((left, right) => Number(left.page) - Number(right.page));
+
+  const appendices = [];
+  let currentAppendix = null;
+
+  pages.forEach((page) => {
+    const events = [];
+
+    const pushEvents = (type, source) => {
+      Object.entries(source || {}).forEach(([position, value]) => {
+        events.push({
+          type,
+          position: Number(position),
+          value,
+          page: Number(page.page)
+        });
+      });
+    };
+
+    pushEvents('title', page.titles);
+    pushEvents('text', page.text);
+    pushEvents('evidence', page.evidence);
+    pushEvents('table', page.table);
+    pushEvents('picture', page.picture);
+
+    events
+      .sort((left, right) => {
+        if (left.position !== right.position) return left.position - right.position;
+        return getAppendixEventPriority(left.type) - getAppendixEventPriority(right.type);
+      })
+      .forEach((event) => {
+        if (event.type === 'title') {
+          const titleText = String(event.value || '').trim();
+          const appendixMatch = titleText.match(/^Ek\s+(\d+)\s*$/i);
+
+          if (appendixMatch) {
+            const appendixNumber = Number(appendixMatch[1]);
+            currentAppendix = {
+              number: appendixNumber,
+              title: '',
+              startPage: event.page,
+              endPage: event.page,
+              blocks: []
+            };
+            appendices.push(currentAppendix);
+            return;
+          }
+        }
+
+        if (!currentAppendix) return;
+
+        currentAppendix.endPage = Math.max(currentAppendix.endPage, event.page);
+
+        if (
+          event.type === 'title' &&
+          !currentAppendix.title &&
+          String(event.value || '').trim()
+        ) {
+          currentAppendix.title = String(event.value).trim();
+          return;
+        }
+
+        currentAppendix.blocks.push(event);
+      });
+  });
+
+  return appendices
+    .filter((appendix) => appendix.number >= 1 && appendix.number <= 38)
+    .sort((left, right) => left.number - right.number);
+}
+
+
+function extractAppendixVerseRefs(textValue) {
+  const text = String(textValue || '');
+  if (!text) return [];
+
+  const refs = [];
+  const versePattern = /\b(\d{1,3}:\d{1,3}(?:\s*-\s*(?:(?:\d{1,3}:)?\d{1,3}))?)\b/g;
+
+  for (const match of text.matchAll(versePattern)) {
+    const rawRef = String(match[1] || '')
+      .replace(/\s+/g, '')
+      .trim();
+
+    if (!rawRef) continue;
+
+    expandVerseRefs(rawRef).forEach((verseId) => {
+      if (!refs.includes(verseId)) refs.push(verseId);
+    });
+  }
+
+  return refs;
+}
+
+function getStoredAppendixFontLevel() {
+  try {
+    const stored = Number(localStorage.getItem(APPENDIX_FONT_STORAGE_KEY));
+    if (!Number.isFinite(stored)) return 0;
+    return Math.max(
+      APPENDIX_FONT_MIN_LEVEL,
+      Math.min(APPENDIX_FONT_MAX_LEVEL, Math.trunc(stored))
+    );
+  } catch (error) {
+    console.warn('Ekler yazı boyutu okunamadı:', error);
+    return 0;
+  }
+}
+
+function getAppendixFontPercent(level = APPENDIX_READER_STATE.fontLevel) {
+  const normalized = Number(level) || 0;
+  return 100 + (normalized * 12);
+}
+
+function setAppendixFontLevel(level, options = {}) {
+  const { persist = true } = options;
+  const numericLevel = Number(level);
+  const nextLevel = Math.max(
+    APPENDIX_FONT_MIN_LEVEL,
+    Math.min(
+      APPENDIX_FONT_MAX_LEVEL,
+      Number.isFinite(numericLevel) ? Math.trunc(numericLevel) : 0
+    )
+  );
+
+  APPENDIX_READER_STATE.fontLevel = nextLevel;
+
+  const page = DOM.content.querySelector('.appendix-reader-page');
+  if (page) {
+    page.dataset.fontLevel = String(nextLevel);
+  }
+
+  const status = document.getElementById('appendixReaderFontStatus');
+  if (status) {
+    status.textContent = `Yazı ${getAppendixFontPercent(nextLevel)}%`;
+  }
+
+  const decreaseButton = DOM.content.querySelector(
+    '[data-action="appendices-font-decrease"]'
+  );
+  const increaseButton = DOM.content.querySelector(
+    '[data-action="appendices-font-increase"]'
+  );
+
+  if (decreaseButton) {
+    decreaseButton.disabled = nextLevel <= APPENDIX_FONT_MIN_LEVEL;
+  }
+
+  if (increaseButton) {
+    increaseButton.disabled = nextLevel >= APPENDIX_FONT_MAX_LEVEL;
+  }
+
+  if (persist) {
+    try {
+      localStorage.setItem(APPENDIX_FONT_STORAGE_KEY, String(nextLevel));
+    } catch (error) {
+      console.warn('Ekler yazı boyutu kaydedilemedi:', error);
+    }
+  }
+
+  return nextLevel;
+}
+
+function changeAppendixFontLevel(delta) {
+  return setAppendixFontLevel(
+    APPENDIX_READER_STATE.fontLevel + Number(delta || 0)
+  );
+}
+
+function createAppendixReferenceHtml(refValues, appendixNumber) {
+  const rawRefs = Array.isArray(refValues) ? refValues : [];
+  if (rawRefs.length === 0) return '';
+
+  const quranRefs = [];
+  const staticRefs = [];
+
+  rawRefs.forEach((rawRef) => {
+    const label = String(rawRef || '').trim();
+    if (!label) return;
+
+    const expanded = expandVerseRefs(label);
+
+    if (expanded.length > 0) {
+      expanded.forEach((verseId) => {
+        if (!quranRefs.includes(verseId)) quranRefs.push(verseId);
+      });
+      return;
+    }
+
+    staticRefs.push(label);
+  });
+
+  if (quranRefs.length === 0 && staticRefs.length === 0) return '';
+
+  return `
+    <div class="appendix-reader-refs" aria-label="Kaynak referansları">
+      ${quranRefs.map((verseId) => {
+        const [sura, verse] = verseId.split(':');
+        return `
+          <button
+            type="button"
+            class="appendix-reader-ref"
+            data-action="appendices-toggle-verse-preview"
+            data-sura="${escapeHtml(sura)}"
+            data-verse="${escapeHtml(verse)}"
+            data-appendix="${escapeHtml(String(appendixNumber))}"
+            aria-expanded="false"
+            title="${escapeHtml(`${verseId} ayetini önizle`)}"
+          >
+            ${escapeHtml(verseId)}
+          </button>
+        `;
+      }).join('')}
+      ${staticRefs.map((ref) => `
+        <span class="appendix-reader-ref-static">${escapeHtml(ref)}</span>
+      `).join('')}
+    </div>
+  `;
+}
+
+function createAppendixEvidenceHtml(block, appendixNumber) {
+  const lines = Object.entries(block?.lines || {})
+    .sort((left, right) => Number(left[0]) - Number(right[0]))
+    .map(([, line]) => String(line || '').trim())
+    .filter(Boolean);
+
+  const inlineRefs = extractAppendixVerseRefs(lines.join(' '));
+  const combinedRefs = [
+    ...(Array.isArray(block?.ref) ? block.ref : []),
+    ...inlineRefs
+  ];
+
+  if (lines.length === 0 && combinedRefs.length === 0) return '';
+
+  return `
+    <div class="appendix-reader-evidence">
+      ${lines.map((line) => `
+        <div class="appendix-reader-evidence-line">${escapeHtml(line)}</div>
+      `).join('')}
+      ${createAppendixReferenceHtml(combinedRefs, appendixNumber)}
+    </div>
+  `;
+}
+
+function createAppendixTableHtml(tableData) {
+  if (!tableData || typeof tableData !== 'object') return '';
+
+  const headers = Array.isArray(tableData.title)
+    ? tableData.title.map((value) => String(value ?? ''))
+    : [];
+  const values = Array.isArray(tableData.values)
+    ? tableData.values.map((value) => String(value ?? ''))
+    : [];
+  const columnCount = Math.max(1, headers.length || 1);
+  const rows = [];
+
+  for (let index = 0; index < values.length; index += columnCount) {
+    const row = values.slice(index, index + columnCount);
+    while (row.length < columnCount) row.push('');
+    rows.push(row);
+  }
+
+  const title = String(tableData.ref || '').trim();
+
+  return `
+    <div class="appendix-reader-table-card">
+      ${title ? `<div class="appendix-reader-table-title">${escapeHtml(title)}</div>` : ''}
+      <div class="appendix-reader-table-wrap">
+        <table class="appendix-reader-table">
+          ${headers.length > 0 ? `
+            <thead>
+              <tr>
+                ${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join('')}
+              </tr>
+            </thead>
+          ` : ''}
+          <tbody>
+            ${rows.map((row) => `
+              <tr>
+                ${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join('')}
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function createAppendixPictureMediaHtml(fileName, altText) {
+  const source = getAppendixImageSource(fileName);
+
+  return `
+    <div class="appendix-reader-picture-media">
+      <img
+        class="appendix-reader-picture-image"
+        src="${escapeHtml(source)}"
+        alt="${escapeHtml(altText || fileName)}"
+        loading="lazy"
+        decoding="async"
+        data-picture-file="${escapeHtml(fileName)}"
+      >
+      <div class="appendix-reader-picture-missing" hidden>
+        Görsel dosyası bulunamadı: <code>${escapeHtml(fileName)}</code>
+      </div>
+    </div>
+  `;
+}
+
+function createAppendixPictureHtml(pictureData) {
+  if (!pictureData || typeof pictureData !== 'object') return '';
+
+  const number = String(pictureData.no ?? '').trim();
+  const rawText = pictureData.text;
+  const data = Array.isArray(pictureData.data)
+    ? pictureData.data.map((item) => String(item ?? '').trim()).filter(Boolean)
+    : [];
+
+  if (!number && !rawText && data.length === 0) return '';
+
+  const textMap = rawText && typeof rawText === 'object' && !Array.isArray(rawText)
+    ? Object.entries(rawText)
+      .map(([key, value]) => [String(key).trim(), String(value ?? '').trim()])
+      .filter(([key]) => key)
+    : [];
+
+  if (number && textMap.length > 0) {
+    const mainFileName = `${number}.jpg`;
+
+    return `
+      <figure class="appendix-reader-picture-card appendix-reader-picture-card--group">
+        ${createAppendixPictureMediaHtml(mainFileName, `Görsel ${number}`)}
+        <figcaption class="appendix-reader-picture-caption">
+          <strong>Görsel ${escapeHtml(number)}</strong> — birleşik görünüm
+        </figcaption>
+
+        <details class="appendix-reader-picture-details">
+          <summary>Ayrıntılı parçaları göster (${textMap.length.toLocaleString('tr-TR')})</summary>
+          <div class="appendix-reader-picture-gallery">
+            ${textMap.map(([key, caption]) => {
+              const fileName = `${key}.jpg`;
+              return `
+                <figure class="appendix-reader-picture-item">
+                  ${createAppendixPictureMediaHtml(fileName, caption || key)}
+                  <figcaption class="appendix-reader-picture-caption">
+                    <strong>${escapeHtml(key)}</strong>${caption ? ` — ${escapeHtml(caption)}` : ''}
+                  </figcaption>
+                </figure>
+              `;
+            }).join('')}
+          </div>
+        </details>
+      </figure>
+    `;
+  }
+
+  const text = typeof rawText === 'string' ? rawText.trim() : '';
+  const heading = number ? `Görsel ${number}` : 'Görsel kaydı';
+  const fileName = number ? `${number}.jpg` : '';
+
+  return `
+    <figure class="appendix-reader-picture-card${fileName ? '' : ' is-image-missing'}">
+      ${fileName ? createAppendixPictureMediaHtml(fileName, text || heading) : ''}
+      <figcaption class="appendix-reader-picture-caption">
+        <strong>${escapeHtml(heading)}</strong>${text ? ` — ${escapeHtml(text)}` : ''}
+        ${data.length > 0 ? `
+          <ul class="appendix-reader-picture-data">
+            ${data.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}
+          </ul>
+        ` : ''}
+      </figcaption>
+    </figure>
+  `;
+}
+
+function createAppendixBlocksHtml(appendix) {
+  let previousPage = null;
+
+  return appendix.blocks.map((block) => {
+    const pageMarker = previousPage !== block.page
+      ? `<div class="appendix-reader-page-marker">Kaynak sayfa ${escapeHtml(String(block.page))}</div>`
+      : '';
+
+    previousPage = block.page;
+    let content = '';
+
+    if (block.type === 'title') {
+      const title = String(block.value || '').trim();
+      if (title) {
+        const titleRefs = extractAppendixVerseRefs(title);
+        content = `
+          <div class="appendix-reader-text-block appendix-reader-text-block--title">
+            <h3 class="appendix-reader-subtitle">${escapeHtml(title)}</h3>
+            ${createAppendixReferenceHtml(titleRefs, appendix.number)}
+          </div>
+        `;
+      }
+    } else if (block.type === 'text') {
+      const text = String(block.value || '').trim();
+      if (text) {
+        const inlineRefs = extractAppendixVerseRefs(text);
+        content = `
+          <div class="appendix-reader-text-block">
+            <p class="appendix-reader-paragraph">${escapeHtml(text)}</p>
+            ${createAppendixReferenceHtml(inlineRefs, appendix.number)}
+          </div>
+        `;
+      }
+    } else if (block.type === 'evidence') {
+      content = createAppendixEvidenceHtml(block.value, appendix.number);
+    } else if (block.type === 'table') {
+      content = createAppendixTableHtml(block.value);
+    } else if (block.type === 'picture') {
+      content = createAppendixPictureHtml(block.value);
+    }
+
+    return content ? `${pageMarker}${content}` : '';
+  }).join('');
+}
+
+function buildAppendicesReaderHtml() {
+  if (APPENDIX_READER_STATE.html) return APPENDIX_READER_STATE.html;
+
+  const appendices = APPENDIX_READER_STATE.appendices;
+
+  if (appendices.length === 0) {
+    return `
+      <div class="appendix-reader-page">
+        <div class="page-header">
+          <h1>📚 Ekler Oku</h1>
+        </div>
+        <div class="analysis-card appendix-reader-empty">
+          Ekler verisi henüz yüklenemedi.
+        </div>
+      </div>
+    `;
+  }
+
+  const options = appendices.map((appendix) => `
+    <option value="${escapeHtml(String(appendix.number))}">
+      ${escapeHtml(`Ek ${appendix.number}: ${appendix.title || 'Başlıksız Ek'}`)}
+    </option>
+  `).join('');
+
+  const sections = appendices.map((appendix) => `
+    <section
+      id="appendix-reader-${escapeHtml(String(appendix.number))}"
+      class="analysis-card appendix-reader-section"
+      aria-labelledby="appendix-reader-title-${escapeHtml(String(appendix.number))}"
+    >
+      <h2
+        id="appendix-reader-title-${escapeHtml(String(appendix.number))}"
+        class="appendix-reader-title"
+      >
+        ${escapeHtml(`Ek ${appendix.number}: ${appendix.title || 'Başlıksız Ek'}`)}
+      </h2>
+
+      <div class="appendix-reader-body">
+        ${createAppendixReferenceHtml(
+          extractAppendixVerseRefs(appendix.title),
+          appendix.number
+        )}
+        ${createAppendixBlocksHtml(appendix)}
+      </div>
+    </section>
+  `).join('');
+
+  APPENDIX_READER_STATE.html = `
+    <div class="appendix-reader-page">
+      <div class="page-header">
+        <h1>📚 Ekler Oku</h1>
+      </div>
+
+      <div class="analysis-card appendix-reader-intro">
+        Türkçe Ekler metni <code>appendices_tr.json</code> dosyasından gösterilir.
+        Görseller, orijinal quran-tft dosya adları korunarak <code>assets/images/appendices/</code> klasöründen yüklenir.
+        Ayet numaralarının üzerine gelerek önizleyebilir; tıklayarak ayet kartını açıp kapatabilirsiniz.
+      </div>
+
+      <div class="appendix-reader-toolbar">
+        <label for="appendixReaderSelect">Eke git</label>
+
+        <select
+          id="appendixReaderSelect"
+          class="appendix-reader-select"
+        >
+          ${options}
+        </select>
+
+        <div
+          class="appendix-reader-font-controls"
+          role="group"
+          aria-label="Ekler yazı boyutu"
+        >
+          <button
+            type="button"
+            class="appendix-reader-font-btn"
+            data-action="appendices-font-decrease"
+            aria-label="Ekler yazısını küçült"
+            title="Yazıyı küçült"
+          >
+            A−
+          </button>
+
+          <button
+            type="button"
+            id="appendixReaderFontStatus"
+            class="appendix-reader-font-status"
+            data-action="appendices-font-reset"
+            title="Varsayılan yazı boyutuna dön"
+          >
+            Yazı 100%
+          </button>
+
+          <button
+            type="button"
+            class="appendix-reader-font-btn"
+            data-action="appendices-font-increase"
+            aria-label="Ekler yazısını büyüt"
+            title="Yazıyı büyüt"
+          >
+            A+
+          </button>
+        </div>
+
+        <button
+          type="button"
+          class="quran-reader-top-btn"
+          data-action="appendices-top"
+        >
+          Başa Dön
+        </button>
+      </div>
+
+      <div class="appendix-reader-list">
+        ${sections}
+      </div>
+    </div>
+  `;
+
+  return APPENDIX_READER_STATE.html;
+}
+
+function updateAppendicesReaderHistory(mode = 'push', scrollTop = 0, appendixNumber = '') {
+  if (mode === 'none' || NAVIGATION_STATE.applyingHistory) return;
+
+  const method = mode === 'replace' ? 'replaceState' : 'pushState';
+  const cleanUrl = `${window.location.pathname}${window.location.search}#appendices`;
+
+  history[method](
+    {
+      route: { view: 'appendices' },
+      pageScrollTop: Number(scrollTop) || 0,
+      appendixNumber: String(appendixNumber || '')
+    },
+    '',
+    cleanUrl
+  );
+
+  NAVIGATION_STATE.lastRoute = { view: 'appendices' };
+}
+
+function saveAppendicesReaderPosition(appendixNumber = '') {
+  if (history.state?.route?.view !== 'appendices') return;
+
+  history.replaceState(
+    {
+      ...history.state,
+      route: { view: 'appendices' },
+      pageScrollTop: window.scrollY,
+      appendixNumber: String(appendixNumber || history.state?.appendixNumber || '')
+    },
+    '',
+    `${window.location.pathname}${window.location.search}#appendices`
+  );
+}
+
+function setupAppendicesReaderControls() {
+  const select = document.getElementById('appendixReaderSelect');
+
+  setupAppendixVersePreviewHover();
+  setAppendixFontLevel(getStoredAppendixFontLevel(), { persist: false });
+
+  select?.addEventListener('change', () => {
+    const appendixNumber = String(select.value || '');
+    const target = document.getElementById(`appendix-reader-${appendixNumber}`);
+
+    if (!target) return;
+
+    saveAppendicesReaderPosition(appendixNumber);
+
+    target.scrollIntoView({
+      block: 'start',
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        ? 'auto'
+        : 'smooth'
+    });
+  });
+}
+
+function createAppendixVersePreviewHtml(suraNum, verseNum) {
+  const sura = String(suraNum || '');
+  const verse = String(verseNum || '');
+  const verseId = `${sura}:${verse}`;
+
+  if (!verseExists(sura, verse)) {
+    return `
+      <div class="appendix-reader-verse-preview-error">
+        ${escapeHtml(`${verseId} ayeti bulunamadı.`)}
+      </div>
+    `;
+  }
+
+  const verseData = findVerseData(sura, verse);
+
+  return `
+    <div class="appendix-reader-verse-preview-heading">
+      <strong>${escapeHtml(verseId)}</strong>
+      <span>Ayet önizleme</span>
+    </div>
+
+    <div class="appendix-reader-verse-preview-tr">
+      <strong>Türkçe</strong>
+      <div>${escapeHtml(verseData.turkish || '')}</div>
+    </div>
+
+    <div class="appendix-reader-verse-preview-en">
+      <strong>Rashad Khalifa — English</strong>
+      <div>${escapeHtml(verseData.english || '')}</div>
+    </div>
+  `;
+}
+
+function closeAppendixVersePreviews(options = {}) {
+  const { exceptButton = null, temporaryOnly = false } = options;
+
+  document
+    .querySelectorAll('.appendix-reader-verse-preview')
+    .forEach((preview) => {
+      const owner = preview._appendixOwnerButton || null;
+
+      if (owner === exceptButton) return;
+      if (temporaryOnly && preview.dataset.pinned === 'true') return;
+
+      preview.remove();
+
+      if (owner) {
+        owner.setAttribute('aria-expanded', 'false');
+        owner.classList.remove('is-preview-open', 'is-preview-pinned');
+      }
+    });
+}
+
+function toggleAppendixVersePreview(button, options = {}) {
+  if (!(button instanceof HTMLElement)) return false;
+
+  const { pinned = false, forceOpen = false } = options;
+  const sura = String(button.dataset.sura || '');
+  const verse = String(button.dataset.verse || '');
+  const refs = button.closest('.appendix-reader-refs');
+
+  if (!sura || !verse || !refs) return false;
+
+  const existing = refs.querySelector('.appendix-reader-verse-preview');
+  const sameOwner = existing?._appendixOwnerButton === button;
+  const existingPinned = existing?.dataset.pinned === 'true';
+
+  if (sameOwner && pinned && existingPinned && !forceOpen) {
+    existing.remove();
+    button.setAttribute('aria-expanded', 'false');
+    button.classList.remove('is-preview-open', 'is-preview-pinned');
+    return true;
+  }
+
+  closeAppendixVersePreviews({ exceptButton: button });
+
+  let preview = sameOwner ? existing : null;
+
+  if (!preview) {
+    existing?.remove();
+
+    preview = document.createElement('div');
+    preview.className = 'appendix-reader-verse-preview';
+    preview.setAttribute('role', 'region');
+    preview.setAttribute('aria-live', 'polite');
+    preview.innerHTML = createAppendixVersePreviewHtml(sura, verse);
+    preview._appendixOwnerButton = button;
+    refs.appendChild(preview);
+  }
+
+  const shouldPin = pinned || existingPinned;
+  preview.dataset.pinned = shouldPin ? 'true' : 'false';
+  button.setAttribute('aria-expanded', 'true');
+  button.classList.add('is-preview-open');
+  button.classList.toggle('is-preview-pinned', shouldPin);
+
+  return true;
+}
+
+function setupAppendixVersePreviewHover() {
+  if (APPENDIX_READER_STATE.previewHoverReady) return;
+
+  const supportsHover = window.matchMedia(
+    '(hover: hover) and (pointer: fine)'
+  ).matches;
+
+  if (!supportsHover) return;
+  APPENDIX_READER_STATE.previewHoverReady = true;
+
+  DOM.content.addEventListener('pointerover', (event) => {
+    if (STATE.currentView !== 'appendices') return;
+
+    const button = event.target.closest(
+      '.appendix-reader-ref[data-action="appendices-toggle-verse-preview"]'
+    );
+
+    if (!button || !DOM.content.contains(button)) return;
+
+    if (
+      event.relatedTarget &&
+      button.contains(event.relatedTarget)
+    ) {
+      return;
+    }
+
+    const currentPreview = button
+      .closest('.appendix-reader-refs')
+      ?.querySelector('.appendix-reader-verse-preview');
+
+    if (
+      currentPreview?._appendixOwnerButton === button &&
+      currentPreview.dataset.pinned === 'true'
+    ) {
+      return;
+    }
+
+    const pinnedPreview = DOM.content.querySelector(
+      '.appendix-reader-verse-preview[data-pinned="true"]'
+    );
+
+    if (
+      pinnedPreview &&
+      pinnedPreview._appendixOwnerButton !== button
+    ) {
+      return;
+    }
+
+    toggleAppendixVersePreview(button, {
+      pinned: false,
+      forceOpen: true
+    });
+  });
+
+  DOM.content.addEventListener('pointerout', (event) => {
+    if (STATE.currentView !== 'appendices') return;
+
+    const button = event.target.closest(
+      '.appendix-reader-ref[data-action="appendices-toggle-verse-preview"]'
+    );
+
+    if (!button || !DOM.content.contains(button)) return;
+
+    const refs = button.closest('.appendix-reader-refs');
+    const preview = refs?.querySelector('.appendix-reader-verse-preview');
+
+    if (
+      preview?._appendixOwnerButton !== button ||
+      preview.dataset.pinned === 'true'
+    ) {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      const latestPreview = refs?.querySelector('.appendix-reader-verse-preview');
+
+      if (
+        latestPreview?._appendixOwnerButton === button &&
+        latestPreview.dataset.pinned !== 'true' &&
+        !button.matches(':hover')
+      ) {
+        latestPreview.remove();
+        button.setAttribute('aria-expanded', 'false');
+        button.classList.remove('is-preview-open', 'is-preview-pinned');
+      }
+    });
+  });
+}
+
+async function displayAppendicesReaderPage(options = {}) {
+  const {
+    historyMode = 'none',
+    scrollTop = 0,
+    focusAppendix = ''
+  } = options;
+
+  ensureQuranView();
+  closeAnalysisPanel({ updateHistory: false, restoreFocus: false });
+  closeSearchResultsPanel({ restoreFocus: false });
+  clearAnalysisReturnState();
+
+  STATE.currentView = 'appendices';
+  setQuranReaderNavigationMode(true);
+
+  DOM.content.innerHTML = `
+    <div class="appendix-reader-page">
+      <div class="page-header">
+        <h1>📚 Ekler Oku</h1>
+      </div>
+      <div class="analysis-card appendix-reader-empty">
+        Ekler yükleniyor...
+      </div>
+    </div>
+  `;
+
+  try {
+    await ensureAppendicesReaderLoaded();
+  } catch (error) {
+    console.error('Ekler yüklenemedi:', error);
+    DOM.content.innerHTML = `
+      <div class="appendix-reader-page">
+        <div class="page-header">
+          <h1>📚 Ekler Oku</h1>
+        </div>
+        <div class="analysis-card appendix-reader-empty error-message">
+          ${escapeHtml(error.message || 'Ekler verisi yüklenemedi.')}
+        </div>
+      </div>
+    `;
+    return false;
+  }
+
+  try {
+    DOM.content.innerHTML = buildAppendicesReaderHtml();
+    applySettings();
+    setupAppendicesReaderControls();
+  } catch (error) {
+    console.error('Ekler görünümü oluşturulamadı:', error);
+    DOM.content.innerHTML = `
+      <div class="appendix-reader-page">
+        <div class="page-header">
+          <h1>📚 Ekler Oku</h1>
+        </div>
+        <div class="analysis-card appendix-reader-empty error-message">
+          Ekler görünümü oluşturulamadı: ${escapeHtml(error.message || 'Bilinmeyen görüntüleme hatası.')}
+        </div>
+      </div>
+    `;
+    return false;
+  }
+
+  const appendixNumber = String(
+    focusAppendix || history.state?.appendixNumber || ''
+  );
+
+  updateAppendicesReaderHistory(historyMode, scrollTop, appendixNumber);
+
+  requestAnimationFrame(() => {
+    const restoredScroll = Number(scrollTop);
+
+    if (Number.isFinite(restoredScroll) && restoredScroll > 0) {
+      window.scrollTo({ top: restoredScroll, behavior: 'auto' });
+      return;
+    }
+
+    if (appendixNumber) {
+      const target = document.getElementById(`appendix-reader-${appendixNumber}`);
+      const select = document.getElementById('appendixReaderSelect');
+      if (select) select.value = appendixNumber;
+      target?.scrollIntoView({ block: 'start', behavior: 'auto' });
+      return;
+    }
+
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  });
+
+  return true;
 }
 
 /* =========================
@@ -6076,36 +10788,30 @@ function displayNotesPage() {
     </div>
 
     <div class="sura">
-      <div class="notes-section">
-        <p>
-          Notlarınız bu tarayıcıda,
-          cihazınızda saklanmaktadır.
-        </p>
+      <div class="notes-section notes-section--modern">
+        <div class="notes-page-intro">
+          <div>
+            <strong>Ayetlerinize bağlı kişisel araştırma notları</strong>
+            <p>
+              Notlarınız yalnızca bu tarayıcıda / cihazda saklanır. Yeni düzenleyici;
+              başlık, kalın, italik, liste, alıntı, hizalama ve bağlantı gibi temel
+              HTML biçimlendirmelerini destekler.
+            </p>
+          </div>
+        </div>
 
-        <div
-          class="note-actions"
-          style="
-            display:flex;
-            gap:10px;
-            flex-wrap:wrap;
-            margin-bottom:20px;
-          "
-        >
+        <div class="notes-page-toolbar">
           <button
             type="button"
             class="toggle-btn"
             data-action="export-notes"
-          >
-            💾 Notları Yedekle
-          </button>
+          >💾 JSON Yedekle</button>
 
           <button
             type="button"
             class="toggle-btn"
             data-action="import-notes"
-          >
-            📂 Not Dosyası Yükle
-          </button>
+          >📂 JSON Yükle</button>
 
           <button
             id="toggleNotesVisibilityBtn"
@@ -6114,25 +10820,20 @@ function displayNotesPage() {
             data-action="toggle-notes"
             aria-expanded="true"
             aria-controls="notesList"
-          >
-            🙈 Notları Gizle
-          </button>
+          >🙈 Notları Gizle</button>
         </div>
 
-        <div
-          id="notesList"
-          class="notes-list"
-        >
+        <div id="notesList" class="notes-list">
           Notlar yükleniyor...
         </div>
 
-        <button
-          type="button"
-          class="toggle-btn"
-          data-action="return-quran"
-        >
-          🔙 Kuran'a Dön
-        </button>
+        <div class="notes-page-bottom-actions">
+          <button
+            type="button"
+            class="toggle-btn"
+            data-action="return-quran"
+          >🔙 Kuran'a Dön</button>
+        </div>
       </div>
     </div>
   `;
